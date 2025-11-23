@@ -3,10 +3,11 @@ use core::panic;
 use dioxus_html::*;
 
 use crate::element::TuiElement;
+use crate::runtime::EventData;
 
-fn downcast(event: &PlatformEventData) -> plasmo::EventData {
+fn downcast(event: &PlatformEventData) -> EventData {
     event
-        .downcast::<plasmo::EventData>()
+        .downcast::<EventData>()
         .expect("event should be of type EventData")
         .clone()
 }
@@ -35,7 +36,7 @@ impl HtmlEventConverter for SerializedHtmlEventConverter {
     }
 
     fn convert_focus_data(&self, event: &PlatformEventData) -> FocusData {
-        if let plasmo::EventData::Focus(event) = downcast(event) {
+        if let EventData::Focus(event) = downcast(event) {
             FocusData::new(event)
         } else {
             panic!("event should be of type Focus")
@@ -43,7 +44,7 @@ impl HtmlEventConverter for SerializedHtmlEventConverter {
     }
 
     fn convert_form_data(&self, event: &PlatformEventData) -> FormData {
-        if let plasmo::EventData::Form(event) = downcast(event) {
+        if let EventData::Form(event) = downcast(event) {
             FormData::new(event)
         } else {
             panic!("event should be of type Form")
@@ -55,7 +56,7 @@ impl HtmlEventConverter for SerializedHtmlEventConverter {
     }
 
     fn convert_keyboard_data(&self, event: &PlatformEventData) -> KeyboardData {
-        if let plasmo::EventData::Keyboard(event) = downcast(event) {
+        if let EventData::Keyboard(event) = downcast(event) {
             KeyboardData::new(event)
         } else {
             panic!("event should be of type Keyboard")
@@ -71,7 +72,7 @@ impl HtmlEventConverter for SerializedHtmlEventConverter {
     }
 
     fn convert_mouse_data(&self, event: &PlatformEventData) -> MouseData {
-        if let plasmo::EventData::Mouse(event) = downcast(event) {
+        if let EventData::Mouse(event) = downcast(event) {
             MouseData::new(event)
         } else {
             panic!("event should be of type Mouse")
@@ -107,7 +108,7 @@ impl HtmlEventConverter for SerializedHtmlEventConverter {
     }
 
     fn convert_wheel_data(&self, event: &PlatformEventData) -> WheelData {
-        if let plasmo::EventData::Wheel(event) = downcast(event) {
+        if let EventData::Wheel(event) = downcast(event) {
             WheelData::new(event)
         } else {
             panic!("event should be of type Wheel")

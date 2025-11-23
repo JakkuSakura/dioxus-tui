@@ -4,6 +4,7 @@ mod input;
 mod number;
 mod password;
 mod slider;
+mod tabview;
 mod text_like;
 mod textbox;
 
@@ -23,6 +24,7 @@ pub(crate) fn register_widgets(rdom: &mut RealDom, sender: UnboundedSender<Event
     rdom.raw_world().add_unique(WidgetContext { sender });
 
     rdom.register_custom_element::<RinkWidgetWrapper<input::Input>>();
+    rdom.register_custom_element::<RinkWidgetWrapper<tabview::TabView>>();
 }
 
 trait RinkWidget: Sync + Send + CustomElement + 'static {

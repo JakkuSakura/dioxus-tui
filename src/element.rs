@@ -13,7 +13,7 @@ use dioxus_html::{
 };
 
 use dioxus_native_core::{dioxus::DioxusNativeCoreMutationWriter, NodeId};
-use plasmo::query::{ElementRef, Query};
+use crate::runtime::query::{ElementRef, Query};
 
 pub(crate) struct DioxusTUIMutationWriter<'a> {
     pub(crate) query: Query,
