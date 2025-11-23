@@ -138,6 +138,7 @@ impl RinkWidget for NodeRef<'_> {
                 [Direction::Left, Direction::Up] => symbols.bottom_right,
                 [Direction::Left, Direction::Right] => symbols.horizontal,
                 [Direction::Left, Direction::Down] => symbols.top_right,
+                _ => symbols.horizontal,
             }
             .to_string();
             buf.set(
@@ -245,15 +246,12 @@ impl RinkWidget for NodeRef<'_> {
         ) {
             let rect = area;
 
-            let BorderEdge { radius: tl, .. } = borders.top_left;
-            let BorderEdge { radius: tr, .. } = borders.top_right;
-            let BorderEdge { radius: bl, .. } = borders.bottom_left;
-            let BorderEdge { radius: br, .. } = borders.bottom_right;
-
-            let tl_radius = get_radius(&borders.top_left, rect);
-            let tr_radius = get_radius(&borders.top_right, rect);
-            let bl_radius = get_radius(&borders.bottom_left, rect);
-            let br_radius = get_radius(&borders.bottom_right, rect);
+            // Approximate corner radii from the adjacent edges. The style
+            // attributes store radius per-edge rather than per-corner.
+            let tl_radius = get_radius(&borders.top, rect).min(get_radius(&borders.left, rect));
+            let tr_radius = get_radius(&borders.top, rect).min(get_radius(&borders.right, rect));
+            let bl_radius = get_radius(&borders.bottom, rect).min(get_radius(&borders.left, rect));
+            let br_radius = get_radius(&borders.bottom, rect).min(get_radius(&borders.right, rect));
 
             let symbols = borders.top.style.symbol_set().unwrap_or(NORMAL);
             let pos = [rect.x, rect.y];

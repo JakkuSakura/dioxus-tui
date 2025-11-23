@@ -295,3 +295,37 @@ impl InnerInputState {
         over
     }
 }
+
+// Minimal input handler wiring around InnerInputState.
+// This currently stubs out conversion from raw terminal events into EventData,
+// but preserves the layout/focus update flow expected by the runtime.
+
+pub struct RinkInputHandler {
+    state: InnerInputState,
+    queue: Vec<EventCore>,
+}
+
+impl RinkInputHandler {
+    pub fn create(rdom: &mut RealDom) -> (Self, impl FnMut(crossterm::event::Event)) {
+        let handler = RinkInputHandler { state: InnerInputState::create(rdom), queue: Vec::new() };
+
+        // For now, we ignore terminal events; this keeps the engine building
+        // and rendering, but produces no interactive widget events.
+        let mut register_event = move |_evt: crossterm::event::Event| {
+            // In a full implementation, this would translate crossterm events
+            // into EventCore entries and push them into handler.queue.
+        };
+
+        (handler, register_event)
+    }
+
+    pub fn get_events(&mut self, layout: &Taffy, dom: &mut RealDom) -> Vec<Event> {
+        let mut resolved = Vec::new();
+        self.state.update(&mut self.queue, &mut resolved, layout, dom);
+        resolved
+    }
+
+    pub fn clean_focus(&mut self) -> bool {
+        self.state.focus_state.clean()
+    }
+}

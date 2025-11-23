@@ -1,4 +1,4 @@
-#![doc = include_str!("../plasmo/README.md")]
+#![doc = include_str!("../README.md")]
 
 mod config;
 pub mod focus;
@@ -108,13 +108,13 @@ pub fn render<R: Driver>(
 
     register_widgets(&mut rdom, event_tx);
 
-    let (handler, mut register_event) = hooks::RinkInputHandler::create(&mut rdom);
+    let (mut handler, mut register_event) = hooks::RinkInputHandler::create(&mut rdom);
 
     let rdom = Arc::new(RwLock::new(rdom));
 
     let taffy = Arc::new(Mutex::new(Taffy::new()));
 
-    let renderer = create_renderer(&rdom, &taffy, event_tx_clone);
+    let mut renderer = create_renderer(&rdom, &taffy, event_tx_clone);
 
     let query_engine = Query::new(rdom.clone(), taffy.clone());
     {
@@ -251,7 +251,7 @@ pub fn render<R: Driver>(
                             &taffy.lock().expect("taffy lock poisoned"),
                             &mut rdom.write().unwrap(),
                         );
-                        updated |= handler.state().focus_state.clean();
+                        updated |= handler.clean_focus();
 
                         for e in evts {
                             bubble_event_to_widgets(&mut rdom.write().unwrap(), &e);

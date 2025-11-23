@@ -39,8 +39,8 @@ impl CustomElement for TextBox {
 
     fn attributes_changed(&mut self, mut root: NodeMut, attributes: &AttributeMask) {
         if attributes.contains("value") {
-            let mut rdom = root.real_dom_mut();
             self.update_value_attr(&root);
+            let mut rdom = root.real_dom_mut();
             self.write_value(&mut rdom);
         }
     }
@@ -50,20 +50,18 @@ impl RinkWidget for TextBox {
     fn handle_event(&mut self, event: &crate::runtime::hooks::Event, mut node: NodeMut) {
         match &event.data {
             EventData::Keyboard(data) if event.id == self.inner.label_id => {
-                if let Some(key) = data.key().as_ref() {
-                    match key {
-                        dioxus_html::input_data::keyboard_types::Key::Backspace => {
-                            if self.inner.cursor > 0 {
-                                self.inner.cursor -= 1;
-                                self.inner.value.remove(self.inner.cursor);
-                            }
+                match data.key() {
+                    dioxus_html::input_data::keyboard_types::Key::Backspace => {
+                        if self.inner.cursor > 0 {
+                            self.inner.cursor -= 1;
+                            self.inner.value.remove(self.inner.cursor);
                         }
-                        dioxus_html::input_data::keyboard_types::Key::Character(c) => {
-                            self.inner.value.insert_str(self.inner.cursor, c);
-                            self.inner.cursor += c.chars().count();
-                        }
-                        _ => {}
                     }
+                    dioxus_html::input_data::keyboard_types::Key::Character(c) => {
+                        self.inner.value.insert_str(self.inner.cursor, &c);
+                        self.inner.cursor += c.chars().count();
+                    }
+                    _ => {}
                 }
 
                 let mut rdom = node.real_dom_mut();

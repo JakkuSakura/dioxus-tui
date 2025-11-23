@@ -194,13 +194,12 @@ impl RinkWidget for CheckBox {
             "click" => self.switch(node),
             "keydown" => {
                 if let EventData::Keyboard(data) = &event.data {
-                    if !data.is_auto_repeating()
-                        && matches!(
-                            data.key(),
-                            Key::Character(c) if c == " " | Key::Enter
-                        )
-                    {
-                        self.switch(node);
+                    if !data.is_auto_repeating() {
+                        match data.key() {
+                            Key::Character(c) if c == " " => self.switch(node),
+                            Key::Enter => self.switch(node),
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -208,4 +207,3 @@ impl RinkWidget for CheckBox {
         }
     }
 }
-

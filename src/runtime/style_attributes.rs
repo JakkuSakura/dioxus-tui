@@ -42,16 +42,19 @@ impl State for StyleModifier {
         if node_view.namespace().is_none() {
             if let Some(tag) = node_view.tag() {
                 match tag {
-                    "b" | "strong" => apply_style_attributes("font-weight", "bold", &mut new),
-                    "u" | "ins" => apply_style_attributes("text-decoration", "underline", &mut new),
+                    "b" => apply_style_attributes("font-weight", "bold", &mut new),
+                    "strong" => apply_style_attributes("font-weight", "bold", &mut new),
+                    "u" => apply_style_attributes("text-decoration", "underline", &mut new),
+                    "ins" => apply_style_attributes("text-decoration", "underline", &mut new),
                     "del" => apply_style_attributes("text-decoration", "line-through", &mut new),
-                    "i" | "em" => apply_style_attributes("font-style", "italic", &mut new),
+                    "i" => apply_style_attributes("font-style", "italic", &mut new),
+                    "em" => apply_style_attributes("font-style", "italic", &mut new),
                     "mark" => apply_style_attributes(
                         "background-color",
                         "rgba(241, 231, 64, 50%)",
                         &mut new,
                     ),
-                    _ => {}
+                    _ => (),
                 }
             }
         }
@@ -150,8 +153,16 @@ pub enum BorderStyle {
 impl BorderStyle {
     pub fn symbol_set(&self) -> Option<ratatui::symbols::line::Set> {
         use ratatui::symbols::line::*;
-        const DASHED: Set = Set { horizontal: "╌", vertical: "╎", ..NORMAL };
-        const DOTTED: Set = Set { horizontal: "┈", vertical: "┊", ..NORMAL };
+        const DASHED: Set = Set {
+            horizontal: "╌",
+            vertical: "╎",
+            ..NORMAL
+        };
+        const DOTTED: Set = Set {
+            horizontal: "┈",
+            vertical: "┊",
+            ..NORMAL
+        };
         match self {
             BorderStyle::Dotted => Some(DOTTED),
             BorderStyle::Dashed => Some(DASHED),
@@ -167,7 +178,12 @@ impl BorderStyle {
     }
 }
 
-pub fn apply_style_attributes(name: &str, value: &str, style: &mut StyleModifier) {
+/// applies the entire html namespace defined in dioxus-html
+pub fn apply_style_attributes(
+    name: &str,
+    value: &str,
+    style: &mut StyleModifier,
+) {
     match name {
         "animation"
         | "animation-delay"
@@ -225,121 +241,358 @@ pub fn apply_style_attributes(name: &str, value: &str, style: &mut StyleModifier
         | "border-top-width"
         | "border-width" => apply_border(name, value, style),
 
-        "bottom" | "left" | "right" | "top" => apply_position(name, value, style),
+        "bottom" => {}
+        "box-shadow" => {}
+        "box-sizing" => {}
+        "caption-side" => {}
+        "clear" => {}
+        "clip" => {}
 
-        "box-shadow" => apply_box_shadow(name, value, style),
+        "color" => {
+            if let Ok(c) = value.parse() {
+                style.core.fg.replace(c);
+            }
+        }
 
-        "color" => apply_color(name, value, style),
+        "columns" => {}
 
-        "display" => apply_display(name, value, style),
+        "content" => {}
+        "counter-increment" => {}
+        "counter-reset" => {}
 
-        "flex"
-        | "flex-basis"
-        | "flex-direction"
-        | "flex-flow"
-        | "flex-grow"
-        | "flex-shrink"
-        | "flex-wrap" => apply_flex(name, value, style),
+        "cursor" => {}
 
-        "font"
-        | "font-family"
-        | "font-feature-settings"
-        | "font-kerning"
-        | "font-language-override"
-        | "font-size"
-        | "font-size-adjust"
-        | "font-stretch"
-        | "font-style"
-        | "font-synthesis"
-        | "font-variant"
-        | "font-variant-alternates"
-        | "font-variant-caps"
-        | "font-variant-east-asian"
-        | "font-variant-ligatures"
-        | "font-variant-numeric"
-        | "font-variant-position"
-        | "font-weight" => apply_font(name, value, style),
+        "empty-cells" => {}
 
-        "height"
-        | "max-height"
-        | "min-height"
-        | "width"
-        | "max-width"
-        | "min-width" => apply_size(name, value, style),
+        "float" => {}
 
-        "line-height" => apply_line_height(name, value, style),
+        "font" | "font-family" | "font-size" | "font-size-adjust" | "font-stretch"
+        | "font-style" | "font-variant" | "font-weight" => apply_font(name, value, style),
 
-        "margin"
-        | "margin-bottom"
-        | "margin-left"
-        | "margin-right"
-        | "margin-top" => apply_margin(name, value, style),
+        "letter-spacing" => {}
+        "line-height" => {}
 
-        "padding"
-        | "padding-bottom"
-        | "padding-left"
-        | "padding-right"
-        | "padding-top" => apply_padding(name, value, style),
+        "list-style" | "list-style-image" | "list-style-position" | "list-style-type" => {}
 
-        "position" | "z-index" => apply_positioning(name, value, style),
+        "opacity" => {}
+        "order" => {}
+        "outline" => {}
+
+        "outline-color" | "outline-offset" | "outline-style" | "outline-width" => {}
+
+        "page-break-after" | "page-break-before" | "page-break-inside" => {}
+
+        "perspective" | "perspective-origin" => {}
+
+        "pointer-events" => {}
+
+        "quotes" => {}
+        "resize" => {}
+        "tab-size" => {}
+        "table-layout" => {}
 
         "text-align"
+        | "text-align-last"
         | "text-decoration"
+        | "text-decoration-color"
+        | "text-decoration-line"
+        | "text-decoration-style"
         | "text-indent"
+        | "text-justify"
         | "text-overflow"
-        | "text-rendering"
         | "text-shadow"
         | "text-transform" => apply_text(name, value, style),
 
-        "white-space" => apply_white_space(name, value, style),
+        "transition"
+        | "transition-delay"
+        | "transition-duration"
+        | "transition-property"
+        | "transition-timing-function" => apply_transition(name, value, style),
 
+        "visibility" => {}
+        "white-space" => {}
         _ => {}
     }
 }
 
-// The helpers below are migrated from plasmo's style_attributes.rs without behavioural changes.
-
-fn apply_animation(_name: &str, _value: &str, _style: &mut StyleModifier) {}
-
 fn apply_background(name: &str, value: &str, style: &mut StyleModifier) {
-    if name == "background-color" {
-        if let Ok(color) = value.parse::<RinkColor>() {
-            style.core.bg = Some(color);
+    match name {
+        "background-color" => {
+            if let Ok(c) = value.parse() {
+                style.core.bg.replace(c);
+            }
+        }
+        "background" => {}
+        "background-attachment" => {}
+        "background-clip" => {}
+        "background-image" => {}
+        "background-origin" => {}
+        "background-position" => {}
+        "background-repeat" => {}
+        "background-size" => {}
+        _ => {}
+    }
+}
+
+fn apply_border(name: &str, value: &str, style: &mut StyleModifier) {
+    fn parse_border_style(v: &str) -> BorderStyle {
+        match v {
+            "dotted" => BorderStyle::Dotted,
+            "dashed" => BorderStyle::Dashed,
+            "solid" => BorderStyle::Solid,
+            "double" => BorderStyle::Double,
+            "groove" => BorderStyle::Groove,
+            "ridge" => BorderStyle::Ridge,
+            "inset" => BorderStyle::Inset,
+            "outset" => BorderStyle::Outset,
+            "none" => BorderStyle::None,
+            "hidden" => BorderStyle::Hidden,
+            _ => todo!("Implement other border styles"),
         }
     }
-}
 
-fn apply_border(_name: &str, _value: &str, _style: &mut StyleModifier) {}
-
-fn apply_position(_name: &str, _value: &str, _style: &mut StyleModifier) {}
-
-fn apply_box_shadow(_name: &str, _value: &str, _style: &mut StyleModifier) {}
-
-fn apply_color(_name: &str, value: &str, style: &mut StyleModifier) {
-    if let Ok(color) = value.parse::<RinkColor>() {
-        style.core.fg = Some(color);
+    match name {
+        "border" => {}
+        "border-bottom" => {}
+        "border-bottom-color" => {
+            if let Ok(c) = value.parse() {
+                style.modifier.borders.bottom.color = Some(c);
+            }
+        }
+        "border-bottom-left-radius" => {
+            if let Some(v) = parse_value(value) {
+                // Bottom-left corner shares radius between bottom and left edges.
+                style.modifier.borders.bottom.radius = v;
+                style.modifier.borders.left.radius = v;
+            }
+        }
+        "border-bottom-right-radius" => {
+            if let Some(v) = parse_value(value) {
+                // Bottom-right corner shares radius between bottom and right edges.
+                style.modifier.borders.bottom.radius = v;
+                style.modifier.borders.right.radius = v;
+            }
+        }
+        "border-bottom-style" => style.modifier.borders.bottom.style = parse_border_style(value),
+        "border-bottom-width" => {
+            if let Some(v) = parse_value(value) {
+                style.modifier.borders.bottom.width = v;
+            }
+        }
+        "border-collapse" => {}
+        "border-color" => {
+            let values: Vec<_> = value.split(' ').collect();
+            if values.len() == 1 {
+                if let Ok(c) = values[0].parse() {
+                    style
+                        .modifier
+                        .borders
+                        .slice()
+                        .iter_mut()
+                        .for_each(|b| b.color = Some(c));
+                }
+            } else {
+                for (v, b) in values
+                    .into_iter()
+                    .zip(style.modifier.borders.slice().iter_mut())
+                {
+                    if let Ok(c) = v.parse() {
+                        b.color = Some(c);
+                    }
+                }
+            }
+        }
+        "border-image" => {}
+        "border-image-outset" => {}
+        "border-image-repeat" => {}
+        "border-image-slice" => {}
+        "border-image-source" => {}
+        "border-image-width" => {}
+        "border-left" => {}
+        "border-left-color" => {
+            if let Ok(c) = value.parse() {
+                style.modifier.borders.left.color = Some(c);
+            }
+        }
+        "border-left-style" => style.modifier.borders.left.style = parse_border_style(value),
+        "border-left-width" => {
+            if let Some(v) = parse_value(value) {
+                style.modifier.borders.left.width = v;
+            }
+        }
+        "border-radius" => {
+            let values: Vec<_> = value.split(' ').collect();
+            if values.len() == 1 {
+                if let Some(r) = parse_value(values[0]) {
+                    style
+                        .modifier
+                        .borders
+                        .slice()
+                        .iter_mut()
+                        .for_each(|b| b.radius = r);
+                }
+            } else {
+                for (v, b) in values
+                    .into_iter()
+                    .zip(style.modifier.borders.slice().iter_mut())
+                {
+                    if let Some(r) = parse_value(v) {
+                        b.radius = r;
+                    }
+                }
+            }
+        }
+        "border-right" => {}
+        "border-right-color" => {
+            if let Ok(c) = value.parse() {
+                style.modifier.borders.right.color = Some(c);
+            }
+        }
+        "border-right-style" => style.modifier.borders.right.style = parse_border_style(value),
+        "border-right-width" => {
+            if let Some(v) = parse_value(value) {
+                style.modifier.borders.right.width = v;
+            }
+        }
+        "border-spacing" => {}
+        "border-style" => {
+            let values: Vec<_> = value.split(' ').collect();
+            if values.len() == 1 {
+                let border_style = parse_border_style(values[0]);
+                style
+                    .modifier
+                    .borders
+                    .slice()
+                    .iter_mut()
+                    .for_each(|b| b.style = border_style);
+            } else {
+                for (v, b) in values
+                    .into_iter()
+                    .zip(style.modifier.borders.slice().iter_mut())
+                {
+                    b.style = parse_border_style(v);
+                }
+            }
+        }
+        "border-top" => {}
+        "border-top-color" => {
+            if let Ok(c) = value.parse() {
+                style.modifier.borders.top.color = Some(c);
+            }
+        }
+        "border-top-left-radius" => {
+            if let Some(v) = parse_value(value) {
+                // Top-left corner shares radius between top and left edges.
+                style.modifier.borders.top.radius = v;
+                style.modifier.borders.left.radius = v;
+            }
+        }
+        "border-top-right-radius" => {
+            if let Some(v) = parse_value(value) {
+                // Top-right corner shares radius between top and right edges.
+                style.modifier.borders.top.radius = v;
+                style.modifier.borders.right.radius = v;
+            }
+        }
+        "border-top-style" => style.modifier.borders.top.style = parse_border_style(value),
+        "border-top-width" => {
+            if let Some(v) = parse_value(value) {
+                style.modifier.borders.top.width = v;
+            }
+        }
+        "border-width" => {
+            let values: Vec<_> = value.split(' ').collect();
+            if values.len() == 1 {
+                if let Some(w) = parse_value(values[0]) {
+                    style
+                        .modifier
+                        .borders
+                        .slice()
+                        .iter_mut()
+                        .for_each(|b| b.width = w);
+                }
+            } else {
+                for (v, width) in values
+                    .into_iter()
+                    .zip(style.modifier.borders.slice().iter_mut())
+                {
+                    if let Some(w) = parse_value(v) {
+                        width.width = w;
+                    }
+                }
+            }
+        }
+        _ => (),
     }
 }
 
-fn apply_display(_name: &str, _value: &str, _style: &mut StyleModifier) {}
+fn apply_animation(name: &str, _value: &str, _style: &mut StyleModifier) {
+    match name {
+        "animation" => {}
+        "animation-delay" => {}
+        "animation-direction =>{}" => {}
+        "animation-duration" => {}
+        "animation-fill-mode" => {}
+        "animation-itera =>{}tion-count" => {}
+        "animation-name" => {}
+        "animation-play-state" => {}
+        "animation-timing-function" => {}
+        _ => {}
+    }
+}
 
-fn apply_flex(_name: &str, _value: &str, _style: &mut StyleModifier) {}
+fn apply_font(name: &str, value: &str, style: &mut StyleModifier) {
+    use ratatui::style::Modifier;
+    match name {
+        "font" => (),
+        "font-family" => (),
+        "font-size" => (),
+        "font-size-adjust" => (),
+        "font-stretch" => (),
+        "font-style" => match value {
+            "italic" => style.core = style.core.add_modifier(Modifier::ITALIC),
+            "oblique" => style.core = style.core.add_modifier(Modifier::ITALIC),
+            _ => (),
+        },
+        "font-variant" => todo!("Implement font-variant"),
+        "font-weight" => match value {
+            "bold" => style.core = style.core.add_modifier(Modifier::BOLD),
+            "normal" => style.core = style.core.remove_modifier(Modifier::BOLD),
+            _ => (),
+        },
+        _ => (),
+    }
+}
 
-fn apply_font(_name: &str, _value: &str, _style: &mut StyleModifier) {}
+fn apply_text(name: &str, value: &str, style: &mut StyleModifier) {
+    use ratatui::style::Modifier;
 
-fn apply_size(_name: &str, _value: &str, _style: &mut StyleModifier) {}
+    match name {
+        "text-align" => todo!("Implement text-align"),
+        "text-align-last" => todo!("text-Implement align-last"),
+        "text-decoration" | "text-decoration-line" => {
+            for v in value.split(' ') {
+                match v {
+                    "line-through" => style.core = style.core.add_modifier(Modifier::CROSSED_OUT),
+                    "underline" => style.core = style.core.add_modifier(Modifier::UNDERLINED),
+                    _ => (),
+                }
+            }
+        }
+        "text-decoration-color" => todo!("text-Implement decoration-color"),
+        "text-decoration-style" => todo!("text-Implement decoration-style"),
+        "text-indent" => todo!("Implement text-indent"),
+        "text-justify" => todo!("Implement text-justify"),
+        "text-overflow" => todo!("Implement text-overflow"),
+        "text-shadow" => todo!("Implement text-shadow"),
+        "text-transform" => todo!("Implement text-transform"),
+        _ => todo!("Implement other text attributes"),
+    }
+}
 
-fn apply_line_height(_name: &str, _value: &str, _style: &mut StyleModifier) {}
-
-fn apply_margin(_name: &str, _value: &str, _style: &mut StyleModifier) {}
-
-fn apply_padding(_name: &str, _value: &str, _style: &mut StyleModifier) {}
-
-fn apply_positioning(_name: &str, _value: &str, _style: &mut StyleModifier) {}
-
-fn apply_text(_name: &str, _value: &str, _style: &mut StyleModifier) {}
-
-fn apply_white_space(_name: &str, _value: &str, _style: &mut StyleModifier) {}
+fn apply_transition(_name: &str, _value: &str, _style: &mut StyleModifier) {
+    todo!("Implement transitions")
+}
 
 const SORTED_STYLE_ATTRS: &[&str] = &[
     "animation",
@@ -454,4 +707,3 @@ const SORTED_STYLE_ATTRS: &[&str] = &[
     "min-width",
     "z-index",
 ];
-

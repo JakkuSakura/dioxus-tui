@@ -26,21 +26,26 @@ pub(crate) struct TextLike {
 
 impl TextLike {
     pub fn create(mut root: NodeMut, password: bool) -> Self {
-        let node_type = root.node_type();
-        let NodeType::Element(el) = &*node_type else { panic!("input must be an element") };
+        let value = {
+            let node_type = root.node_type();
+            let NodeType::Element(el) = &*node_type else {
+                panic!("input must be an element")
+            };
 
-        let value = el
-            .attributes
-            .get(&OwnedAttributeDiscription { name: "value".to_string(), namespace: None })
-            .and_then(|value| value.as_text())
-            .map(|value| value.to_string())
-            .unwrap_or_default();
+            el.attributes
+                .get(&OwnedAttributeDiscription { name: "value".to_string(), namespace: None })
+                .and_then(|value| value.as_text())
+                .map(|value| value.to_string())
+                .unwrap_or_default()
+        };
 
         let mut rdom = root.real_dom_mut();
         let label = rdom.create_node(value.clone());
         let label_id = label.id();
+        let size = value.chars().count();
 
-        let mut myself = TextLike { label_id, value, size: value.chars().count(), cursor: 0, password };
+        let myself = TextLike { label_id, value, size, cursor: size, password };
+        let mut rdom = rdom; // reuse binding mutability
         myself.sync_display(&mut rdom);
         myself
     }
@@ -86,4 +91,3 @@ impl TextLike {
         });
     }
 }
-

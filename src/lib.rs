@@ -20,7 +20,7 @@ use std::{
 
 use dioxus_core::{consume_context_from_scope, Element, ElementId, Event, ScopeId, VirtualDom};
 use dioxus_html::PlatformEventData;
-use runtime::{query::Query, Config, RenderingMode, Size, TuiContext};
+use runtime::query::Query;
 use runtime::{render, Driver};
 use dioxus_native_core::dioxus::{DioxusState, NodeImmutableDioxusExt};
 use dioxus_native_core::prelude::*;

@@ -9,7 +9,7 @@ use dioxus_native_core::{
 };
 use shipyard::UniqueView;
 
-use crate::runtime::hooks::FormData;
+use crate::runtime::hooks::{EventData, FormData};
 
 use super::{RinkWidget, WidgetContext};
 
@@ -80,36 +80,91 @@ impl CustomElement for Button {
     fn roots(&self) -> Vec<NodeId> { vec![self.text_id] }
 
     fn create(mut root: dioxus_native_core::real_dom::NodeMut) -> Self {
-        let node_type = root.node_type();
-        let NodeType::Element(el) = &*node_type else { panic!("input must be an element") };
+        let root_id = root.id();
+        let value = {
+            let node_type = root.node_type();
+            let NodeType::Element(el) = &*node_type else {
+                panic!("input must be an element")
+            };
 
-        let value = el
-            .attributes
-            .get(&OwnedAttributeDiscription { name: "value".to_string(), namespace: None })
-            .and_then(|value| value.as_text())
-            .map(|value| value.to_string())
-            .unwrap_or_default();
+            el.attributes
+                .get(&OwnedAttributeDiscription { name: "value".to_string(), namespace: None })
+                .and_then(|value| value.as_text())
+                .map(|value| value.to_string())
+                .unwrap_or_default()
+        };
 
         let mut rdom = root.real_dom_mut();
         let text = rdom.create_node(value.clone());
         let text_id = text.id();
         let mut myself = Button { text_id, value };
-        myself.update_size_attr(&mut rdom.get_mut(root.id()).unwrap().into());
+        {
+            let mut node = rdom.get_mut(root_id).unwrap();
+            let NodeTypeMut::Element(mut el) = node.node_type_mut() else {
+                panic!("input must be an element")
+            };
+            myself.update_size_attr(&mut el);
+        }
         myself.write_value(&mut rdom);
         myself
     }
 
     fn attributes_changed(&mut self, mut root: NodeMut, attributes: &AttributeMask) {
+        let root_id = root.id();
         let mut rdom = root.real_dom_mut();
-        let mut el = rdom.get_mut(root.id()).unwrap();
-        let NodeTypeMut::Element(mut el) = el.node_type_mut() else { return };
+        if let Some(mut node) = rdom.get_mut(root_id) {
+            let NodeTypeMut::Element(mut el) = node.node_type_mut() else { return };
+
+            if attributes.contains("value") {
+                self.update_value_attr(&el);
+            }
+            if attributes.contains("width") || attributes.contains("height") {
+                self.update_size_attr(&mut el);
+            }
+        }
 
         if attributes.contains("value") {
-            self.update_value_attr(&el); self.write_value(&mut rdom);
-        }
-        if attributes.contains("width") || attributes.contains("height") {
-            self.update_size_attr(&mut el);
+            self.write_value(&mut rdom);
         }
     }
 }
 
+impl RinkWidget for Button {
+    fn handle_event(
+        &mut self,
+        event: &crate::runtime::hooks::Event,
+        mut node: NodeMut,
+    ) {
+        match event.name {
+            "click" => {
+                let ctx: WidgetContext = {
+                    node.real_dom_mut()
+                        .raw_world_mut()
+                        .borrow::<UniqueView<WidgetContext>>()
+                        .expect("expected widget context")
+                        .clone()
+                };
+                self.switch(&ctx, node);
+            }
+            "keydown" => {
+                if let EventData::Keyboard(data) = &event.data {
+                    if !data.is_auto_repeating() {
+                        let ctx: WidgetContext = {
+                            node.real_dom_mut()
+                                .raw_world_mut()
+                                .borrow::<UniqueView<WidgetContext>>()
+                                .expect("expected widget context")
+                                .clone()
+                        };
+                        match data.key() {
+                            Key::Character(c) if c == " " => self.switch(&ctx, node),
+                            Key::Enter => self.switch(&ctx, node),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
