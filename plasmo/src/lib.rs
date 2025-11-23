@@ -46,15 +46,15 @@ pub use hooks::*;
 pub use query::Query;
 
 // the layout space has a multiplier of 10 to minimize rounding errors
-pub(crate) fn screen_to_layout_space(screen: u16) -> f32 {
+pub fn screen_to_layout_space(screen: u16) -> f32 {
     screen as f32 * 10.0
 }
 
-pub(crate) fn unit_to_layout_space(screen: f32) -> f32 {
+pub fn unit_to_layout_space(screen: f32) -> f32 {
     screen * 10.0
 }
 
-pub(crate) fn layout_to_screen_space(layout: f32) -> f32 {
+pub fn layout_to_screen_space(layout: f32) -> f32 {
     layout / 10.0
 }
 
@@ -374,7 +374,7 @@ fn bubble_event_to_widgets(rdom: &mut RealDom, event: &Event) {
     }
 }
 
-pub(crate) fn get_abs_layout(node: NodeRef, taffy: &Taffy) -> Layout {
+pub fn get_abs_layout(node: NodeRef, taffy: &Taffy) -> Layout {
     let mut node_layout = *taffy
         .layout(node.get::<TaffyLayout>().unwrap().node.unwrap())
         .unwrap();
