@@ -6,6 +6,7 @@ mod element;
 mod events;
 pub mod components;
 pub mod runtime;
+pub use runtime::{Config, RenderingMode, Size, TuiContext};
 pub mod engine {
     pub use dioxus_native_core::*;
 }
@@ -149,7 +150,7 @@ impl Driver for DioxusRenderer {
         rdom: &Arc<RwLock<RealDom>>,
         id: NodeId,
         event: &str,
-        value: Rc<plasmo::EventData>,
+        value: Rc<runtime::hooks::EventData>,
         bubbles: bool,
     ) {
         let id = { rdom.read().unwrap().get(id).unwrap().mounted_id() };

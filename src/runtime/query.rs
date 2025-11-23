@@ -8,7 +8,7 @@ use taffy::{
     Taffy,
 };
 
-use plasmo::{get_abs_layout, layout_to_screen_space};
+use crate::runtime::{get_abs_layout, layout_to_screen_space};
 
 /// Query layout information for rendered nodes.
 ///
@@ -81,4 +81,3 @@ pub(crate) fn get_layout(node: NodeRef, stretch: &Taffy) -> Option<Layout> {
         },
     })
 }
-
