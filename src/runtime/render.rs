@@ -1,4 +1,4 @@
-use dioxus_native_core::{prelude::*, tree::TreeRef};
+use crate::engine::{prelude::*, tree::TreeRef};
 use ratatui::{layout::Rect, style::Color};
 use taffy::{
     geometry::Point,
@@ -271,10 +271,9 @@ impl RinkWidget for NodeRef<'_> {
         }
 
         let style = self.get::<StyleModifier>().unwrap();
-        let mut borders = style.modifier.borders.clone();
+        let borders = style.modifier.borders.clone();
 
         if let Some(border_color) = borders.top.color.or(borders.right.color).or(borders.bottom.color).or(borders.left.color) {
-            let area = area;
             draw_rounded_rect(&mut buf, area, &borders, Some(border_color));
         }
 

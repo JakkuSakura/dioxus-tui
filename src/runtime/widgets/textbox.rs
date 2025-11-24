@@ -1,9 +1,8 @@
 use dioxus_html::HasKeyboardData;
-use dioxus_native_core::{
+use crate::engine::{
     custom_element::CustomElement,
     node_ref::AttributeMask,
-    prelude::NodeType,
-    real_dom::{NodeImmutable, NodeMut, RealDom},
+    real_dom::{NodeMut, RealDom},
     NodeId,
 };
 use shipyard::UniqueView;

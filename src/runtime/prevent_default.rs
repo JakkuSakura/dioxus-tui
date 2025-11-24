@@ -1,4 +1,4 @@
-use dioxus_native_core::prelude::*;
+use crate::engine::prelude::*;
 use dioxus_native_core_macro::partial_derive_state;
 use shipyard::Component;
 
@@ -28,9 +28,9 @@ impl State for PreventDefault {
     type ChildDependencies = ();
     type NodeDependencies = ();
 
-    const NODE_MASK: dioxus_native_core::node_ref::NodeMaskBuilder<'static> =
-        dioxus_native_core::node_ref::NodeMaskBuilder::new()
-            .with_attrs(dioxus_native_core::node_ref::AttributeMaskBuilder::Some(&[
+    const NODE_MASK: crate::engine::node_ref::NodeMaskBuilder<'static> =
+        crate::engine::node_ref::NodeMaskBuilder::new()
+            .with_attrs(crate::engine::node_ref::AttributeMaskBuilder::Some(&[
                 "dioxus-prevent-default",
             ]))
             .with_listeners();
@@ -84,4 +84,3 @@ impl State for PreventDefault {
         myself
     }
 }
-

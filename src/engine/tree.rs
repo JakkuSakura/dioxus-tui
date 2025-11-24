@@ -1,6 +1,6 @@
 //! A tree of nodes intigated with shipyard
 
-use crate::NodeId;
+use crate::engine::NodeId;
 use shipyard::{Component, EntitiesViewMut, Get, View, ViewMut};
 use std::fmt::Debug;
 

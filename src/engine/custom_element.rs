@@ -4,14 +4,14 @@
 
 // Used in doc links
 #[allow(unused)]
-use crate::real_dom::RealDom;
+use crate::engine::real_dom::RealDom;
 
 use std::sync::{Arc, RwLock};
 
 use rustc_hash::FxHashMap;
 use shipyard::Component;
 
-use crate::{
+use crate::engine::{
     node::{FromAnyValue, NodeType},
     node_ref::AttributeMask,
     prelude::{NodeImmutable, NodeMut},

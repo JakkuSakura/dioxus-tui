@@ -26,9 +26,8 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use dioxus_native_core::{prelude::*, tree::TreeRef};
-use dioxus_native_core::{node_ref::NodeMaskBuilder, real_dom::RealDom, FxDashSet, NodeId, SendAnyMap};
-use focus::FocusState;
+use crate::engine::{prelude::*, tree::TreeRef};
+use crate::engine::{node_ref::NodeMaskBuilder, real_dom::RealDom, FxDashSet, NodeId, SendAnyMap};
 use futures::{channel::mpsc::UnboundedSender, pin_mut, Future, StreamExt};
 use futures_channel::mpsc::unbounded;
 use layout::TaffyLayout;

@@ -1,5 +1,5 @@
 use dioxus_html::{input_data::keyboard_types::Key, HasKeyboardData};
-use dioxus_native_core::{
+use crate::engine::{
     custom_element::CustomElement,
     node_ref::AttributeMask,
     real_dom::{NodeImmutable, NodeMut, RealDom},

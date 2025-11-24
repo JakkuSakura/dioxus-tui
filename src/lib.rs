@@ -2,14 +2,36 @@
 #![doc(html_logo_url = "https://avatars.githubusercontent.com/u/79236386")]
 #![doc(html_favicon_url = "https://avatars.githubusercontent.com/u/79236386")]
 
+extern crate self as dioxus_native_core;
+
 mod element;
 mod events;
 pub mod components;
 pub mod runtime;
 pub use runtime::{Config, RenderingMode, Size, TuiContext};
-pub mod engine {
-    pub use dioxus_native_core::*;
-}
+pub mod engine;
+
+// Re-export engine modules at the crate root so existing
+// dioxus-native-core macro paths (dioxus_native_core::prelude, etc.)
+// continue to resolve correctly via the crate alias above.
+pub use crate::engine::{
+    custom_element,
+    dioxus,
+    layout_attributes,
+    node,
+    node_ref,
+    node_watcher,
+    passes,
+    real_dom,
+    tree,
+    utils,
+    exports,
+    prelude,
+    FxDashMap,
+    FxDashSet,
+    NodeId,
+    SendAnyMap,
+};
 
 use std::{
     any::Any,
@@ -22,8 +44,8 @@ use dioxus_core::{consume_context_from_scope, Element, ElementId, Event, ScopeId
 use dioxus_html::PlatformEventData;
 use runtime::query::Query;
 use runtime::{render, Driver};
-use dioxus_native_core::dioxus::{DioxusState, NodeImmutableDioxusExt};
-use dioxus_native_core::prelude::*;
+use crate::engine::dioxus::DioxusState;
+use crate::engine::prelude::*;
 
 use element::DioxusTUIMutationWriter;
 
@@ -153,7 +175,11 @@ impl Driver for DioxusRenderer {
         value: Rc<runtime::hooks::EventData>,
         bubbles: bool,
     ) {
-        let id = { rdom.read().unwrap().get(id).unwrap().mounted_id() };
+        let id = {
+            let guard = rdom.read().unwrap();
+            let node = guard.get(id).unwrap();
+            crate::engine::dioxus::NodeImmutableDioxusExt::<()>::mounted_id(&node)
+        };
         if let Some(id) = id {
             let inner_value = value.deref().clone();
             let boxed_event = Box::new(inner_value);

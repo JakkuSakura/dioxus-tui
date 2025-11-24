@@ -1,6 +1,6 @@
 //! Helpers for watching for changes in the DOM tree.
 
-use crate::{node::FromAnyValue, node_ref::AttributeMask, prelude::*};
+use crate::engine::{node::FromAnyValue, node_ref::AttributeMask, prelude::*};
 
 /// A trait for watching for changes in the DOM tree.
 pub trait NodeWatcher<V: FromAnyValue + Send + Sync> {

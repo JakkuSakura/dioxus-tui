@@ -10,20 +10,20 @@ use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 
-use crate::custom_element::{
+use crate::engine::custom_element::{
     CustomElement, CustomElementFactory, CustomElementManager, CustomElementRegistry,
     CustomElementUpdater,
 };
-use crate::node::{
+use crate::engine::node::{
     ElementNode, FromAnyValue, NodeType, OwnedAttributeDiscription, OwnedAttributeValue, TextNode,
 };
-use crate::node_ref::{NodeMask, NodeMaskBuilder};
-use crate::node_watcher::{AttributeWatcher, NodeWatcher};
-use crate::passes::{Dependant, DirtyNodeStates, PassDirection, TypeErasedState};
-use crate::prelude::AttributeMaskBuilder;
-use crate::tree::{TreeMut, TreeMutView, TreeRef, TreeRefView};
-use crate::NodeId;
-use crate::{FxDashSet, SendAnyMap};
+use crate::engine::node_ref::{NodeMask, NodeMaskBuilder};
+use crate::engine::node_watcher::{AttributeWatcher, NodeWatcher};
+use crate::engine::passes::{Dependant, DirtyNodeStates, PassDirection, TypeErasedState};
+use crate::engine::prelude::AttributeMaskBuilder;
+use crate::engine::tree::{TreeMut, TreeMutView, TreeRef, TreeRefView};
+use crate::engine::NodeId;
+use crate::engine::{FxDashSet, SendAnyMap};
 
 /// The context passes can receive when they are executed
 #[derive(Unique)]

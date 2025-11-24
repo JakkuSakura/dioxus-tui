@@ -1,5 +1,5 @@
 use dioxus_html::{input_data::keyboard_types::Key, HasKeyboardData};
-use dioxus_native_core::{
+use crate::engine::{
     custom_element::CustomElement,
     node::OwnedAttributeDiscription,
     node_ref::AttributeMask,
@@ -120,7 +120,7 @@ impl CustomElement for CheckBox {
 
     fn roots(&self) -> Vec<NodeId> { vec![self.text_id] }
 
-    fn create(mut root: dioxus_native_core::real_dom::NodeMut) -> Self {
+    fn create(mut root: crate::engine::real_dom::NodeMut) -> Self {
         let node_type = root.node_type();
         let NodeType::Element(el) = &*node_type else { panic!("input must be an element") };
 
@@ -152,8 +152,8 @@ impl CustomElement for CheckBox {
 
     fn attributes_changed(
         &mut self,
-        mut root: dioxus_native_core::real_dom::NodeMut,
-        attributes: &dioxus_native_core::node_ref::AttributeMask,
+        mut root: crate::engine::real_dom::NodeMut,
+        attributes: &crate::engine::node_ref::AttributeMask,
     ) {
         match attributes {
             AttributeMask::All => {
@@ -189,7 +189,7 @@ impl CustomElement for CheckBox {
 }
 
 impl RinkWidget for CheckBox {
-    fn handle_event(&mut self, event: &Event, node: dioxus_native_core::real_dom::NodeMut) {
+    fn handle_event(&mut self, event: &Event, node: crate::engine::real_dom::NodeMut) {
         match event.name {
             "click" => self.switch(node),
             "keydown" => {

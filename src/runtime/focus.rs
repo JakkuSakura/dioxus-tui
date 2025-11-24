@@ -1,6 +1,6 @@
 use crate::runtime::prevent_default::PreventDefault;
 
-use dioxus_native_core::{
+use crate::engine::{
     node_ref::{AttributeMaskBuilder, NodeMaskBuilder},
     prelude::*,
     real_dom::NodeImmutable,
@@ -14,7 +14,7 @@ use shipyard::{Get, ViewMut};
 
 use std::{cmp::Ordering, num::NonZeroU16};
 
-use dioxus_native_core::node_ref::NodeView;
+use crate::engine::node_ref::NodeView;
 
 #[derive(Component)]
 pub struct Focused(pub bool);

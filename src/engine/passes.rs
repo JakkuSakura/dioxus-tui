@@ -7,12 +7,12 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use crate::node::{FromAnyValue, NodeType};
-use crate::node_ref::{NodeMaskBuilder, NodeView};
-use crate::real_dom::{DirtyNodesResult, SendAnyMapWrapper};
-use crate::tree::{TreeRef, TreeRefView};
-use crate::SendAnyMap;
-use crate::{NodeId, NodeMask};
+use crate::engine::node::{FromAnyValue, NodeType};
+use crate::engine::node_ref::{NodeMaskBuilder, NodeView};
+use crate::engine::real_dom::{DirtyNodesResult, SendAnyMapWrapper};
+use crate::engine::tree::{TreeRef, TreeRefView};
+use crate::engine::SendAnyMap;
+use crate::engine::{NodeId, NodeMask};
 
 #[derive(Default)]
 struct DirtyNodes {

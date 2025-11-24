@@ -1,4 +1,4 @@
-use dioxus_native_core::{
+use crate::engine::{
     custom_element::CustomElement, node::OwnedAttributeDiscription, prelude::NodeType,
     real_dom::NodeImmutable,
 };
@@ -25,7 +25,7 @@ pub(crate) enum Input {
 impl CustomElement for Input {
     const NAME: &'static str = "input";
 
-    fn roots(&self) -> Vec<dioxus_native_core::NodeId> {
+    fn roots(&self) -> Vec<crate::engine::NodeId> {
         match self {
             Input::Button(button) => button.roots(),
             Input::CheckBox(checkbox) => checkbox.roots(),
@@ -36,7 +36,7 @@ impl CustomElement for Input {
         }
     }
 
-    fn slot(&self) -> Option<dioxus_native_core::NodeId> {
+    fn slot(&self) -> Option<crate::engine::NodeId> {
         match self {
             Input::Button(button) => button.slot(),
             Input::CheckBox(checkbox) => checkbox.slot(),
@@ -47,7 +47,7 @@ impl CustomElement for Input {
         }
     }
 
-    fn create(mut root: dioxus_native_core::real_dom::NodeMut) -> Self {
+    fn create(mut root: crate::engine::real_dom::NodeMut) -> Self {
         {
             let children = root.child_ids();
             let rdom = root.real_dom_mut();
@@ -82,8 +82,8 @@ impl CustomElement for Input {
 
     fn attributes_changed(
         &mut self,
-        root: dioxus_native_core::real_dom::NodeMut,
-        attributes: &dioxus_native_core::node_ref::AttributeMask,
+        root: crate::engine::real_dom::NodeMut,
+        attributes: &crate::engine::node_ref::AttributeMask,
     ) {
         match self {
             Input::Button(button) => button.attributes_changed(root, attributes),
@@ -97,7 +97,7 @@ impl CustomElement for Input {
 }
 
 impl RinkWidget for Input {
-    fn handle_event(&mut self, event: &crate::runtime::hooks::Event, node: dioxus_native_core::real_dom::NodeMut) {
+    fn handle_event(&mut self, event: &crate::runtime::hooks::Event, node: crate::engine::real_dom::NodeMut) {
         match self {
             Input::Button(button) => button.handle_event(event, node),
             Input::CheckBox(checkbox) => checkbox.handle_event(event, node),
@@ -108,4 +108,3 @@ impl RinkWidget for Input {
         }
     }
 }
-

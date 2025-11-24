@@ -2,7 +2,7 @@ use dioxus_html::{
     input_data::keyboard_types::{Code, Modifiers},
     HasKeyboardData, ModifiersInteraction,
 };
-use dioxus_native_core::{
+use crate::engine::{
     custom_element::CustomElement,
     node::OwnedAttributeDiscription,
     node_ref::AttributeMask,
@@ -496,4 +496,3 @@ impl RinkWidget for TabView {
         }
     }
 }
-

@@ -1,12 +1,12 @@
 use std::sync::{Arc, Mutex};
 
-use dioxus_native_core::exports::shipyard::Component;
-use dioxus_native_core::layout_attributes::{
+use crate::engine::exports::shipyard::Component;
+use crate::engine::layout_attributes::{
     apply_layout_attributes_cfg, BorderWidths, LayoutConfigeration,
 };
-use dioxus_native_core::node::OwnedAttributeView;
-use dioxus_native_core::node_ref::{AttributeMaskBuilder, NodeMaskBuilder, NodeView};
-use dioxus_native_core::prelude::*;
+use crate::engine::node::OwnedAttributeView;
+use crate::engine::node_ref::{AttributeMaskBuilder, NodeMaskBuilder, NodeView};
+use crate::engine::prelude::*;
 use dioxus_native_core_macro::partial_derive_state;
 use taffy::prelude::*;
 

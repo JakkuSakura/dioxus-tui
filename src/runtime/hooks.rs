@@ -1,33 +1,23 @@
-use crossterm::event::{
-    Event as TermEvent, KeyCode as TermKeyCode, KeyModifiers, ModifierKeyCode, MouseButton,
-    MouseEventKind,
-};
+use crossterm::event::Event as TermEvent;
 use dioxus_core_types::event_bubbles;
 use dioxus_html::{
-    geometry::{ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint},
-    input_data::keyboard_types::{Code, Key, Location, Modifiers},
-    input_data::{MouseButton as DioxusMouseButton, MouseButtonSet as DioxusMouseButtons},
-    point_interaction::SerializedPointInteraction,
-    FileData, FormValue, HasFileData, HasFormData, HasKeyboardData, HasWheelData,
-    InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
+    input_data::keyboard_types::{Code, Modifiers},
+    FileData, FormValue, HasFileData, HasFormData, HasKeyboardData,
+    InteractionElementOffset, ModifiersInteraction,
     SerializedFocusData, SerializedKeyboardData, SerializedMouseData, SerializedWheelData,
 };
-use dioxus_native_core::prelude::*;
-use dioxus_native_core::real_dom::NodeImmutable;
-use rustc_hash::{FxHashMap, FxHashSet};
+use crate::engine::prelude::*;
+use crate::engine::real_dom::NodeImmutable;
+use rustc_hash::FxHashSet;
 use std::any::Any;
 use std::{
-    cell::{RefCell, RefMut},
     rc::Rc,
     time::{Duration, Instant},
 };
-use taffy::geometry::{Point, Size};
-use taffy::{prelude::Layout, Taffy};
+use taffy::Taffy;
 
-use crate::runtime::focus::{Focus, Focused, FocusState};
+use crate::runtime::focus::FocusState;
 use crate::runtime::layout::TaffyLayout;
-use crate::runtime::get_abs_layout;
-use crate::runtime::layout_to_screen_space;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
@@ -222,13 +212,12 @@ impl InnerInputState {
         };
 
         let mut last_over = FxHashSet::default();
-        let mut current_over = FxHashSet::default();
 
         if let Some(prev_mouse) = previous_mouse {
             last_over = self.get_mouse_over(prev_mouse, layout, dom);
         }
 
-        current_over = self.get_mouse_over(mouse.clone(), layout, dom);
+        let current_over = self.get_mouse_over(mouse.clone(), layout, dom);
 
         let entered: FxHashSet<_> = current_over.difference(&last_over).copied().collect();
         let exited: FxHashSet<_> = last_over.difference(&current_over).copied().collect();

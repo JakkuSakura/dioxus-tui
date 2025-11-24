@@ -2,7 +2,7 @@ use dioxus_html::{
     input_data::keyboard_types::Key, HasKeyboardData, InteractionElementOffset, PointerInteraction,
     SerializedKeyboardData, SerializedMouseData,
 };
-use dioxus_native_core::{
+use crate::engine::{
     custom_element::CustomElement,
     node::{OwnedAttributeDiscription, OwnedAttributeValue},
     node_ref::AttributeMask,
@@ -187,7 +187,7 @@ impl CustomElement for Slider {
 
     fn roots(&self) -> Vec<NodeId> { vec![self.div_wrapper] }
 
-    fn create(mut root: dioxus_native_core::real_dom::NodeMut) -> Self {
+    fn create(mut root: crate::engine::real_dom::NodeMut) -> Self {
         let node_type = root.node_type();
         let NodeType::Element(el) = &*node_type else { panic!("input must be an element") };
 
@@ -291,8 +291,8 @@ impl CustomElement for Slider {
 
     fn attributes_changed(
         &mut self,
-        mut root: dioxus_native_core::real_dom::NodeMut,
-        attributes: &dioxus_native_core::node_ref::AttributeMask,
+        mut root: crate::engine::real_dom::NodeMut,
+        attributes: &crate::engine::node_ref::AttributeMask,
     ) {
         match attributes {
             AttributeMask::All => {
@@ -338,7 +338,7 @@ impl CustomElement for Slider {
 }
 
 impl RinkWidget for Slider {
-    fn handle_event(&mut self, event: &Event, node: dioxus_native_core::real_dom::NodeMut) {
+    fn handle_event(&mut self, event: &Event, node: crate::engine::real_dom::NodeMut) {
         match event.name {
             "keydown" => {
                 if let EventData::Keyboard(data) = &event.data {
@@ -359,4 +359,3 @@ impl RinkWidget for Slider {
         }
     }
 }
-

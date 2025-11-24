@@ -1,11 +1,11 @@
 //! Integration between Dioxus and the RealDom
 
-use crate::tree::TreeMut;
+use crate::engine::tree::TreeMut;
 use dioxus_core::{AttributeValue, ElementId, Template, TemplateNode, WriteMutations};
 use rustc_hash::{FxHashMap, FxHashSet};
 use shipyard::Component;
 
-use crate::{
+use crate::engine::{
     node::{
         ElementNode, FromAnyValue, NodeType, OwnedAttributeDiscription, OwnedAttributeValue,
         TextNode,

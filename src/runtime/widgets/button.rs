@@ -1,5 +1,5 @@
 use dioxus_html::{input_data::keyboard_types::Key, HasKeyboardData};
-use dioxus_native_core::{
+use crate::engine::{
     custom_element::CustomElement,
     node::OwnedAttributeDiscription,
     node_ref::AttributeMask,
@@ -79,7 +79,7 @@ impl CustomElement for Button {
 
     fn roots(&self) -> Vec<NodeId> { vec![self.text_id] }
 
-    fn create(mut root: dioxus_native_core::real_dom::NodeMut) -> Self {
+    fn create(mut root: crate::engine::real_dom::NodeMut) -> Self {
         let root_id = root.id();
         let value = {
             let node_type = root.node_type();

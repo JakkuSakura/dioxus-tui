@@ -1,19 +1,13 @@
-use dioxus_native_core::{
+use crate::engine::{
     node::OwnedAttributeDiscription,
     prelude::NodeType,
-    real_dom::{ElementNodeMut, NodeImmutable, NodeMut, NodeTypeMut, RealDom},
+    real_dom::{NodeImmutable, NodeMut, NodeTypeMut, RealDom},
     NodeId,
 };
 
 use crate::runtime::hooks::FormData;
 
-use super::{RinkWidget, WidgetContext};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TextLikeType {
-    Text,
-    Password,
-}
+use super::WidgetContext;
 
 #[derive(Debug, Default)]
 pub(crate) struct TextLike {
@@ -39,13 +33,13 @@ impl TextLike {
                 .unwrap_or_default()
         };
 
-        let mut rdom = root.real_dom_mut();
+        let rdom = root.real_dom_mut();
         let label = rdom.create_node(value.clone());
         let label_id = label.id();
         let size = value.chars().count();
 
         let myself = TextLike { label_id, value, size, cursor: size, password };
-        let mut rdom = rdom; // reuse binding mutability
+        let mut rdom = root.real_dom_mut();
         myself.sync_display(&mut rdom);
         myself
     }

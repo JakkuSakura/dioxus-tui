@@ -14,8 +14,13 @@ dioxus = { version = "0.7.1" }
 dioxus-core = { version = "0.7.1", features = ["serialize"] }
 dioxus-html = { version = "0.7.1" }
 dioxus-core-types = "0.7.1"
-dioxus-native-core = { path = "native-core", features = ["dioxus", "layout-attributes"] }
-dioxus-native-core-macro = { path = "native-core-macro" }
+keyboard-types = "0.7"
+smallvec = "1.6"
+anymap3 = "1.0.1"
+parking_lot = { version = "0.12.1", features = ["send_guard"] }
+dashmap = "5.4.0"
+dioxus-native-core-macro = "0.5.0-alpha.0"
+lightningcss = "1.0.0-alpha.39"
 dioxus-hot-reload = { version = "0.6.0-alpha.2", optional = true }
 
 crossterm = "0.26.1"

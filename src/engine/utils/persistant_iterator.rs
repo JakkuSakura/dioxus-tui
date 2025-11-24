@@ -1,6 +1,6 @@
 use smallvec::SmallVec;
 
-use crate::{
+use crate::engine::{
     node::FromAnyValue,
     node_watcher::NodeWatcher,
     prelude::{NodeMut, NodeRef},
@@ -197,8 +197,8 @@ impl PersistantElementIter {
 #[test]
 #[allow(unused_variables)]
 fn traverse() {
-    use crate::dioxus::DioxusState;
-    use crate::prelude::*;
+    use crate::engine::dioxus::DioxusState;
+    use crate::engine::prelude::*;
     use dioxus::prelude::*;
     #[allow(non_snake_case)]
     fn Base() -> Element {
@@ -294,8 +294,8 @@ fn traverse() {
 #[test]
 #[allow(unused_variables)]
 fn persist_removes() {
-    use crate::dioxus::DioxusState;
-    use crate::prelude::*;
+    use crate::engine::dioxus::DioxusState;
+    use crate::engine::prelude::*;
     use dioxus::prelude::*;
     #[allow(non_snake_case)]
     fn Base() -> Element {
@@ -367,8 +367,8 @@ fn persist_removes() {
 #[test]
 #[allow(unused_variables)]
 fn persist_instertions_before() {
-    use crate::dioxus::DioxusState;
-    use crate::prelude::*;
+    use crate::engine::dioxus::DioxusState;
+    use crate::engine::prelude::*;
     use dioxus::prelude::*;
     #[allow(non_snake_case)]
     fn Base() -> Element {
@@ -418,8 +418,8 @@ fn persist_instertions_before() {
 #[test]
 #[allow(unused_variables)]
 fn persist_instertions_after() {
-    use crate::dioxus::DioxusState;
-    use crate::prelude::*;
+    use crate::engine::dioxus::DioxusState;
+    use crate::engine::prelude::*;
     use dioxus::prelude::*;
     #[allow(non_snake_case)]
     fn Base() -> Element {

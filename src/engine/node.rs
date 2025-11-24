@@ -200,7 +200,6 @@ impl<V: FromAnyValue> Display for OwnedAttributeValue<V> {
     }
 }
 
-#[cfg(feature = "dioxus")]
 impl<V: FromAnyValue> From<&dioxus_core::AttributeValue> for OwnedAttributeValue<V> {
     fn from(value: &dioxus_core::AttributeValue) -> Self {
         match value {

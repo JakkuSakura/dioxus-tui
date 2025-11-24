@@ -2,7 +2,7 @@
 
 use rustc_hash::FxHashSet;
 
-use crate::{
+use crate::engine::{
     node::{ElementNode, FromAnyValue, NodeType, OwnedAttributeView},
     NodeId,
 };

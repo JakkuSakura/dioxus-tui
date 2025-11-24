@@ -12,7 +12,7 @@ use dioxus_html::{
     MountedData, MountedError, RenderedElementBacking,
 };
 
-use dioxus_native_core::{dioxus::DioxusNativeCoreMutationWriter, NodeId};
+use crate::engine::{dioxus::DioxusNativeCoreMutationWriter, NodeId};
 use crate::runtime::query::{ElementRef, Query};
 
 pub(crate) struct DioxusTUIMutationWriter<'a> {

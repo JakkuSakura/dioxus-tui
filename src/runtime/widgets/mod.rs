@@ -10,7 +10,7 @@ mod textbox;
 
 use std::sync::{Arc, RwLock};
 
-use dioxus_native_core::{
+use crate::engine::{
     custom_element::{CustomElement, CustomElementUpdater},
     real_dom::{NodeMut, RealDom},
 };
@@ -27,15 +27,15 @@ pub(crate) fn register_widgets(rdom: &mut RealDom, sender: UnboundedSender<Event
 }
 
 trait RinkWidget: Sync + Send + CustomElement + 'static {
-    fn handle_event(&mut self, event: &Event, node: dioxus_native_core::real_dom::NodeMut);
+    fn handle_event(&mut self, event: &Event, node: crate::engine::real_dom::NodeMut);
 }
 
 pub trait RinkWidgetResponder: CustomElementUpdater {
-    fn handle_event(&mut self, event: &Event, node: dioxus_native_core::real_dom::NodeMut);
+    fn handle_event(&mut self, event: &Event, node: crate::engine::real_dom::NodeMut);
 }
 
 impl<W: RinkWidget> RinkWidgetResponder for W {
-    fn handle_event(&mut self, event: &Event, node: dioxus_native_core::real_dom::NodeMut) {
+    fn handle_event(&mut self, event: &Event, node: crate::engine::real_dom::NodeMut) {
         RinkWidget::handle_event(self, event, node)
     }
 }
@@ -65,19 +65,19 @@ impl<W: RinkWidget> CustomElement for RinkWidgetWrapper<W> {
 
     fn attributes_changed(
         &mut self,
-        root: dioxus_native_core::real_dom::NodeMut,
-        attributes: &dioxus_native_core::node_ref::AttributeMask,
+        root: crate::engine::real_dom::NodeMut,
+        attributes: &crate::engine::node_ref::AttributeMask,
     ) {
         let mut widget = self.inner.widget.write().unwrap();
         widget.attributes_changed(root, attributes);
     }
 
-    fn roots(&self) -> Vec<dioxus_native_core::NodeId> {
+    fn roots(&self) -> Vec<crate::engine::NodeId> {
         let widget = self.inner.widget.read().unwrap();
         widget.roots()
     }
 
-    fn slot(&self) -> Option<dioxus_native_core::NodeId> {
+    fn slot(&self) -> Option<crate::engine::NodeId> {
         let widget = self.inner.widget.read().unwrap();
         widget.slot()
     }
@@ -91,26 +91,26 @@ pub(crate) struct RinkWidgetTraitObject {
 impl CustomElementUpdater for RinkWidgetTraitObject {
     fn attributes_changed(
         &mut self,
-        light_root: dioxus_native_core::real_dom::NodeMut,
-        attributes: &dioxus_native_core::node_ref::AttributeMask,
+        light_root: crate::engine::real_dom::NodeMut,
+        attributes: &crate::engine::node_ref::AttributeMask,
     ) {
         let mut widget = self.widget.write().unwrap();
         widget.attributes_changed(light_root, attributes);
     }
 
-    fn roots(&self) -> Vec<dioxus_native_core::NodeId> {
+    fn roots(&self) -> Vec<crate::engine::NodeId> {
         let widget = self.widget.read().unwrap();
         widget.roots()
     }
 
-    fn slot(&self) -> Option<dioxus_native_core::NodeId> {
+    fn slot(&self) -> Option<crate::engine::NodeId> {
         let widget = self.widget.read().unwrap();
         widget.slot()
     }
 }
 
 impl RinkWidgetResponder for RinkWidgetTraitObject {
-    fn handle_event(&mut self, event: &Event, node: dioxus_native_core::real_dom::NodeMut) {
+    fn handle_event(&mut self, event: &Event, node: crate::engine::real_dom::NodeMut) {
         let mut widget = self.widget.write().unwrap();
         widget.handle_event(event, node);
     }
@@ -126,4 +126,3 @@ impl WidgetContext {
         self.sender.unbounded_send(event).unwrap();
     }
 }
-

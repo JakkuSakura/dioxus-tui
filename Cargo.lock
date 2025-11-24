@@ -896,24 +896,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-native-core"
-version = "0.5.0-alpha.2"
-dependencies = [
- "anymap3",
- "dashmap",
- "dioxus-core 0.7.1",
- "keyboard-types",
- "lightningcss",
- "parking_lot",
- "rustc-hash 1.1.0",
- "shipyard",
- "smallvec",
- "taffy",
-]
-
-[[package]]
 name = "dioxus-native-core-macro"
-version = "0.5.0-alpha.2"
+version = "0.5.0-alpha.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d2403bc533eae8b7824431cd89e5340c18a20eda8e1b06751caa4a6812cb948"
 dependencies = [
  "quote",
  "syn 2.0.110",
@@ -1008,21 +994,26 @@ name = "dioxus-tui"
 version = "0.5.0-alpha.2"
 dependencies = [
  "anyhow",
+ "anymap3",
  "criterion",
  "crossterm 0.26.1",
+ "dashmap",
  "dioxus",
  "dioxus-core 0.7.1",
  "dioxus-core-types 0.7.1",
  "dioxus-hot-reload",
  "dioxus-html 0.7.1",
- "dioxus-native-core",
  "dioxus-native-core-macro",
  "futures",
  "futures-channel",
+ "keyboard-types",
+ "lightningcss",
  "once_cell",
+ "parking_lot",
  "ratatui",
  "rustc-hash 1.1.0",
  "shipyard",
+ "smallvec",
  "taffy",
  "tokio",
 ]
