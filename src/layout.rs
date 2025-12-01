@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::element::DebugNode;
 use ratatui::layout::{Alignment, Rect as UiRect};
 use taffy::prelude::*;
-use taffy::{NodeId, Taffy};
+use taffy::{NodeId, TaffyTree};
 
 pub struct LayoutNode {
     pub id: dioxus_core::ElementId,
@@ -17,7 +17,7 @@ pub struct LayoutNode {
 
 /// Build layout using Taffy (flexbox) to better mirror web semantics.
 pub fn build_layout(nodes: &[DebugNode], root: &DebugNode, area: UiRect) -> LayoutNode {
-    let mut taffy = Taffy::new();
+    let mut taffy: TaffyTree<()> = TaffyTree::new();
     let mut id_map: HashMap<dioxus_core::ElementId, &DebugNode> =
         nodes.iter().map(|n| (n.id, n)).collect();
 
@@ -99,7 +99,7 @@ pub fn build_layout(nodes: &[DebugNode], root: &DebugNode, area: UiRect) -> Layo
     }
 
     fn build_tree(
-        taffy: &mut TaffyTree<MeasureFunc>,
+        taffy: &mut TaffyTree<()>,
         node: &DebugNode,
         map: &HashMap<dioxus_core::ElementId, &DebugNode>,
         visited: &mut HashSet<dioxus_core::ElementId>,
@@ -156,7 +156,7 @@ pub fn build_layout(nodes: &[DebugNode], root: &DebugNode, area: UiRect) -> Layo
     };
     let _ = taffy.compute_layout(root_handle, size);
 
-    fn apply_layout(taffy: &TaffyTree<MeasureFunc>, handle: NodeId, layout_node: &mut LayoutNode) {
+    fn apply_layout(taffy: &TaffyTree<()>, handle: NodeId, layout_node: &mut LayoutNode) {
         if let Ok(layout) = taffy.layout(handle) {
             layout_node.rect = UiRect::new(
                 layout.location.x as u16,
