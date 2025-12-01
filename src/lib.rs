@@ -6,6 +6,8 @@ mod element;
 mod events;
 mod hooks;
 mod config;
+mod layout;
+mod widgets;
 pub mod components;
 
 pub use config::{Config, RenderingMode, ColorMode};
@@ -219,12 +221,8 @@ fn render(
 
                 if let Some(term) = &mut terminal {
                     execute!(term.backend_mut(), SavePosition).unwrap();
-                    let lines = renderer.text_snapshot();
-                    let joined = lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n");
                     term.draw(|f| {
-                        let area = f.area();
-                        let paragraph = ratatui::widgets::Paragraph::new(joined.clone());
-                        f.render_widget(paragraph, area);
+                        widgets::render_tree(f, &renderer.nodes_snapshot(), renderer.root_id());
                     }).unwrap();
                     execute!(term.backend_mut(), RestorePosition, Show).unwrap();
                 }
@@ -246,6 +244,7 @@ pub trait Driver {
     fn poll_async(&mut self) -> Pin<Box<dyn Future<Output = ()> + '_>>;
     fn root_id(&self) -> Option<ElementId>;
     fn text_snapshot(&self) -> Vec<crate::element::DebugText>;
+    fn nodes_snapshot(&self) -> Vec<crate::element::DebugNode>;
 }
 
 pub(crate) struct DioxusRenderer {
@@ -307,5 +306,9 @@ impl Driver for DioxusRenderer {
 
     fn text_snapshot(&self) -> Vec<crate::element::DebugText> {
         self.dom.texts()
+    }
+
+    fn nodes_snapshot(&self) -> Vec<crate::element::DebugNode> {
+        self.dom.nodes()
     }
 }
