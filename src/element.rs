@@ -6,6 +6,7 @@ use dioxus_core::{ElementId, Template, WriteMutations};
 pub struct DomState {
     root: Option<ElementId>,
     nodes: HashSet<ElementId>,
+    texts: Vec<(ElementId, String)>,
 }
 
 impl DomState {
@@ -15,6 +16,18 @@ impl DomState {
 
     pub fn writer(&mut self) -> DomWriter<'_> {
         DomWriter { dom: self }
+    }
+
+    pub fn texts(&self) -> Vec<String> {
+        self.texts.iter().map(|(_, t)| t.clone()).collect()
+    }
+
+    fn upsert_text(&mut self, id: ElementId, value: String) {
+        if let Some((_, existing)) = self.texts.iter_mut().find(|(tid, _)| *tid == id) {
+            *existing = value;
+        } else {
+            self.texts.push((id, value));
+        }
     }
 
     fn touch(&mut self, id: ElementId) {
@@ -40,6 +53,7 @@ impl WriteMutations for DomWriter<'_> {
     }
 
     fn create_text_node(&mut self, _value: &str, id: ElementId) {
+        self.dom.upsert_text(id, _value.to_string());
         self.dom.touch(id)
     }
 
@@ -66,6 +80,7 @@ impl WriteMutations for DomWriter<'_> {
     }
 
     fn set_node_text(&mut self, _value: &str, id: ElementId) {
+        self.dom.upsert_text(id, _value.to_string());
         self.dom.touch(id)
     }
 
@@ -79,6 +94,7 @@ impl WriteMutations for DomWriter<'_> {
 
     fn remove_node(&mut self, id: ElementId) {
         self.dom.nodes.remove(&id);
+        self.dom.texts.retain(|(tid, _)| *tid != id);
     }
 
     fn push_root(&mut self, id: ElementId) {

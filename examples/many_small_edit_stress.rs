@@ -6,7 +6,7 @@ fn main() {
     for size in 1..=20usize {
         for _ in 0..10 {
             let dom = VirtualDom::new(app).with_root_context(size);
-            dioxus_tui::launch_vdom_cfg(dom, Config::default().with_headless())
+            dioxus_tui::launch_vdom_cfg(dom, Config::default().with_rendering_mode(dioxus_tui::RenderingMode::Headless))
         }
     }
 }

@@ -3,7 +3,7 @@ use dioxus::prelude::*;
 fn main() {
     dioxus_tui::launch_cfg(
         app,
-        dioxus_tui::Config::default().with_rendering_mode(dioxus_tui::RenderingMode::Ansi),
+        dioxus_tui::Config::default().with_color_mode(dioxus_tui::ColorMode::Ansi),
     );
 }
 

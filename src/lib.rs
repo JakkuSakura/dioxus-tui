@@ -8,7 +8,7 @@ mod hooks;
 mod config;
 pub mod components;
 
-pub use config::{Config, RenderingMode};
+pub use config::{Config, RenderingMode, ColorMode};
 pub use hooks::EventData;
 
 use std::{any::Any, pin::Pin, rc::Rc, time::Duration};
@@ -125,22 +125,28 @@ fn render(
     mut raw_event_reciever: UnboundedReceiver<InputEvent>,
     event_tx: UnboundedSender<InputEvent>,
 ) -> Result<()> {
-    if !cfg.headless {
+    if cfg.rendering_mode != config::RenderingMode::Headless {
         let tx = event_tx.clone();
         std::thread::spawn(move || {
             let tick_rate = Duration::from_millis(10);
             loop {
-                if crossterm::event::poll(tick_rate).unwrap() {
-                    let evt = crossterm::event::read().unwrap();
-                    if tx.unbounded_send(InputEvent::UserInput(evt)).is_err() {
-                        break;
-                    }
+                match crossterm::event::poll(tick_rate) {
+                    Ok(true) => match crossterm::event::read() {
+                        Ok(evt) => {
+                            if tx.unbounded_send(InputEvent::UserInput(evt)).is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    },
+                    Ok(false) => {}
+                    Err(_) => break,
                 }
             }
         });
     }
 
-    let mut terminal = (!cfg.headless).then(|| {
+    let mut terminal = (cfg.rendering_mode != config::RenderingMode::Headless).then(|| {
         enable_raw_mode().unwrap();
         let mut stdout = std::io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture).unwrap();
@@ -195,7 +201,20 @@ fn render(
 
                 if let Some(term) = &mut terminal {
                     execute!(term.backend_mut(), SavePosition).unwrap();
-                    term.draw(|_| {}).unwrap();
+                    let lines = renderer.text_snapshot();
+                    term.draw(|f| {
+                        let area = f.area();
+                        let block = ratatui::widgets::Block::default().title("dioxus-tui").borders(ratatui::widgets::Borders::ALL);
+                        f.render_widget(&block, area);
+                        let content = if cfg.rendering_mode == crate::config::RenderingMode::Debug {
+                            lines.iter().enumerate().map(|(i, l)| format!("[{i}] {l}")).collect::<Vec<_>>().join("\n")
+                        } else {
+                            lines.join("\n")
+                        };
+                        let paragraph = ratatui::widgets::Paragraph::new(content);
+                        let inner = block.inner(area);
+                        f.render_widget(paragraph, inner);
+                    }).unwrap();
                     execute!(term.backend_mut(), RestorePosition, Show).unwrap();
                 }
             }
@@ -215,6 +234,7 @@ pub trait Driver {
     fn handle_event(&mut self, id: ElementId, event: &str, value: Box<dyn std::any::Any>, bubbles: bool);
     fn poll_async(&mut self) -> Pin<Box<dyn Future<Output = ()> + '_>>;
     fn root_id(&self) -> Option<ElementId>;
+    fn text_snapshot(&self) -> Vec<String>;
 }
 
 pub(crate) struct DioxusRenderer {
@@ -272,5 +292,9 @@ impl Driver for DioxusRenderer {
 
     fn root_id(&self) -> Option<ElementId> {
         self.dom.root()
+    }
+
+    fn text_snapshot(&self) -> Vec<String> {
+        self.dom.texts()
     }
 }

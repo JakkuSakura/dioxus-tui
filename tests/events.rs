@@ -30,7 +30,7 @@ impl Future for PollN {
 
 #[test]
 fn key_down() {
-    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_headless());
+    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless));
 
     fn app() -> Element {
         let render_count = use_signal(|| 0);
@@ -72,7 +72,7 @@ fn key_down() {
 
 #[test]
 fn mouse_down() {
-    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_headless());
+    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless));
 
     fn app() -> Element {
         let render_count = use_signal(|| 0);
@@ -108,7 +108,7 @@ fn mouse_down() {
 
 #[test]
 fn mouse_up() {
-    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_headless());
+    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless));
 
     fn app() -> Element {
         let render_count = use_signal(|| 0);
@@ -147,7 +147,7 @@ fn mouse_up() {
 
 #[test]
 fn mouse_enter() {
-    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_headless());
+    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless));
 
     fn app() -> Element {
         let render_count = use_signal(|| 0);
@@ -186,7 +186,7 @@ fn mouse_enter() {
 
 #[test]
 fn mouse_exit() {
-    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_headless());
+    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless));
 
     fn app() -> Element {
         let render_count = use_signal(|| 0);
@@ -225,7 +225,7 @@ fn mouse_exit() {
 
 #[test]
 fn mouse_move() {
-    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_headless());
+    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless));
 
     fn app() -> Element {
         let render_count = use_signal(|| 0);
@@ -264,7 +264,7 @@ fn mouse_move() {
 
 #[test]
 fn wheel() {
-    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_headless());
+    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless));
 
     fn app() -> Element {
         let render_count = use_signal(|| 0);
@@ -304,7 +304,7 @@ fn wheel() {
 
 #[test]
 fn click() {
-    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_headless());
+    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless));
 
     fn app() -> Element {
         let render_count = use_signal(|| 0);
@@ -343,7 +343,7 @@ fn click() {
 
 #[test]
 fn context_menu() {
-    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_headless());
+    dioxus_tui::launch_cfg(app, dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless));
 
     fn app() -> Element {
         let render_count = use_signal(|| 0);
