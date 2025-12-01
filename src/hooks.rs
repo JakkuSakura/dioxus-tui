@@ -1,6 +1,8 @@
 use std::any::Any;
 
-use crossterm::event::{Event as TermEvent, KeyCode as TermKeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::{
+    Event as TermEvent, KeyCode as TermKeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind,
+};
 use dioxus_core::ElementId;
 use dioxus_html::geometry::{ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint};
 use dioxus_html::input_data::keyboard_types::{Code, Key, Location, Modifiers};
@@ -60,22 +62,24 @@ fn to_button_set(btn: Option<MouseButton>) -> MouseButtonSet {
     set
 }
 
-pub fn event_from_crossterm(evt: TermEvent, target: ElementId) -> Vec<(ElementId, &'static str, EventData, bool)> {
+pub fn event_from_crossterm(
+    evt: TermEvent,
+    target: ElementId,
+) -> Vec<(ElementId, &'static str, EventData, bool)> {
     match evt {
         TermEvent::Key(key) => {
             let (key_val, code) = map_code(&key);
             let mods = map_modifiers(key.modifiers);
-            let data = SerializedKeyboardData::new(
-                key_val,
-                code,
-                Location::Standard,
-                false,
-                mods,
-                false,
-            );
+            let data =
+                SerializedKeyboardData::new(key_val, code, Location::Standard, false, mods, false);
             vec![(target, "keydown", EventData::Keyboard(data), true)]
         }
-        TermEvent::Mouse(MouseEvent { kind, column, row, modifiers }) => {
+        TermEvent::Mouse(MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers,
+        }) => {
             let modifiers = map_modifiers(modifiers);
             let screen = ScreenPoint::new(column.into(), row.into());
             let client = ClientPoint::new(column.into(), row.into());
@@ -86,26 +90,46 @@ pub fn event_from_crossterm(evt: TermEvent, target: ElementId) -> Vec<(ElementId
             match kind {
                 MouseEventKind::Down(button) => {
                     let btn = map_button(button);
-                    let data = SerializedMouseData::new(Some(btn), to_button_set(Some(btn)), coords, modifiers);
+                    let data = SerializedMouseData::new(
+                        Some(btn),
+                        to_button_set(Some(btn)),
+                        coords,
+                        modifiers,
+                    );
                     vec![(target, "mousedown", EventData::Mouse(data), true)]
                 }
                 MouseEventKind::Up(button) => {
                     let btn = map_button(button);
-                    let data = SerializedMouseData::new(Some(btn), MouseButtonSet::empty(), coords, modifiers);
+                    let data = SerializedMouseData::new(
+                        Some(btn),
+                        MouseButtonSet::empty(),
+                        coords,
+                        modifiers,
+                    );
                     let mut evts = vec![(target, "mouseup", EventData::Mouse(data.clone()), true)];
-                    let name = if btn == MouseButton::Primary { "click" } else { "contextmenu" };
+                    let name = if btn == MouseButton::Primary {
+                        "click"
+                    } else {
+                        "contextmenu"
+                    };
                     evts.push((target, name, EventData::Mouse(data), true));
                     evts
                 }
                 MouseEventKind::Moved => {
-                    let data = SerializedMouseData::new(None, MouseButtonSet::empty(), coords, modifiers);
+                    let data =
+                        SerializedMouseData::new(None, MouseButtonSet::empty(), coords, modifiers);
                     vec![
                         (target, "mousemove", EventData::Mouse(data.clone()), true),
                         (target, "mouseenter", EventData::Mouse(data), true),
                     ]
                 }
                 MouseEventKind::ScrollDown => {
-                    let point = SerializedPointInteraction::new(None, MouseButtonSet::empty(), coords, modifiers);
+                    let point = SerializedPointInteraction::new(
+                        None,
+                        MouseButtonSet::empty(),
+                        coords,
+                        modifiers,
+                    );
                     let data = SerializedWheelData {
                         mouse: point,
                         delta_mode: 1,
@@ -116,7 +140,12 @@ pub fn event_from_crossterm(evt: TermEvent, target: ElementId) -> Vec<(ElementId
                     vec![(target, "wheel", EventData::Wheel(data), true)]
                 }
                 MouseEventKind::ScrollUp => {
-                    let point = SerializedPointInteraction::new(None, MouseButtonSet::empty(), coords, modifiers);
+                    let point = SerializedPointInteraction::new(
+                        None,
+                        MouseButtonSet::empty(),
+                        coords,
+                        modifiers,
+                    );
                     let data = SerializedWheelData {
                         mouse: point,
                         delta_mode: 1,

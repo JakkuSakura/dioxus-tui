@@ -32,7 +32,7 @@ fn MinimalTabView() -> Element {
                 border_color: "rgb(71, 85, 105)",
                 background_color: "rgb(2, 6, 23)",
                 color: "rgb(226, 232, 240)",
-                
+
                 // Minimal tab strip from the library
                 TabStrip { titles: &TABS, active }
 

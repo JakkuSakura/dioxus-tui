@@ -1,5 +1,14 @@
-use crossterm::{execute, terminal::{EnterAlternateScreen, LeaveAlternateScreen}};
-use ratatui::{backend::CrosstermBackend, layout::{Layout, Constraint, Direction, Alignment}, widgets::{Block, Borders, Paragraph}, style::{Style, Color}, Terminal};
+use crossterm::{
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Alignment, Constraint, Direction, Layout},
+    style::{Color, Style},
+    widgets::{Block, Borders, Paragraph},
+    Terminal,
+};
 use std::io;
 
 fn main() -> anyhow::Result<()> {

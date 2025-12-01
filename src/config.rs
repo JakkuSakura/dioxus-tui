@@ -15,7 +15,10 @@ impl Config {
     }
 
     pub fn with_rendering_mode(self, rendering_mode: RenderingMode) -> Self {
-        Self { rendering_mode, ..self }
+        Self {
+            rendering_mode,
+            ..self
+        }
     }
 
     pub fn with_color_mode(self, color_mode: ColorMode) -> Self {
@@ -23,7 +26,10 @@ impl Config {
     }
 
     pub fn without_ctrl_c_quit(self) -> Self {
-        Self { ctrl_c_quit: false, ..self }
+        Self {
+            ctrl_c_quit: false,
+            ..self
+        }
     }
 }
 

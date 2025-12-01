@@ -950,6 +950,7 @@ dependencies = [
  "futures-channel",
  "keyboard-types 0.8.3",
  "ratatui",
+ "shipyard",
  "taffy",
  "tokio",
 ]
@@ -2086,6 +2087,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shipyard"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3a45c5f393de8802e88fe0a868a8b2972ff2c8a87e0d2ab984bda9dadfb6d46"
+dependencies = [
+ "foldhash",
+ "hashbrown 0.15.5",
+ "lock_api",
+ "shipyard_proc",
+]
+
+[[package]]
+name = "shipyard_proc"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f248ea3f0a7c02afd00e140d6a855002ffd40814174b6aa17ae7c4cb9039927"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
