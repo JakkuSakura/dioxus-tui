@@ -19,7 +19,7 @@ fn app() -> Element {
 }
 
 #[component]
-fn Box(x: usize, y: usize, hue: f32, alpha: f32) -> Element {
+fn GridBox(x: usize, y: usize, hue: f32, alpha: f32) -> Element {
     let count = use_signal(|| 0);
 
     let x = x * 2;
@@ -79,7 +79,7 @@ fn Grid(size: usize) -> Element {
                             let alpha = y as f32*100.0/size as f32 + counts.read()[x*size + y] as f32;
                             let key = format!("{}-{}", x, y);
                             rsx! {
-                                Box {
+                                GridBox {
                                     x: x,
                                     y: y,
                                     alpha: 100.0,

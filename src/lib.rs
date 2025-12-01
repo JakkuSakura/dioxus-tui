@@ -4,22 +4,57 @@
 
 mod element;
 mod events;
+mod hooks;
+mod config;
 pub mod components;
-pub mod runtime;
 
-pub use runtime::{Config, RenderingMode, TuiContext};
+pub use config::{Config, RenderingMode};
+pub use hooks::EventData;
 
-use std::{any::Any, pin::Pin, rc::Rc};
+use std::{any::Any, pin::Pin, rc::Rc, time::Duration};
 
+use anyhow::Result;
 use dioxus_core::{Element, ElementId, Event, VirtualDom};
 use dioxus_html::PlatformEventData;
 use element::DomState;
 use events::SerializedHtmlEventConverter;
-use runtime::{render, Driver, InputEvent};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use hooks::event_from_crossterm;
+use crossterm::cursor::{RestorePosition, SavePosition, Show};
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event as TermEvent, KeyCode, KeyModifiers};
+use crossterm::execute;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use futures::{pin_mut, StreamExt, Future};
+use ratatui::{backend::CrosstermBackend, Terminal};
+use tokio::select;
 
 fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
     unbounded()
+}
+
+#[derive(Clone)]
+pub struct TuiContext {
+    tx: UnboundedSender<InputEvent>,
+}
+
+impl TuiContext {
+    pub fn new(tx: UnboundedSender<InputEvent>) -> Self {
+        Self { tx }
+    }
+
+    pub fn quit(&self) {
+        let _ = self.tx.unbounded_send(InputEvent::Close);
+    }
+
+    pub fn inject_event(&self, event: crossterm::event::Event) {
+        let _ = self.tx.unbounded_send(InputEvent::UserInput(event));
+    }
+}
+
+#[derive(Debug)]
+pub enum InputEvent {
+    UserInput(TermEvent),
+    Close,
 }
 
 pub mod launch {
@@ -84,6 +119,104 @@ pub fn launch_vdom_cfg(mut vdom: VirtualDom, cfg: Config) {
     render(cfg, renderer, event_rx, event_tx).unwrap();
 }
 
+fn render(
+    cfg: Config,
+    mut renderer: DioxusRenderer,
+    mut raw_event_reciever: UnboundedReceiver<InputEvent>,
+    event_tx: UnboundedSender<InputEvent>,
+) -> Result<()> {
+    if !cfg.headless {
+        let tx = event_tx.clone();
+        std::thread::spawn(move || {
+            let tick_rate = Duration::from_millis(10);
+            loop {
+                if crossterm::event::poll(tick_rate).unwrap() {
+                    let evt = crossterm::event::read().unwrap();
+                    if tx.unbounded_send(InputEvent::UserInput(evt)).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    let mut terminal = (!cfg.headless).then(|| {
+        enable_raw_mode().unwrap();
+        let mut stdout = std::io::stdout();
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture).unwrap();
+        let backend = CrosstermBackend::new(std::io::stdout());
+        Terminal::new(backend).unwrap()
+    });
+    if let Some(term) = &mut terminal {
+        term.clear().unwrap();
+    }
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?
+        .block_on(async {
+            renderer.update();
+
+            loop {
+                let mut input_event: Option<InputEvent> = None;
+
+                {
+                    let wait = renderer.poll_async();
+                    pin_mut!(wait);
+
+                    select! {
+                        _ = wait => {},
+                        evt = raw_event_reciever.next() => {
+                            if let Some(evt) = evt {
+                                input_event = Some(evt);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(evt) = input_event {
+                    match evt {
+                        InputEvent::Close => break,
+                        InputEvent::UserInput(term_evt) => {
+                            if matches!(term_evt, TermEvent::Key(key) if matches!(key.code, KeyCode::Char('c' | 'C')) && key.modifiers.contains(KeyModifiers::CONTROL) && cfg.ctrl_c_quit) {
+                                break;
+                            }
+                            if let Some(root) = renderer.root_id() {
+                                for (target, name, data, bubbles) in event_from_crossterm(term_evt, root) {
+                                    let runtime_event = data.into_platform_event(bubbles);
+                                    renderer.handle_event(target, name, runtime_event, bubbles);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                renderer.update();
+
+                if let Some(term) = &mut terminal {
+                    execute!(term.backend_mut(), SavePosition).unwrap();
+                    term.draw(|_| {}).unwrap();
+                    execute!(term.backend_mut(), RestorePosition, Show).unwrap();
+                }
+            }
+
+            if let Some(term) = &mut terminal {
+                disable_raw_mode().unwrap();
+                execute!(term.backend_mut(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
+                term.show_cursor().unwrap();
+            }
+
+            Ok(())
+        })
+}
+
+pub trait Driver {
+    fn update(&mut self);
+    fn handle_event(&mut self, id: ElementId, event: &str, value: Box<dyn std::any::Any>, bubbles: bool);
+    fn poll_async(&mut self) -> Pin<Box<dyn Future<Output = ()> + '_>>;
+    fn root_id(&self) -> Option<ElementId>;
+}
+
 pub(crate) struct DioxusRenderer {
     pub(crate) vdom: VirtualDom,
     pub(crate) dom: DomState,
@@ -103,7 +236,7 @@ impl Driver for DioxusRenderer {
         self.vdom.runtime().handle_event(event, runtime_event, id);
     }
 
-    fn poll_async(&mut self) -> Pin<Box<dyn futures::Future<Output = ()> + '_>> {
+    fn poll_async(&mut self) -> Pin<Box<dyn Future<Output = ()> + '_>> {
         #[cfg(all(feature = "hot-reload", debug_assertions))]
         return Box::pin(async {
             let hot_reload_wait = self.hot_reload_rx.recv();

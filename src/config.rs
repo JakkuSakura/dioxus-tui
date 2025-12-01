@@ -1,6 +1,7 @@
 #[derive(Clone, Copy)]
 #[non_exhaustive]
 pub struct Config {
+    #[allow(dead_code)]
     pub(crate) rendering_mode: RenderingMode,
     /// Controls if the terminal quit when the user presses `ctrl+c`?
     /// To handle quitting on your own, use the `TuiContext` root context.
@@ -47,4 +48,3 @@ pub enum RenderingMode {
     #[default]
     Rgb,
 }
-

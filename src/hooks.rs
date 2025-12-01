@@ -5,8 +5,8 @@ use dioxus_core::ElementId;
 use dioxus_html::geometry::{ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint};
 use dioxus_html::input_data::keyboard_types::{Code, Key, Location, Modifiers};
 use dioxus_html::input_data::{MouseButton, MouseButtonSet};
-use dioxus_html::{SerializedKeyboardData, SerializedMouseData, SerializedWheelData};
 use dioxus_html::point_interaction::SerializedPointInteraction;
+use dioxus_html::{SerializedKeyboardData, SerializedMouseData, SerializedWheelData};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EventData {

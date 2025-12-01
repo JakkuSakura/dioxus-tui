@@ -1,6 +1,6 @@
 use dioxus_html::*;
 
-use crate::runtime::hooks::EventData;
+use crate::hooks::EventData;
 
 fn downcast(event: &PlatformEventData) -> EventData {
     event

@@ -7,11 +7,10 @@ fn main() {
 fn app() -> Element {
     let mut count = use_signal(|| 0);
 
-    use_future(move || async move {
+    spawn(async move {
         loop {
-            count += 1;
             tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-            schedule_update();
+            count += 1;
         }
     });
 
