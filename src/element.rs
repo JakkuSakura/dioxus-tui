@@ -23,7 +23,6 @@ pub struct DebugNode {
     pub id: ElementId,
     pub tag: Option<String>,
     pub text: Option<DebugText>,
-    pub children_paths: Vec<Vec<u8>>,
     pub children: Vec<ElementId>,
     pub attrs: HashMap<String, String>,
 }
@@ -63,7 +62,6 @@ impl DomState {
                 id: n.id,
                 tag: n.tag.clone(),
                 text: n.text.clone(),
-                children_paths: n.children_paths.clone(),
                 children: n.children.clone(),
                 attrs: n.attrs.clone(),
             })

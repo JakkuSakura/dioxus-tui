@@ -18,13 +18,15 @@ pub struct LayoutNode {
 /// Build layout using Taffy (flexbox) to better mirror web semantics.
 pub fn build_layout(nodes: &[DebugNode], root: &DebugNode, area: UiRect) -> LayoutNode {
     let mut taffy: TaffyTree<()> = TaffyTree::new();
-    let mut id_map: HashMap<dioxus_core::ElementId, &DebugNode> =
+    let id_map: HashMap<dioxus_core::ElementId, &DebugNode> =
         nodes.iter().map(|n| (n.id, n)).collect();
 
-    fn style_from_attrs(attrs: &HashMap<String, String>) -> Style {
+    fn style_from_node(node: &DebugNode) -> Style {
+        let attrs = &node.attrs;
         let mut style = Style {
             display: Display::Flex,
             flex_direction: FlexDirection::Column,
+            flex_grow: 1.0,
             ..Default::default()
         };
 
@@ -67,6 +69,17 @@ pub fn build_layout(nodes: &[DebugNode], root: &DebugNode, area: UiRect) -> Layo
         if let Some(h) = attrs.get("height") {
             style.size.height = parse_dimension(h);
         }
+
+        if let Some(text) = &node.text {
+            style.flex_grow = 0.0;
+            style.flex_shrink = 0.0;
+            let approx_width = text.text.len().max(1) as f32;
+            style.min_size = Size {
+                width: Dimension::length(approx_width),
+                height: Dimension::length(1.0),
+            };
+        }
+
         style
     }
 
@@ -77,7 +90,10 @@ pub fn build_layout(nodes: &[DebugNode], root: &DebugNode, area: UiRect) -> Layo
                 return Dimension::percent((pct / 100.0).clamp(0.0, 1.0));
             }
         }
-        if let Some(px) = s.strip_suffix("px").and_then(|v| v.trim().parse::<f32>().ok()) {
+        if let Some(px) = s
+            .strip_suffix("px")
+            .and_then(|v| v.trim().parse::<f32>().ok())
+        {
             return Dimension::length(px);
         }
         if let Ok(px) = s.parse::<f32>() {
@@ -114,7 +130,7 @@ pub fn build_layout(nodes: &[DebugNode], root: &DebugNode, area: UiRect) -> Layo
                 attrs: node.attrs.clone(),
                 align: parse_alignment(node),
             };
-            let handle = taffy.new_leaf(style_from_attrs(&node.attrs)).unwrap();
+            let handle = taffy.new_leaf(style_from_node(node)).unwrap();
             return (handle, layout_node);
         }
 
@@ -128,7 +144,7 @@ pub fn build_layout(nodes: &[DebugNode], root: &DebugNode, area: UiRect) -> Layo
             }
         }
 
-        let style = style_from_attrs(&node.attrs);
+        let style = style_from_node(node);
         let handle = if child_handles.is_empty() {
             taffy.new_leaf(style).unwrap()
         } else {
@@ -150,6 +166,12 @@ pub fn build_layout(nodes: &[DebugNode], root: &DebugNode, area: UiRect) -> Layo
 
     // Build tree and compute layout
     let (root_handle, mut layout_root) = build_tree(&mut taffy, root, &id_map, &mut HashSet::new());
+    if let Ok(style) = taffy.style(root_handle) {
+        let mut style = style.clone();
+        style.size.width = Dimension::length(area.width as f32);
+        style.size.height = Dimension::length(area.height as f32);
+        let _ = taffy.set_style(root_handle, style);
+    }
     let size = taffy::geometry::Size {
         width: AvailableSpace::Definite(area.width as f32),
         height: AvailableSpace::Definite(area.height as f32),
