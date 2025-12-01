@@ -1,9 +1,6 @@
-use core::panic;
-
 use dioxus_html::*;
 
-use crate::element::TuiElement;
-use crate::runtime::EventData;
+use crate::runtime::hooks::EventData;
 
 fn downcast(event: &PlatformEventData) -> EventData {
     event
@@ -35,20 +32,12 @@ impl HtmlEventConverter for SerializedHtmlEventConverter {
         panic!("drag events not supported")
     }
 
-    fn convert_focus_data(&self, event: &PlatformEventData) -> FocusData {
-        if let EventData::Focus(event) = downcast(event) {
-            FocusData::new(event)
-        } else {
-            panic!("event should be of type Focus")
-        }
+    fn convert_focus_data(&self, _: &PlatformEventData) -> FocusData {
+        panic!("focus events not supported")
     }
 
-    fn convert_form_data(&self, event: &PlatformEventData) -> FormData {
-        if let EventData::Form(event) = downcast(event) {
-            FormData::new(event)
-        } else {
-            panic!("event should be of type Form")
-        }
+    fn convert_form_data(&self, _: &PlatformEventData) -> FormData {
+        panic!("form events not supported")
     }
 
     fn convert_image_data(&self, _: &PlatformEventData) -> ImageData {
@@ -67,8 +56,8 @@ impl HtmlEventConverter for SerializedHtmlEventConverter {
         panic!("media events not supported")
     }
 
-    fn convert_mounted_data(&self, event: &PlatformEventData) -> MountedData {
-        event.downcast::<TuiElement>().cloned().unwrap().into()
+    fn convert_mounted_data(&self, _: &PlatformEventData) -> MountedData {
+        panic!("mounted events not supported")
     }
 
     fn convert_mouse_data(&self, event: &PlatformEventData) -> MouseData {
