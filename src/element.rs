@@ -1,12 +1,18 @@
 use std::collections::HashSet;
 
-use dioxus_core::{ElementId, Template, WriteMutations};
+use dioxus_core::{ElementId, Template, TemplateNode, WriteMutations};
 
 #[derive(Default)]
 pub struct DomState {
     root: Option<ElementId>,
     nodes: HashSet<ElementId>,
-    texts: Vec<(ElementId, String)>,
+    texts: Vec<DebugText>,
+}
+
+#[derive(Clone)]
+pub struct DebugText {
+    pub id: Option<ElementId>,
+    pub text: String,
 }
 
 impl DomState {
@@ -18,15 +24,37 @@ impl DomState {
         DomWriter { dom: self }
     }
 
-    pub fn texts(&self) -> Vec<String> {
-        self.texts.iter().map(|(_, t)| t.clone()).collect()
+    pub fn texts(&self) -> Vec<DebugText> {
+        self.texts.clone()
     }
 
     fn upsert_text(&mut self, id: ElementId, value: String) {
-        if let Some((_, existing)) = self.texts.iter_mut().find(|(tid, _)| *tid == id) {
-            *existing = value;
+        if let Some(entry) = self.texts.iter_mut().find(|entry| entry.id == Some(id)) {
+            entry.text = value;
         } else {
-            self.texts.push((id, value));
+            self.texts.push(DebugText { id: Some(id), text: value });
+        }
+    }
+
+    fn push_static_texts_from_template(&mut self, template: &Template) {
+        fn walk(node: &TemplateNode, out: &mut Vec<String>) {
+            match node {
+                TemplateNode::Text { text } => out.push((*text).to_string()),
+                TemplateNode::Element { children, .. } => {
+                    for child in *children {
+                        walk(child, out);
+                    }
+                }
+                TemplateNode::Dynamic { .. } => {}
+            }
+        }
+
+        let mut collected = Vec::new();
+        for root in template.roots {
+            walk(root, &mut collected);
+        }
+        for text in collected {
+            self.texts.push(DebugText { id: None, text });
         }
     }
 
@@ -57,7 +85,8 @@ impl WriteMutations for DomWriter<'_> {
         self.dom.touch(id)
     }
 
-    fn load_template(&mut self, _template: Template, _index: usize, id: ElementId) {
+    fn load_template(&mut self, template: Template, _index: usize, id: ElementId) {
+        self.dom.push_static_texts_from_template(&template);
         self.dom.touch(id)
     }
 
@@ -94,7 +123,7 @@ impl WriteMutations for DomWriter<'_> {
 
     fn remove_node(&mut self, id: ElementId) {
         self.dom.nodes.remove(&id);
-        self.dom.texts.retain(|(tid, _)| *tid != id);
+        self.dom.texts.retain(|entry| entry.id != Some(id));
     }
 
     fn push_root(&mut self, id: ElementId) {

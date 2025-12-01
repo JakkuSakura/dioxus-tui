@@ -125,6 +125,24 @@ fn render(
     mut raw_event_reciever: UnboundedReceiver<InputEvent>,
     event_tx: UnboundedSender<InputEvent>,
 ) -> Result<()> {
+    if cfg.rendering_mode == config::RenderingMode::Debug {
+        renderer.update();
+        let lines = renderer.text_snapshot();
+        println!("-- dioxus-tui debug snapshot --");
+        if lines.is_empty() {
+            println!("(no text nodes captured)");
+        }
+        for (i, entry) in lines.iter().enumerate() {
+            let x = 0;
+            let y = i as i32;
+            let w = entry.text.len() as i32;
+            let h = 1;
+            let origin = entry.id.map(|id| format!("id={:?}", id)).unwrap_or_else(|| "static".into());
+            println!("[{i}] {origin} pos=({x},{y}) size=({w},{h}) text=\"{}\"", entry.text);
+        }
+        return Ok(());
+    }
+
     if cfg.rendering_mode != config::RenderingMode::Headless {
         let tx = event_tx.clone();
         std::thread::spawn(move || {
@@ -202,18 +220,11 @@ fn render(
                 if let Some(term) = &mut terminal {
                     execute!(term.backend_mut(), SavePosition).unwrap();
                     let lines = renderer.text_snapshot();
+                    let joined = lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n");
                     term.draw(|f| {
                         let area = f.area();
-                        let block = ratatui::widgets::Block::default().title("dioxus-tui").borders(ratatui::widgets::Borders::ALL);
-                        f.render_widget(&block, area);
-                        let content = if cfg.rendering_mode == crate::config::RenderingMode::Debug {
-                            lines.iter().enumerate().map(|(i, l)| format!("[{i}] {l}")).collect::<Vec<_>>().join("\n")
-                        } else {
-                            lines.join("\n")
-                        };
-                        let paragraph = ratatui::widgets::Paragraph::new(content);
-                        let inner = block.inner(area);
-                        f.render_widget(paragraph, inner);
+                        let paragraph = ratatui::widgets::Paragraph::new(joined.clone());
+                        f.render_widget(paragraph, area);
                     }).unwrap();
                     execute!(term.backend_mut(), RestorePosition, Show).unwrap();
                 }
@@ -234,7 +245,7 @@ pub trait Driver {
     fn handle_event(&mut self, id: ElementId, event: &str, value: Box<dyn std::any::Any>, bubbles: bool);
     fn poll_async(&mut self) -> Pin<Box<dyn Future<Output = ()> + '_>>;
     fn root_id(&self) -> Option<ElementId>;
-    fn text_snapshot(&self) -> Vec<String>;
+    fn text_snapshot(&self) -> Vec<crate::element::DebugText>;
 }
 
 pub(crate) struct DioxusRenderer {
@@ -294,7 +305,7 @@ impl Driver for DioxusRenderer {
         self.dom.root()
     }
 
-    fn text_snapshot(&self) -> Vec<String> {
+    fn text_snapshot(&self) -> Vec<crate::element::DebugText> {
         self.dom.texts()
     }
 }

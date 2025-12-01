@@ -4,7 +4,7 @@ use dioxus_tui::{Config, RenderingMode};
 fn main() {
     dioxus_tui::launch_cfg(
         app,
-        Config::default().with_rendering_mode(RenderingMode::Debug),
+        Config::default().with_rendering_mode(RenderingMode::Visual),
     );
 }
 
