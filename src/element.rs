@@ -69,6 +69,7 @@ impl DomState {
     }
 
     fn ensure_entity(&mut self, id: ElementId) -> EntityId {
+        self.next_id = self.next_id.max(id.0.saturating_add(1));
         if let Some(entity) = self.id_to_entity.get(&id) {
             return *entity;
         }
@@ -92,6 +93,7 @@ impl DomState {
         self.with_node_mut(id, |node| {
             node.text = Some(DebugText { text: value });
         });
+        self.next_id = self.next_id.max(id.0.saturating_add(1));
     }
 
     fn upsert_attr(&mut self, id: ElementId, name: &str, value: String) {
@@ -167,6 +169,8 @@ impl WriteMutations for DomWriter<'_> {
                 node.text = text.clone();
             });
         }
+
+        self.dom.next_id = self.dom.next_id.max(id.0.saturating_add(1));
 
         self.dom.resolve_children();
     }
@@ -304,6 +308,7 @@ impl WriteMutations for DomWriter<'_> {
 
         if let Some(root_node) = template.roots.get(_index) {
             let mut root_path = vec![_index as u8];
+            self.dom.next_id = self.dom.next_id.max(_id.0.saturating_add(1));
             materialize(&mut self.dom, root_node, &mut root_path, _id);
             if self.dom.root.is_none() {
                 self.dom.root = Some(_id);

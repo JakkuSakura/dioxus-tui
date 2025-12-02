@@ -297,38 +297,44 @@ fn print_layout(node: &LayoutNode, depth: usize) {
 
 fn block_from_node(node: &LayoutNode, fallback_tag: &str) -> Block<'static> {
     let mut block = Block::default();
-    let title = node
-        .attrs
-        .get("title")
-        .cloned()
-        .or_else(|| (!fallback_tag.is_empty()).then(|| fallback_tag.to_string()));
-
-    if let Some(title) = title {
+    if let Some(title) = node.attrs.get("title").cloned() {
         block = block.title(title);
     }
 
-    if node
+    let draw_border = node
         .attrs
         .get("border")
-        .map(|v| v.eq_ignore_ascii_case("none"))
-        .unwrap_or(false)
-    {
-        block
-    } else {
+        .map(|v| v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
+        .unwrap_or(false);
+
+    if draw_border {
         block.borders(Borders::ALL)
+    } else {
+        block
     }
 }
 
 fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
     let tag = node.tag.as_deref().unwrap_or("");
 
-    if is_root {
-        if let Some(text) = &node.text {
-            frame.render_widget(
-                Paragraph::new(text.clone()).alignment(node.align),
-                node.rect,
-            );
+    fn collect_text(n: &LayoutNode) -> Option<String> {
+        let mut parts = Vec::new();
+        if let Some(t) = &n.text {
+            parts.push(t.clone());
         }
+        for child in n.children.iter() {
+            if let Some(t) = collect_text(child) {
+                parts.push(t);
+            }
+        }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(" "))
+        }
+    }
+
+    if is_root {
         for child in node.children.iter() {
             render_layout_node(frame, child, false);
         }
@@ -337,45 +343,30 @@ fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
 
     match tag {
         "p" | "span" => {
-            if let Some(text) = &node.text {
-                let block = block_from_node(node, tag);
-                let area = block.inner(node.rect);
-                frame.render_widget(block, node.rect);
-                frame.render_widget(Paragraph::new(text.clone()).alignment(node.align), area);
-            }
+            let text = collect_text(node).unwrap_or_default();
+            frame.render_widget(Paragraph::new(text).alignment(node.align), node.rect);
         }
         "li" => {
-            if let Some(text) = &node.text {
-                let content = format!("• {text}");
-                let block = block_from_node(node, tag);
-                let area = block.inner(node.rect);
-                frame.render_widget(block, node.rect);
-                frame.render_widget(Paragraph::new(content).alignment(node.align), area);
-            }
+            let content = format!("• {}", collect_text(node).unwrap_or_default());
+            frame.render_widget(Paragraph::new(content).alignment(node.align), node.rect);
         }
         "ul" | "ol" => {
             let items: Vec<ListItem> = node
                 .children
                 .iter()
-                .map(|child| ListItem::new(child.text.clone().unwrap_or_default()))
+                .map(|child| ListItem::new(collect_text(child).unwrap_or_default()))
                 .collect();
-            let list = List::new(items).block(block_from_node(node, tag));
+            let list = List::new(items);
             frame.render_widget(list, node.rect);
         }
         "h1" | "h2" | "h3" => {
-            if let Some(text) = &node.text {
-                let paragraph = Paragraph::new(text.clone())
-                    .alignment(node.align)
-                    .block(block_from_node(node, tag));
-                frame.render_widget(paragraph, node.rect);
-            }
+            let text = collect_text(node).unwrap_or_default();
+            frame.render_widget(Paragraph::new(text).alignment(node.align), node.rect);
         }
         "div" => {
-            let block = block_from_node(node, tag);
-            frame.render_widget(block.clone(), node.rect);
-            let inner = block.inner(node.rect);
-            if let Some(text) = &node.text {
-                frame.render_widget(Paragraph::new(text.clone()).alignment(node.align), inner);
+            // container, no border by default
+            if let Some(text) = collect_text(node) {
+                frame.render_widget(Paragraph::new(text).alignment(node.align), node.rect);
             }
             for child in node.children.iter() {
                 render_layout_node(frame, child, false);
@@ -394,11 +385,8 @@ fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
             }
         }
         _ => {
-            let block = block_from_node(node, tag);
-            frame.render_widget(block.clone(), node.rect);
-            let inner = block.inner(node.rect);
-            if let Some(text) = &node.text {
-                frame.render_widget(Paragraph::new(text.clone()).alignment(node.align), inner);
+            if let Some(text) = collect_text(node) {
+                frame.render_widget(Paragraph::new(text).alignment(node.align), node.rect);
             }
             for child in node.children.iter() {
                 render_layout_node(frame, child, false);
