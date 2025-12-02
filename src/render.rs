@@ -23,7 +23,7 @@ use crate::element::{DebugNode, DomState};
 use crate::events::SerializedHtmlEventConverter;
 use crate::hooks::event_from_crossterm;
 use crate::layout::{build_layout, LayoutNode};
-use crate::styles::{compute_styles, list_item_label, Attrs};
+use crate::styles::{compute_styles, list_item_label, Attrs, ListStyle};
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
     unbounded()
@@ -332,32 +332,26 @@ fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
         "li" => {
             let text = collect_text(node).unwrap_or_default();
             let styles = compute_styles(tag, Attrs::new(&node.attrs));
-            let default_style = lightningcss::properties::list::ListStyleType::CounterStyle(
-                lightningcss::properties::list::CounterStyle::Predefined(
-                    lightningcss::properties::list::PredefinedCounterStyle::Disc,
-                ),
-            );
-            let style_ref = styles.list_style.as_ref().unwrap_or(&default_style);
-            let content = list_item_label(style_ref, 0, &text);
+            let default_style = ListStyle::Disc;
+            let style_ref = styles.list_style.unwrap_or(default_style);
+            let content = list_item_label(&style_ref, 0, &text);
             frame.render_widget(Paragraph::new(content).alignment(node.align), node.rect);
         }
         "ul" | "ol" => {
             let styles = compute_styles(tag, Attrs::new(&node.attrs));
-            let default_style = lightningcss::properties::list::ListStyleType::CounterStyle(
-                lightningcss::properties::list::CounterStyle::Predefined(if tag == "ol" {
-                    lightningcss::properties::list::PredefinedCounterStyle::Decimal
-                } else {
-                    lightningcss::properties::list::PredefinedCounterStyle::Disc
-                }),
-            );
-            let style_ref = styles.list_style.as_ref().unwrap_or(&default_style);
+            let default_style = if tag == "ol" {
+                ListStyle::Decimal
+            } else {
+                ListStyle::Disc
+            };
+            let style_ref = styles.list_style.unwrap_or(default_style);
             let items: Vec<ListItem> = node
                 .children
                 .iter()
                 .enumerate()
                 .map(|(idx, child)| {
                     let text = collect_text(child).unwrap_or_default();
-                    let label = list_item_label(style_ref, idx, &text);
+                    let label = list_item_label(&style_ref, idx, &text);
                     ListItem::new(label)
                 })
                 .collect();
