@@ -1,20 +1,20 @@
 use dioxus_tui::layout::build_layout;
-use dioxus_tui::element::{ViewNode, ViewText};
+use dioxus_tui::element::{DomNode, NodeText};
 use dioxus_core::ElementId;
 use ratatui::layout::Rect as UiRect;
 
-fn text_node(id: usize, text: &str) -> ViewNode {
-    ViewNode {
+fn text_node(id: usize, text: &str) -> DomNode {
+    DomNode {
         id: ElementId(id),
-        text: Some(ViewText {
+        text: Some(NodeText {
             text: text.to_string(),
         }),
         ..Default::default()
     }
 }
 
-fn element(id: usize, tag: &str, children: Vec<ElementId>) -> ViewNode {
-    ViewNode {
+fn element(id: usize, tag: &str, children: Vec<ElementId>) -> DomNode {
+    DomNode {
         id: ElementId(id),
         tag: Some(tag.to_string()),
         children,

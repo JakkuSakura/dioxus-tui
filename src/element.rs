@@ -16,25 +16,17 @@ pub struct DomState {
 }
 
 #[derive(Clone)]
-pub struct ViewText {
+pub struct NodeText {
     pub text: String,
 }
 
-#[derive(Clone, Default)]
-pub struct ViewNode {
-    pub id: ElementId,
-    pub tag: Option<String>,
-    pub text: Option<ViewText>,
-    pub children: Vec<ElementId>,
-    pub attrs: HashMap<String, String>,
-}
-
+/// Single node representation used for storage and view snapshots.
 #[derive(Component, Clone, Default)]
-pub struct NodeEntry {
+pub struct DomNode {
     pub id: ElementId,
     pub tag: Option<String>,
-    pub text: Option<ViewText>,
-    pub children_paths: Vec<Vec<u8>>,
+    pub text: Option<NodeText>,
+    pub children_paths: Vec<Vec<u8>>, // helper for resolving template children
     pub children: Vec<ElementId>,
     pub attrs: HashMap<String, String>,
 }
@@ -56,17 +48,11 @@ impl DomState {
         DomWriter { dom: self }
     }
 
-    pub fn nodes(&mut self) -> Vec<ViewNode> {
+    pub fn nodes(&mut self) -> Vec<DomNode> {
         let mut out = Vec::new();
-        let mut query = self.world.query::<&NodeEntry>();
+        let mut query = self.world.query::<&DomNode>();
         for n in query.iter(&self.world) {
-            out.push(ViewNode {
-                id: n.id,
-                tag: n.tag.clone(),
-                text: n.text.clone(),
-                children: n.children.clone(),
-                attrs: n.attrs.clone(),
-            });
+            out.push(n.clone());
         }
         out
     }
@@ -76,27 +62,21 @@ impl DomState {
         if let Some(entity) = self.id_to_entity.get(&id) {
             return *entity;
         }
-        let entity = self
-            .world
-            .spawn(NodeEntry {
-                id,
-                ..Default::default()
-            })
-            .id();
+        let entity = self.world.spawn(DomNode { id, ..Default::default() }).id();
         self.id_to_entity.insert(id, entity);
         entity
     }
 
-    fn with_node_mut<F: FnOnce(&mut NodeEntry)>(&mut self, id: ElementId, f: F) {
+    fn with_node_mut<F: FnOnce(&mut DomNode)>(&mut self, id: ElementId, f: F) {
         let entity = self.ensure_entity(id);
-        if let Some(mut node) = self.world.get_mut::<NodeEntry>(entity) {
+        if let Some(mut node) = self.world.get_mut::<DomNode>(entity) {
             f(&mut node);
         }
     }
 
     fn upsert_text(&mut self, id: ElementId, value: String) {
         self.with_node_mut(id, |node| {
-            node.text = Some(ViewText { text: value });
+            node.text = Some(NodeText { text: value });
         });
         self.next_id = self.next_id.max(id.0.saturating_add(1));
     }
@@ -111,7 +91,7 @@ impl DomState {
         let mapping = self.path_to_id.clone();
         let entities: Vec<Entity> = self.id_to_entity.values().copied().collect();
         for entity in entities {
-            if let Some(mut node) = self.world.get_mut::<NodeEntry>(entity) {
+            if let Some(mut node) = self.world.get_mut::<DomNode>(entity) {
                 let child_paths = node.children_paths.clone();
                 node.children.clear();
                 for child_path in child_paths.iter() {
@@ -142,7 +122,7 @@ impl WriteMutations for DomWriter<'_> {
 
         if let Some(prev_id) = previous.filter(|old| *old != id) {
             if let Some(prev_entity) = self.dom.id_to_entity.remove(&prev_id) {
-                let cloned = self.dom.world.get::<NodeEntry>(prev_entity).map(|c| c.clone());
+                let cloned = self.dom.world.get::<DomNode>(prev_entity).map(|c| c.clone());
                 if let Some(mut cloned) = cloned {
                     cloned.id = id;
                     self.dom.with_node_mut(id, |node| {
@@ -162,7 +142,7 @@ impl WriteMutations for DomWriter<'_> {
             let child_paths = template_entry.child_paths.clone();
             let attrs = template_entry.attrs.clone();
             let tag = template_entry.tag.clone();
-            let text = template_entry.text.clone().map(|t| ViewText { text: t });
+            let text = template_entry.text.clone().map(|t| NodeText { text: t });
             self.dom.with_node_mut(id, |node| {
                 node.tag = tag.clone();
                 node.attrs = attrs.clone();
@@ -261,7 +241,7 @@ impl WriteMutations for DomWriter<'_> {
                     dom.with_node_mut(id, |n| {
                         n.id = id;
                         n.tag = None;
-                        n.text = Some(ViewText {
+                        n.text = Some(NodeText {
                             text: text.to_string(),
                         });
                         n.children_paths.clear();

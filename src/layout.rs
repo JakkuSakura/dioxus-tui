@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::element::ViewNode;
+use crate::element::DomNode;
 use blitz_dom::{
     local_name, ns, Attribute, BaseDocument, DocumentConfig, DocumentMutator, LocalName, QualName,
 };
@@ -17,7 +17,7 @@ pub struct LayoutNode {
     pub align: Alignment,
 }
 
-fn parse_alignment(node: &ViewNode) -> Alignment {
+fn parse_alignment(node: &DomNode) -> Alignment {
     node.attrs
         .get("text_align")
         .or_else(|| node.attrs.get("align"))
@@ -33,7 +33,7 @@ fn blitz_name(tag: &str) -> QualName {
     QualName::new(None, ns!(html), LocalName::from(tag))
 }
 
-fn blitz_style_for(node: &ViewNode) -> String {
+fn blitz_style_for(node: &DomNode) -> String {
     // Translate our limited attrs into CSS Stylo understands.
     let mut rules: Vec<String> = Vec::new();
 
@@ -90,7 +90,7 @@ fn blitz_style_for(node: &ViewNode) -> String {
 }
 
 /// Build layout using Blitz (Stylo + Taffy) to mirror web semantics.
-pub fn build_layout(nodes: &[ViewNode], root: &ViewNode, area: UiRect) -> LayoutNode {
+pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNode {
     let mut doc = BaseDocument::new(DocumentConfig {
         viewport: Some(Viewport::new(
             area.width.into(),
@@ -101,14 +101,13 @@ pub fn build_layout(nodes: &[ViewNode], root: &ViewNode, area: UiRect) -> Layout
         ..Default::default()
     });
 
-    let id_map: HashMap<dioxus_core::ElementId, &ViewNode> =
-        nodes.iter().map(|n| (n.id, n)).collect();
+    let id_map: HashMap<dioxus_core::ElementId, &DomNode> = nodes.iter().map(|n| (n.id, n)).collect();
     let mut blitz_ids: HashMap<dioxus_core::ElementId, usize> = HashMap::new();
 
     fn build_blitz_subtree(
-        node: &ViewNode,
+        node: &DomNode,
         mutator: &mut DocumentMutator<'_>,
-        id_map: &HashMap<dioxus_core::ElementId, &ViewNode>,
+        id_map: &HashMap<dioxus_core::ElementId, &DomNode>,
         blitz_ids: &mut HashMap<dioxus_core::ElementId, usize>,
     ) -> usize {
         let tag = node.tag.as_deref().unwrap_or("div");
@@ -164,8 +163,8 @@ pub fn build_layout(nodes: &[ViewNode], root: &ViewNode, area: UiRect) -> Layout
     doc.resolve(0.0);
 
     fn assemble_layout(
-        node: &ViewNode,
-        id_map: &HashMap<dioxus_core::ElementId, &ViewNode>,
+        node: &DomNode,
+        id_map: &HashMap<dioxus_core::ElementId, &DomNode>,
         blitz_ids: &HashMap<dioxus_core::ElementId, usize>,
         doc: &BaseDocument,
         area: UiRect,
@@ -230,96 +229,4 @@ pub fn build_layout(nodes: &[ViewNode], root: &ViewNode, area: UiRect) -> Layout
     }
 
     assemble_layout(root, &id_map, &blitz_ids, &doc, area)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::element::{ViewNode, ViewText};
-    use dioxus_core::ElementId;
-
-    fn text_node(id: usize, text: &str) -> ViewNode {
-        ViewNode {
-            id: ElementId(id),
-            text: Some(ViewText {
-                text: text.to_string(),
-            }),
-            ..Default::default()
-        }
-    }
-
-    fn element(id: usize, tag: &str, children: Vec<ElementId>) -> ViewNode {
-        ViewNode {
-            id: ElementId(id),
-            tag: Some(tag.to_string()),
-            children,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn root_fills_viewport() {
-        let mut nodes = Vec::new();
-        // root div with a single text child
-        let root = element(1, "div", vec![ElementId(2)]);
-        let child = text_node(2, "hello");
-        nodes.push(root.clone());
-        nodes.push(child);
-
-        let area = UiRect::new(0, 0, 40, 10);
-        let layout = build_layout(&nodes, &root, area);
-
-        assert_eq!(layout.rect.width, area.width);
-        assert_eq!(layout.rect.height, area.height);
-        // Child should have non-zero size and live within the root
-        let child_rect = &layout.children[0].rect;
-        assert!(child_rect.width > 0 && child_rect.height > 0);
-        assert!(child_rect.x < area.width && child_rect.y < area.height);
-    }
-
-    #[test]
-    fn block_children_stack_vertically() {
-        // h1 + two paragraphs
-        let mut nodes = Vec::new();
-        let h1 = element(2, "h1", vec![ElementId(3)]);
-        let p1 = element(4, "p", vec![ElementId(5)]);
-        let p2 = element(6, "p", vec![ElementId(7)]);
-        let root = ViewNode {
-            id: ElementId(1),
-            tag: Some("div".into()),
-            children: vec![h1.id, p1.id, p2.id],
-            ..Default::default()
-        };
-
-        nodes.push(root.clone());
-        nodes.push(h1.clone());
-        nodes.push(text_node(3, "Title"));
-        nodes.push(p1.clone());
-        nodes.push(text_node(5, "First paragraph."));
-        nodes.push(p2.clone());
-        nodes.push(text_node(7, "Second paragraph."));
-
-        let area = UiRect::new(0, 0, 60, 20);
-        let layout = build_layout(&nodes, &root, area);
-
-        fn collect_text_leaves(node: &LayoutNode, out: &mut Vec<UiRect>) {
-            if node.text.is_some() {
-                out.push(node.rect);
-            }
-            for child in &node.children {
-                collect_text_leaves(child, out);
-            }
-        }
-
-        let mut leaves = Vec::new();
-        collect_text_leaves(&layout, &mut leaves);
-        assert!(leaves.iter().all(|r| r.width > 0 && r.height > 0));
-
-        // y positions of direct children should be non-decreasing (stacked)
-        let mut last_y = 0;
-        for child in &layout.children {
-            assert!(child.rect.y >= last_y);
-            last_y = child.rect.y;
-        }
-    }
 }
