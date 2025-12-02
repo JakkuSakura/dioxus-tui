@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 
+use bevy_ecs::component::Component;
+use bevy_ecs::entity::Entity;
+use bevy_ecs::world::World;
 use dioxus_core::{ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations};
-use shipyard::{Component, EntityId, Get, IntoIter, View, ViewMut, World};
 
 #[derive(Default)]
 pub struct DomState {
     root: Option<ElementId>,
     path_to_id: HashMap<Vec<u8>, ElementId>,
     templates: HashMap<Vec<u8>, TemplateNodeEntry>,
-    id_to_entity: HashMap<ElementId, EntityId>,
+    id_to_entity: HashMap<ElementId, Entity>,
     world: World,
     next_id: usize,
 }
@@ -28,7 +30,6 @@ pub struct DebugNode {
 }
 
 #[derive(Component, Clone, Default)]
-#[track(All)]
 pub struct NodeEntry {
     pub id: ElementId,
     pub tag: Option<String>,
@@ -55,36 +56,40 @@ impl DomState {
         DomWriter { dom: self }
     }
 
-    pub fn nodes(&self) -> Vec<DebugNode> {
-        let view = self.world.borrow::<View<NodeEntry>>().unwrap();
-        view.iter()
-            .map(|n| DebugNode {
+    pub fn nodes(&mut self) -> Vec<DebugNode> {
+        let mut out = Vec::new();
+        let mut query = self.world.query::<&NodeEntry>();
+        for n in query.iter(&self.world) {
+            out.push(DebugNode {
                 id: n.id,
                 tag: n.tag.clone(),
                 text: n.text.clone(),
                 children: n.children.clone(),
                 attrs: n.attrs.clone(),
-            })
-            .collect()
+            });
+        }
+        out
     }
 
-    fn ensure_entity(&mut self, id: ElementId) -> EntityId {
+    fn ensure_entity(&mut self, id: ElementId) -> Entity {
         self.next_id = self.next_id.max(id.0.saturating_add(1));
         if let Some(entity) = self.id_to_entity.get(&id) {
             return *entity;
         }
-        let entity = self.world.add_entity(NodeEntry {
-            id,
-            ..Default::default()
-        });
+        let entity = self
+            .world
+            .spawn(NodeEntry {
+                id,
+                ..Default::default()
+            })
+            .id();
         self.id_to_entity.insert(id, entity);
         entity
     }
 
     fn with_node_mut<F: FnOnce(&mut NodeEntry)>(&mut self, id: ElementId, f: F) {
         let entity = self.ensure_entity(id);
-        let mut view = self.world.borrow::<ViewMut<NodeEntry>>().unwrap();
-        if let Ok(mut node) = (&mut view).get(entity) {
+        if let Some(mut node) = self.world.get_mut::<NodeEntry>(entity) {
             f(&mut node);
         }
     }
@@ -104,10 +109,9 @@ impl DomState {
 
     fn resolve_children(&mut self) {
         let mapping = self.path_to_id.clone();
-        let entities: Vec<EntityId> = self.id_to_entity.values().copied().collect();
-        let mut view = self.world.borrow::<ViewMut<NodeEntry>>().unwrap();
+        let entities: Vec<Entity> = self.id_to_entity.values().copied().collect();
         for entity in entities {
-            if let Ok(mut node) = (&mut view).get(entity) {
+            if let Some(mut node) = self.world.get_mut::<NodeEntry>(entity) {
                 let child_paths = node.children_paths.clone();
                 node.children.clear();
                 for child_path in child_paths.iter() {
@@ -138,17 +142,14 @@ impl WriteMutations for DomWriter<'_> {
 
         if let Some(prev_id) = previous.filter(|old| *old != id) {
             if let Some(prev_entity) = self.dom.id_to_entity.remove(&prev_id) {
-                let cloned = {
-                    let view = self.dom.world.borrow::<View<NodeEntry>>().unwrap();
-                    view.get(prev_entity).ok().cloned()
-                };
+                let cloned = self.dom.world.get::<NodeEntry>(prev_entity).map(|c| c.clone());
                 if let Some(mut cloned) = cloned {
                     cloned.id = id;
                     self.dom.with_node_mut(id, |node| {
                         *node = cloned.clone();
                     });
                 }
-                let _ = self.dom.world.delete_entity(prev_entity);
+                let _ = self.dom.world.despawn(prev_entity);
             }
         }
 
@@ -360,7 +361,7 @@ impl WriteMutations for DomWriter<'_> {
 
     fn remove_node(&mut self, id: ElementId) {
         if let Some(entity) = self.dom.id_to_entity.remove(&id) {
-            let _ = self.dom.world.delete_entity(entity);
+            let _ = self.dom.world.despawn(entity);
         }
     }
 

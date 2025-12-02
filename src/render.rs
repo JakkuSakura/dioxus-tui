@@ -148,7 +148,7 @@ impl DioxusRenderer {
         self.dom.root()
     }
 
-    fn nodes_snapshot(&self) -> Vec<DebugNode> {
+    fn nodes_snapshot(&mut self) -> Vec<DebugNode> {
         self.dom.nodes()
     }
 }
