@@ -16,15 +16,15 @@ pub struct DomState {
 }
 
 #[derive(Clone)]
-pub struct DebugText {
+pub struct ViewText {
     pub text: String,
 }
 
 #[derive(Clone, Default)]
-pub struct DebugNode {
+pub struct ViewNode {
     pub id: ElementId,
     pub tag: Option<String>,
-    pub text: Option<DebugText>,
+    pub text: Option<ViewText>,
     pub children: Vec<ElementId>,
     pub attrs: HashMap<String, String>,
 }
@@ -33,7 +33,7 @@ pub struct DebugNode {
 pub struct NodeEntry {
     pub id: ElementId,
     pub tag: Option<String>,
-    pub text: Option<DebugText>,
+    pub text: Option<ViewText>,
     pub children_paths: Vec<Vec<u8>>,
     pub children: Vec<ElementId>,
     pub attrs: HashMap<String, String>,
@@ -56,11 +56,11 @@ impl DomState {
         DomWriter { dom: self }
     }
 
-    pub fn nodes(&mut self) -> Vec<DebugNode> {
+    pub fn nodes(&mut self) -> Vec<ViewNode> {
         let mut out = Vec::new();
         let mut query = self.world.query::<&NodeEntry>();
         for n in query.iter(&self.world) {
-            out.push(DebugNode {
+            out.push(ViewNode {
                 id: n.id,
                 tag: n.tag.clone(),
                 text: n.text.clone(),
@@ -96,7 +96,7 @@ impl DomState {
 
     fn upsert_text(&mut self, id: ElementId, value: String) {
         self.with_node_mut(id, |node| {
-            node.text = Some(DebugText { text: value });
+            node.text = Some(ViewText { text: value });
         });
         self.next_id = self.next_id.max(id.0.saturating_add(1));
     }
@@ -162,7 +162,7 @@ impl WriteMutations for DomWriter<'_> {
             let child_paths = template_entry.child_paths.clone();
             let attrs = template_entry.attrs.clone();
             let tag = template_entry.tag.clone();
-            let text = template_entry.text.clone().map(|t| DebugText { text: t });
+            let text = template_entry.text.clone().map(|t| ViewText { text: t });
             self.dom.with_node_mut(id, |node| {
                 node.tag = tag.clone();
                 node.attrs = attrs.clone();
@@ -261,7 +261,7 @@ impl WriteMutations for DomWriter<'_> {
                     dom.with_node_mut(id, |n| {
                         n.id = id;
                         n.tag = None;
-                        n.text = Some(DebugText {
+                        n.text = Some(ViewText {
                             text: text.to_string(),
                         });
                         n.children_paths.clear();

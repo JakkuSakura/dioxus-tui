@@ -19,7 +19,7 @@ use ratatui::{backend::CrosstermBackend, layout::Rect, Terminal};
 use tokio::select;
 
 use crate::config::Config;
-use crate::element::{DebugNode, DomState};
+use crate::element::{DomState, ViewNode};
 use crate::events::SerializedHtmlEventConverter;
 use crate::hooks::event_from_crossterm;
 use crate::layout::{build_layout, LayoutNode};
@@ -148,7 +148,7 @@ impl DioxusRenderer {
         self.dom.root()
     }
 
-    fn nodes_snapshot(&mut self) -> Vec<DebugNode> {
+    fn nodes_snapshot(&mut self) -> Vec<ViewNode> {
         self.dom.nodes()
     }
 }
@@ -273,7 +273,7 @@ pub fn run_renderer(
 }
 
 /// Render the captured node tree into a ratatui frame using the computed layout.
-pub fn render_tree(frame: &mut Frame, nodes: &[DebugNode], root_id: Option<ElementId>) {
+pub fn render_tree(frame: &mut Frame, nodes: &[ViewNode], root_id: Option<ElementId>) {
     let root_id = root_id.or_else(|| nodes.first().map(|n| n.id));
     if let Some(root_id) = root_id {
         if let Some(root) = nodes.iter().find(|n| n.id == root_id) {

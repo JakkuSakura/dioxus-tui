@@ -3,11 +3,11 @@
 #![doc(html_favicon_url = "https://avatars.githubusercontent.com/u/79236386")]
 
 mod config;
-mod element;
+pub mod element;
 mod events;
 mod hooks;
-mod layout;
-mod render;
+pub mod layout;
+pub mod render;
 mod styles;
 
 pub use config::{ColorMode, Config, RenderingMode};
