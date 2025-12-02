@@ -23,7 +23,7 @@ use crate::element::{DebugNode, DomState};
 use crate::events::SerializedHtmlEventConverter;
 use crate::hooks::event_from_crossterm;
 use crate::layout::{build_layout, LayoutNode};
-use crate::styles::{ListStyleType, StyleProps};
+use crate::styles::{compute_styles, list_item_label, Attrs};
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
     unbounded()
@@ -298,7 +298,7 @@ fn print_layout(node: &LayoutNode, depth: usize) {
 
 fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
     let tag = node.tag.as_deref().unwrap_or("");
-    let style = StyleProps::from_attrs(&node.attrs, false);
+    let stylesheet = (); // placeholder, layout hints not yet used
 
     fn collect_text(n: &LayoutNode) -> Option<String> {
         let mut parts = Vec::new();
@@ -331,31 +331,33 @@ fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
         }
         "li" => {
             let text = collect_text(node).unwrap_or_default();
-            let content = match style.list_style_type.unwrap_or(ListStyleType::Disc) {
-                ListStyleType::None => text,
-                ListStyleType::Decimal => format!("1. {text}"),
-                ListStyleType::Disc => format!("• {text}"),
-            };
+            let styles = compute_styles(tag, Attrs::new(&node.attrs));
+            let default_style = lightningcss::properties::list::ListStyleType::CounterStyle(
+                lightningcss::properties::list::CounterStyle::Predefined(
+                    lightningcss::properties::list::PredefinedCounterStyle::Disc,
+                ),
+            );
+            let style_ref = styles.list_style.as_ref().unwrap_or(&default_style);
+            let content = list_item_label(style_ref, 0, &text);
             frame.render_widget(Paragraph::new(content).alignment(node.align), node.rect);
         }
         "ul" | "ol" => {
-            let default_style = if tag == "ol" {
-                ListStyleType::Decimal
-            } else {
-                ListStyleType::Disc
-            };
-            let list_style = style.list_style_type.unwrap_or(default_style);
+            let styles = compute_styles(tag, Attrs::new(&node.attrs));
+            let default_style = lightningcss::properties::list::ListStyleType::CounterStyle(
+                lightningcss::properties::list::CounterStyle::Predefined(if tag == "ol" {
+                    lightningcss::properties::list::PredefinedCounterStyle::Decimal
+                } else {
+                    lightningcss::properties::list::PredefinedCounterStyle::Disc
+                }),
+            );
+            let style_ref = styles.list_style.as_ref().unwrap_or(&default_style);
             let items: Vec<ListItem> = node
                 .children
                 .iter()
                 .enumerate()
                 .map(|(idx, child)| {
                     let text = collect_text(child).unwrap_or_default();
-                    let label = match list_style {
-                        ListStyleType::None => text,
-                        ListStyleType::Disc => format!("• {text}"),
-                        ListStyleType::Decimal => format!("{}. {text}", idx + 1),
-                    };
+                    let label = list_item_label(style_ref, idx, &text);
                     ListItem::new(label)
                 })
                 .collect();
