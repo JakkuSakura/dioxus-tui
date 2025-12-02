@@ -298,7 +298,7 @@ fn print_layout(node: &LayoutNode, depth: usize) {
 
 fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
     let tag = node.tag.as_deref().unwrap_or("");
-    let stylesheet = (); // placeholder, layout hints not yet used
+    let _stylesheet = (); // placeholder, layout hints not yet used
 
     fn collect_text(n: &LayoutNode) -> Option<String> {
         let mut parts = Vec::new();

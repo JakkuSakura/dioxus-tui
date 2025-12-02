@@ -1,9 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::element::DebugNode;
+use blitz_dom::{
+    local_name, ns, Attribute, BaseDocument, DocumentConfig, DocumentMutator, LocalName, QualName,
+};
+use blitz_traits::shell::{ColorScheme, Viewport};
 use ratatui::layout::{Alignment, Rect as UiRect};
-use taffy::prelude::*;
-use taffy::{NodeId, TaffyTree};
 
 pub struct LayoutNode {
     pub id: dioxus_core::ElementId,
@@ -15,187 +17,173 @@ pub struct LayoutNode {
     pub align: Alignment,
 }
 
-/// Build layout using Taffy (flexbox) to better mirror web semantics.
+fn parse_alignment(node: &DebugNode) -> Alignment {
+    node.attrs
+        .get("text_align")
+        .or_else(|| node.attrs.get("align"))
+        .map(|v| match v.to_lowercase().as_str() {
+            "center" => Alignment::Center,
+            "right" => Alignment::Right,
+            _ => Alignment::Left,
+        })
+        .unwrap_or(Alignment::Left)
+}
+
+fn blitz_name(tag: &str) -> QualName {
+    QualName::new(None, ns!(html), LocalName::from(tag))
+}
+
+fn blitz_style_for(node: &DebugNode) -> String {
+    // Translate our limited attrs into CSS Stylo understands.
+    let mut rules: Vec<String> = vec!["display: flex".into(), "flex: 1 1 auto".into()];
+
+    if let Some(dir) = node
+        .attrs
+        .get("flex_direction")
+        .or_else(|| node.attrs.get("direction"))
+    {
+        rules.push(format!("flex-direction: {}", dir));
+    } else {
+        rules.push("flex-direction: column".into());
+    }
+
+    if let Some(justify) = node.attrs.get("justify_content") {
+        rules.push(format!("justify-content: {}", justify));
+    }
+
+    if let Some(align) = node
+        .attrs
+        .get("align_items")
+        .or_else(|| node.attrs.get("align_content"))
+    {
+        rules.push(format!("align-items: {}", align));
+    }
+
+    if let Some(width) = node.attrs.get("width") {
+        rules.push(format!("width: {width}"));
+    }
+    if let Some(height) = node.attrs.get("height") {
+        rules.push(format!("height: {height}"));
+    }
+
+    if let Some(text_align) = node
+        .attrs
+        .get("text_align")
+        .or_else(|| node.attrs.get("align"))
+    {
+        rules.push(format!("text-align: {text_align}"));
+    }
+
+    if node.text.is_some() {
+        rules.push("flex: 0 0 auto".into());
+    }
+
+    rules.join("; ")
+}
+
+/// Build layout using Blitz (Stylo + Taffy) to mirror web semantics.
 pub fn build_layout(nodes: &[DebugNode], root: &DebugNode, area: UiRect) -> LayoutNode {
-    let mut taffy: TaffyTree<()> = TaffyTree::new();
+    let mut doc = BaseDocument::new(DocumentConfig {
+        viewport: Some(Viewport::new(
+            area.width.into(),
+            area.height.into(),
+            1.0,
+            ColorScheme::Light,
+        )),
+        ..Default::default()
+    });
+
     let id_map: HashMap<dioxus_core::ElementId, &DebugNode> =
         nodes.iter().map(|n| (n.id, n)).collect();
+    let mut blitz_ids: HashMap<dioxus_core::ElementId, usize> = HashMap::new();
 
-    fn style_from_node(node: &DebugNode) -> Style {
-        let attrs = &node.attrs;
-        let mut style = Style {
-            display: Display::Flex,
-            flex_direction: FlexDirection::Column,
-            flex_grow: 1.0,
-            ..Default::default()
-        };
+    fn build_blitz_subtree(
+        node: &DebugNode,
+        mutator: &mut DocumentMutator<'_>,
+        id_map: &HashMap<dioxus_core::ElementId, &DebugNode>,
+        blitz_ids: &mut HashMap<dioxus_core::ElementId, usize>,
+    ) -> usize {
+        let tag = node.tag.as_deref().unwrap_or("div");
+        let qual = blitz_name(tag);
 
-        if let Some(dir) = attrs
-            .get("flex_direction")
-            .or_else(|| attrs.get("direction"))
-            .map(|s| s.to_lowercase())
-        {
-            style.flex_direction = match dir.as_str() {
-                "row" => FlexDirection::Row,
-                _ => FlexDirection::Column,
-            };
+        let mut attrs: Vec<Attribute> = node
+            .attrs
+            .iter()
+            .map(|(name, value)| Attribute {
+                name: QualName::new(None, ns!(html), LocalName::from(name.as_str())),
+                value: value.clone(),
+            })
+            .collect();
+
+        let style = blitz_style_for(node);
+        if !style.is_empty() {
+            attrs.push(Attribute {
+                name: QualName::new(None, ns!(html), local_name!("style")),
+                value: style,
+            });
         }
 
-        if let Some(justify) = attrs.get("justify_content").map(|s| s.to_lowercase()) {
-            style.justify_content = match justify.as_str() {
-                "center" => Some(JustifyContent::Center),
-                "end" | "flex-end" => Some(JustifyContent::FlexEnd),
-                "space-between" => Some(JustifyContent::SpaceBetween),
-                _ => Some(JustifyContent::FlexStart),
-            };
-        }
-
-        if let Some(align) = attrs
-            .get("align_items")
-            .or_else(|| attrs.get("align_content"))
-            .map(|s| s.to_lowercase())
-        {
-            style.align_items = match align.as_str() {
-                "center" => Some(AlignItems::Center),
-                "end" | "flex-end" => Some(AlignItems::FlexEnd),
-                "stretch" => Some(AlignItems::Stretch),
-                _ => Some(AlignItems::FlexStart),
-            };
-        }
-
-        if let Some(w) = attrs.get("width") {
-            style.size.width = parse_dimension(w);
-        }
-        if let Some(h) = attrs.get("height") {
-            style.size.height = parse_dimension(h);
-        }
+        let element_id = mutator.create_element(qual, attrs);
+        blitz_ids.insert(node.id, element_id);
 
         if let Some(text) = &node.text {
-            style.flex_grow = 0.0;
-            style.flex_shrink = 0.0;
-            let approx_width = text.text.len().max(1) as f32;
-            style.min_size = Size {
-                width: Dimension::length(approx_width),
-                height: Dimension::length(1.0),
-            };
+            let text_id = mutator.create_text_node(&text.text);
+            mutator.append_children(element_id, &[text_id]);
         }
 
-        style
-    }
-
-    fn parse_dimension(raw: &str) -> Dimension {
-        let s = raw.trim().to_lowercase();
-        if s.ends_with('%') {
-            if let Ok(pct) = s.trim_end_matches('%').trim().parse::<f32>() {
-                return Dimension::percent((pct / 100.0).clamp(0.0, 1.0));
+        for child in node.children.iter() {
+            if let Some(child_node) = id_map.get(child) {
+                let child_id = build_blitz_subtree(child_node, mutator, id_map, blitz_ids);
+                mutator.append_children(element_id, &[child_id]);
             }
         }
-        if let Some(px) = s
-            .strip_suffix("px")
-            .and_then(|v| v.trim().parse::<f32>().ok())
-        {
-            return Dimension::length(px);
-        }
-        if let Ok(px) = s.parse::<f32>() {
-            return Dimension::length(px);
-        }
-        Dimension::auto()
+
+        element_id
     }
 
-    fn parse_alignment(node: &DebugNode) -> Alignment {
-        node.attrs
-            .get("text_align")
-            .or_else(|| node.attrs.get("align"))
-            .map(|v| match v.to_lowercase().as_str() {
-                "center" => Alignment::Center,
-                "right" => Alignment::Right,
-                _ => Alignment::Left,
-            })
-            .unwrap_or(Alignment::Left)
+    let root_container_id = doc.root_node().id;
+    {
+        let mut mutator = doc.mutate();
+        let root_blitz_id = build_blitz_subtree(root, &mut mutator, &id_map, &mut blitz_ids);
+        mutator.append_children(root_container_id, &[root_blitz_id]);
     }
 
-    fn build_tree(
-        taffy: &mut TaffyTree<()>,
+    doc.resolve(0.0);
+
+    fn assemble_layout(
         node: &DebugNode,
-        map: &HashMap<dioxus_core::ElementId, &DebugNode>,
-        visited: &mut HashSet<dioxus_core::ElementId>,
-    ) -> (NodeId, LayoutNode) {
-        if !visited.insert(node.id) {
-            let layout_node = LayoutNode {
-                id: node.id,
-                rect: UiRect::default(),
-                children: Vec::new(),
-                tag: node.tag.clone(),
-                text: node.text.as_ref().map(|t| t.text.clone()),
-                attrs: node.attrs.clone(),
-                align: parse_alignment(node),
-            };
-            let handle = taffy.new_leaf(style_from_node(node)).unwrap();
-            return (handle, layout_node);
-        }
-
-        let mut child_handles = Vec::new();
-        let mut layout_children = Vec::new();
-        for child_id in node.children.iter() {
-            if let Some(child) = map.get(child_id) {
-                let (handle, layout_child) = build_tree(taffy, child, map, visited);
-                child_handles.push(handle);
-                layout_children.push(layout_child);
-            }
-        }
-
-        let style = style_from_node(node);
-        let handle = if child_handles.is_empty() {
-            taffy.new_leaf(style).unwrap()
-        } else {
-            taffy.new_with_children(style, &child_handles).unwrap()
-        };
-
-        let layout_node = LayoutNode {
+        id_map: &HashMap<dioxus_core::ElementId, &DebugNode>,
+        blitz_ids: &HashMap<dioxus_core::ElementId, usize>,
+        doc: &BaseDocument,
+    ) -> LayoutNode {
+        let mut layout_node = LayoutNode {
             id: node.id,
             rect: UiRect::default(),
-            children: layout_children,
+            children: Vec::new(),
             tag: node.tag.clone(),
             text: node.text.as_ref().map(|t| t.text.clone()),
             attrs: node.attrs.clone(),
             align: parse_alignment(node),
         };
 
-        (handle, layout_node)
-    }
-
-    // Build tree and compute layout
-    let (root_handle, mut layout_root) = build_tree(&mut taffy, root, &id_map, &mut HashSet::new());
-    if let Ok(style) = taffy.style(root_handle) {
-        let mut style = style.clone();
-        style.size.width = Dimension::length(area.width as f32);
-        style.size.height = Dimension::length(area.height as f32);
-        let _ = taffy.set_style(root_handle, style);
-    }
-    let size = taffy::geometry::Size {
-        width: AvailableSpace::Definite(area.width as f32),
-        height: AvailableSpace::Definite(area.height as f32),
-    };
-    let _ = taffy.compute_layout(root_handle, size);
-
-    fn apply_layout(taffy: &TaffyTree<()>, handle: NodeId, layout_node: &mut LayoutNode) {
-        if let Ok(layout) = taffy.layout(handle) {
+        if let Some(node_id) = blitz_ids.get(&node.id).and_then(|id| doc.get_node(*id)) {
+            let layout = node_id.final_layout;
             layout_node.rect = UiRect::new(
-                layout.location.x as u16,
-                layout.location.y as u16,
-                layout.size.width as u16,
-                layout.size.height as u16,
+                layout.location.x.max(0.0) as u16,
+                layout.location.y.max(0.0) as u16,
+                layout.size.width.max(0.0) as u16,
+                layout.size.height.max(0.0) as u16,
             );
         }
 
-        let children = taffy.children(handle).unwrap_or_default();
-        for (i, child_handle) in children.into_iter().enumerate() {
-            if let Some(child_node) = layout_node.children.get_mut(i) {
-                apply_layout(taffy, child_handle, child_node);
+        for child in node.children.iter() {
+            if let Some(child_node) = id_map.get(child) {
+                layout_node.children.push(assemble_layout(child_node, id_map, blitz_ids, doc));
             }
         }
+
+        layout_node
     }
 
-    apply_layout(&taffy, root_handle, &mut layout_root);
-    layout_root
+    assemble_layout(root, &id_map, &blitz_ids, &doc)
 }
