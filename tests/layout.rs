@@ -41,10 +41,13 @@ fn layout_root_matches_viewport() {
 #[test]
 fn block_elements_stack_and_have_space() {
     let mut nodes = Vec::new();
-    let h1 = element(2, "h1", vec![ElementId(3)]);
-    let p1 = element(4, "p", vec![ElementId(5)]);
-    let p2 = element(6, "p", vec![ElementId(7)]);
-    let root = ViewNode {
+    let mut h1 = element(2, "h1", vec![ElementId(3)]);
+    h1.attrs.insert("height".into(), "1px".into());
+    let mut p1 = element(4, "p", vec![ElementId(5)]);
+    p1.attrs.insert("height".into(), "1px".into());
+    let mut p2 = element(6, "p", vec![ElementId(7)]);
+    p2.attrs.insert("height".into(), "1px".into());
+    let root = DomNode {
         id: ElementId(1),
         tag: Some("div".into()),
         children: vec![h1.id, p1.id, p2.id],

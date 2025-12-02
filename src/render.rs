@@ -153,7 +153,7 @@ impl DioxusRenderer {
     }
 }
 
-pub fn run_renderer(
+pub(crate) fn run_renderer(
     cfg: Config,
     mut renderer: DioxusRenderer,
     mut raw_event_reciever: UnboundedReceiver<InputEvent>,

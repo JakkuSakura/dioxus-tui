@@ -5,7 +5,7 @@ use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
 use ratatui::Terminal;
 
-fn build_nodes_from_app(app: fn() -> Element) -> (Vec<dioxus_tui::element::ViewNode>, Option<dioxus_core::ElementId>) {
+fn build_nodes_from_app(app: fn() -> Element) -> (Vec<dioxus_tui::element::DomNode>, Option<dioxus_core::ElementId>) {
     use dioxus_core::VirtualDom;
 
     let mut vdom = VirtualDom::new(app);

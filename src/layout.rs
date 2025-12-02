@@ -192,16 +192,6 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
             layout_node.rect = UiRect::new(x as u16, y as u16, w as u16, h as u16);
         }
 
-        // Fallback size for text leaves that Blitz reports as zero-sized
-        if layout_node.text.is_some() {
-            if layout_node.rect.width == 0 {
-                layout_node.rect.width = 1;
-            }
-            if layout_node.rect.height == 0 {
-                layout_node.rect.height = 1;
-            }
-        }
-
         for child in node.children.iter() {
             if let Some(child_node) = id_map.get(child) {
                 layout_node.children
@@ -209,20 +199,17 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
             }
         }
 
-        // If the container got a zero (or tiny) size but its children have extents, expand to fit them within the viewport.
-        let mut max_x = layout_node.rect.x as i32 + layout_node.rect.width as i32;
-        let mut max_y = layout_node.rect.y as i32 + layout_node.rect.height as i32;
-        for child in &layout_node.children {
-            max_x = max_x.max(child.rect.x as i32 + child.rect.width as i32);
-            max_y = max_y.max(child.rect.y as i32 + child.rect.height as i32);
-        }
-        let new_w = (max_x - layout_node.rect.x as i32).max(0) as u16;
-        let new_h = (max_y - layout_node.rect.y as i32).max(0) as u16;
-        if new_w > layout_node.rect.width {
-            layout_node.rect.width = new_w.min(area.width.saturating_sub(layout_node.rect.x));
-        }
-        if new_h > layout_node.rect.height {
-            layout_node.rect.height = new_h.min(area.height.saturating_sub(layout_node.rect.y));
+        // If a node with text or children has zero size after layout, crash to surface bad layout data.
+        if (layout_node.rect.width == 0 || layout_node.rect.height == 0)
+            && (layout_node.text.is_some() || !layout_node.children.is_empty())
+        {
+            panic!(
+                "Zero-sized layout for node {:?} tag {:?} (children: {} text: {:?})",
+                layout_node.id,
+                layout_node.tag,
+                layout_node.children.len(),
+                layout_node.text
+            );
         }
 
         layout_node
