@@ -13,7 +13,7 @@ use dioxus_core::{ElementId, Event, VirtualDom};
 use dioxus_html::PlatformEventData;
 use futures::{pin_mut, StreamExt};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use ratatui::widgets::{List, ListItem, Paragraph};
 use ratatui::Frame;
 use ratatui::{backend::CrosstermBackend, layout::Rect, Terminal};
 use tokio::select;
@@ -23,6 +23,7 @@ use crate::element::{DebugNode, DomState};
 use crate::events::SerializedHtmlEventConverter;
 use crate::hooks::event_from_crossterm;
 use crate::layout::{build_layout, LayoutNode};
+use crate::styles::{ListStyleType, StyleProps};
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
     unbounded()
@@ -295,27 +296,9 @@ fn print_layout(node: &LayoutNode, depth: usize) {
     }
 }
 
-fn block_from_node(node: &LayoutNode, fallback_tag: &str) -> Block<'static> {
-    let mut block = Block::default();
-    if let Some(title) = node.attrs.get("title").cloned() {
-        block = block.title(title);
-    }
-
-    let draw_border = node
-        .attrs
-        .get("border")
-        .map(|v| v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
-        .unwrap_or(false);
-
-    if draw_border {
-        block.borders(Borders::ALL)
-    } else {
-        block
-    }
-}
-
 fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
     let tag = node.tag.as_deref().unwrap_or("");
+    let style = StyleProps::from_attrs(&node.attrs, false);
 
     fn collect_text(n: &LayoutNode) -> Option<String> {
         let mut parts = Vec::new();
@@ -347,14 +330,34 @@ fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
             frame.render_widget(Paragraph::new(text).alignment(node.align), node.rect);
         }
         "li" => {
-            let content = format!("• {}", collect_text(node).unwrap_or_default());
+            let text = collect_text(node).unwrap_or_default();
+            let content = match style.list_style_type.unwrap_or(ListStyleType::Disc) {
+                ListStyleType::None => text,
+                ListStyleType::Decimal => format!("1. {text}"),
+                ListStyleType::Disc => format!("• {text}"),
+            };
             frame.render_widget(Paragraph::new(content).alignment(node.align), node.rect);
         }
         "ul" | "ol" => {
+            let default_style = if tag == "ol" {
+                ListStyleType::Decimal
+            } else {
+                ListStyleType::Disc
+            };
+            let list_style = style.list_style_type.unwrap_or(default_style);
             let items: Vec<ListItem> = node
                 .children
                 .iter()
-                .map(|child| ListItem::new(collect_text(child).unwrap_or_default()))
+                .enumerate()
+                .map(|(idx, child)| {
+                    let text = collect_text(child).unwrap_or_default();
+                    let label = match list_style {
+                        ListStyleType::None => text,
+                        ListStyleType::Disc => format!("• {text}"),
+                        ListStyleType::Decimal => format!("{}. {text}", idx + 1),
+                    };
+                    ListItem::new(label)
+                })
                 .collect();
             let list = List::new(items);
             frame.render_widget(list, node.rect);

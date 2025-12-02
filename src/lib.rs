@@ -8,6 +8,7 @@ mod events;
 mod hooks;
 mod layout;
 mod render;
+mod styles;
 
 pub use config::{ColorMode, Config, RenderingMode};
 pub use hooks::EventData;
