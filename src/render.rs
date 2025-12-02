@@ -370,6 +370,29 @@ fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
                 frame.render_widget(paragraph, node.rect);
             }
         }
+        "div" => {
+            let block = block_from_node(node, tag);
+            frame.render_widget(block.clone(), node.rect);
+            let inner = block.inner(node.rect);
+            if let Some(text) = &node.text {
+                frame.render_widget(Paragraph::new(text.clone()).alignment(node.align), inner);
+            }
+            for child in node.children.iter() {
+                render_layout_node(frame, child, false);
+            }
+        }
+        "" => {
+            // Raw text node: render text only, then recurse into children if any.
+            if let Some(text) = &node.text {
+                frame.render_widget(
+                    Paragraph::new(text.clone()).alignment(node.align),
+                    node.rect,
+                );
+            }
+            for child in node.children.iter() {
+                render_layout_node(frame, child, false);
+            }
+        }
         _ => {
             let block = block_from_node(node, tag);
             frame.render_widget(block.clone(), node.rect);

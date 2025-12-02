@@ -10,7 +10,7 @@ pub struct DomState {
     templates: HashMap<Vec<u8>, TemplateNodeEntry>,
     id_to_entity: HashMap<ElementId, EntityId>,
     world: World,
-    next_synth: usize,
+    next_id: usize,
 }
 
 #[derive(Clone)]
@@ -115,74 +115,6 @@ impl DomState {
                 }
             }
         }
-    }
-
-    fn materialize_template(&mut self, template: &Template, root_index: usize, root_id: ElementId) {
-        fn attrs_from_template(attrs: &[TemplateAttribute]) -> HashMap<String, String> {
-            let mut out = HashMap::new();
-            for attr in attrs {
-                if let TemplateAttribute::Static { name, value, .. } = attr {
-                    out.insert(name.to_string(), value.to_string());
-                }
-            }
-            out
-        }
-
-        fn walk(dom: &mut DomState, node: &TemplateNode, path: &mut Vec<u8>, id: ElementId) {
-            match node {
-                TemplateNode::Text { text } => {
-                    dom.path_to_id.insert(path.clone(), id);
-                    dom.ensure_entity(id);
-                    dom.with_node_mut(id, |n| {
-                        n.id = id;
-                        n.tag = None;
-                        n.text = Some(DebugText {
-                            text: text.to_string(),
-                        });
-                        n.children_paths.clear();
-                        n.children.clear();
-                        n.attrs.clear();
-                    });
-                }
-                TemplateNode::Element {
-                    tag,
-                    children,
-                    attrs,
-                    ..
-                } => {
-                    dom.path_to_id.insert(path.clone(), id);
-                    let mut child_paths = Vec::new();
-                    let mut child_ids = Vec::new();
-                    for (idx, child) in children.iter().enumerate() {
-                        let mut child_path = path.clone();
-                        child_path.push(idx as u8);
-                        child_paths.push(child_path.clone());
-                        let new_id = ElementId(dom.next_synth);
-                        dom.next_synth += 1;
-                        child_ids.push(new_id);
-                        walk(dom, child, &mut child_path, new_id);
-                    }
-
-                    let attr_map = attrs_from_template(attrs);
-                    dom.ensure_entity(id);
-                    dom.with_node_mut(id, |n| {
-                        n.id = id;
-                        n.tag = Some((*tag).to_string());
-                        n.text = None;
-                        n.children_paths = child_paths.clone();
-                        n.children = child_ids.clone();
-                        n.attrs = attr_map.clone();
-                    });
-                }
-                TemplateNode::Dynamic { .. } => {}
-            }
-        }
-
-        let mut path = vec![root_index as u8];
-        if let Some(root) = template.roots.get(root_index) {
-            walk(self, root, &mut path, root_id);
-        }
-        self.resolve_children();
     }
 }
 
@@ -313,14 +245,71 @@ impl WriteMutations for DomWriter<'_> {
         for (idx, root) in template.roots.iter().enumerate() {
             path[0] = idx as u8;
             collect(root, &mut path, &mut collected);
-            if _index == idx {
-                self.dom.materialize_template(&template, idx, _id);
-                if self.dom.root.is_none() {
-                    self.dom.root = Some(_id);
+        }
+        self.dom.templates.extend(collected.clone());
+
+        // Materialize template tree with generated IDs for rendering/debug.
+        fn materialize(dom: &mut DomState, node: &TemplateNode, path: &mut Vec<u8>, id: ElementId) {
+            dom.path_to_id.insert(path.clone(), id);
+            match node {
+                TemplateNode::Text { text } => {
+                    dom.with_node_mut(id, |n| {
+                        n.id = id;
+                        n.tag = None;
+                        n.text = Some(DebugText {
+                            text: text.to_string(),
+                        });
+                        n.children_paths.clear();
+                        n.children.clear();
+                        n.attrs.clear();
+                    });
                 }
+                TemplateNode::Element {
+                    tag,
+                    children,
+                    attrs,
+                    ..
+                } => {
+                    let mut child_paths = Vec::new();
+                    let mut child_ids = Vec::new();
+                    for (cidx, child) in children.iter().enumerate() {
+                        let mut cpath = path.clone();
+                        cpath.push(cidx as u8);
+                        child_paths.push(cpath.clone());
+                        let child_id = ElementId(dom.next_id);
+                        dom.next_id += 1;
+                        child_ids.push(child_id);
+                        materialize(dom, child, &mut cpath, child_id);
+                    }
+
+                    let mut attr_map = HashMap::new();
+                    for attr in *attrs {
+                        if let TemplateAttribute::Static { name, value, .. } = attr {
+                            attr_map.insert(name.to_string(), value.to_string());
+                        }
+                    }
+
+                    dom.with_node_mut(id, |n| {
+                        n.id = id;
+                        n.tag = Some((*tag).to_string());
+                        n.text = None;
+                        n.children_paths = child_paths;
+                        n.children = child_ids;
+                        n.attrs = attr_map;
+                    });
+                }
+                TemplateNode::Dynamic { .. } => {}
             }
         }
-        self.dom.templates.extend(collected);
+
+        if let Some(root_node) = template.roots.get(_index) {
+            let mut root_path = vec![_index as u8];
+            materialize(&mut self.dom, root_node, &mut root_path, _id);
+            if self.dom.root.is_none() {
+                self.dom.root = Some(_id);
+            }
+        }
+
         self.dom.resolve_children();
     }
 
