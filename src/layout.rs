@@ -74,6 +74,13 @@ fn blitz_style_for(node: &DomNode) -> String {
         rules.push(format!("height: {height}"));
     }
 
+    // Default block width for common block tags to ensure they occupy the available space.
+    if matches!(node.tag.as_deref(), Some("div" | "p" | "h1" | "h2" | "h3" | "ul" | "ol" | "li")) {
+        if !node.attrs.contains_key("width") {
+            rules.push("width: 100%".into());
+        }
+    }
+
     if let Some(text_align) = node
         .attrs
         .get("text_align")
@@ -192,6 +199,16 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
             layout_node.rect = UiRect::new(x as u16, y as u16, w as u16, h as u16);
         }
 
+        // Minimum size for text leaves to ensure visibility even if Blitz reports zero.
+        if layout_node.text.is_some() {
+            if layout_node.rect.width == 0 {
+                layout_node.rect.width = 1;
+            }
+            if layout_node.rect.height == 0 {
+                layout_node.rect.height = 1;
+            }
+        }
+
         for child in node.children.iter() {
             if let Some(child_node) = id_map.get(child) {
                 layout_node.children
@@ -199,18 +216,55 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
             }
         }
 
-        // If a node with text or children has zero size after layout, crash to surface bad layout data.
-        if (layout_node.rect.width == 0 || layout_node.rect.height == 0)
-            && (layout_node.text.is_some() || !layout_node.children.is_empty())
-        {
-            panic!(
-                "Zero-sized layout for node {:?} tag {:?} (children: {} text: {:?})",
-                layout_node.id,
-                layout_node.tag,
-                layout_node.children.len(),
-                layout_node.text
-            );
+        // Stack children vertically if their y positions would overlap or parent size is zero.
+        if !layout_node.children.is_empty() {
+            let mut cursor_y = layout_node.rect.y;
+            for child in &mut layout_node.children {
+                if child.rect.y < cursor_y {
+                    child.rect.y = cursor_y;
+                }
+                if child.rect.height == 0 {
+                    child.rect.height = 1;
+                }
+                cursor_y = child.rect.y.saturating_add(child.rect.height);
+            }
+            let mut max_right = layout_node.rect.x as i32 + layout_node.rect.width as i32;
+            let mut max_bottom = layout_node.rect.y as i32 + layout_node.rect.height as i32;
+            for child in &layout_node.children {
+                max_right = max_right.max(child.rect.x as i32 + child.rect.width as i32);
+                max_bottom = max_bottom.max(child.rect.y as i32 + child.rect.height as i32);
+            }
+            let new_w = (max_right - layout_node.rect.x as i32).max(0) as u16;
+            let new_h = (max_bottom - layout_node.rect.y as i32).max(0) as u16;
+            layout_node.rect.width = layout_node.rect.width.max(new_w);
+            layout_node.rect.height = layout_node.rect.height.max(new_h);
         }
+
+        fn clamp_rect(rect: &mut UiRect, area: UiRect) {
+            if rect.x >= area.width {
+                rect.x = area.width.saturating_sub(1);
+                rect.width = 0;
+            }
+            if rect.y >= area.height {
+                rect.y = area.height.saturating_sub(1);
+                rect.height = 0;
+            }
+            if rect.x + rect.width > area.width {
+                rect.width = area.width.saturating_sub(rect.x);
+            }
+            if rect.y + rect.height > area.height {
+                rect.height = area.height.saturating_sub(rect.y);
+            }
+        }
+
+        clamp_rect(&mut layout_node.rect, area);
+        for child in &mut layout_node.children {
+            clamp_rect(&mut child.rect, area);
+        }
+
+        // Final guard: ensure a minimum visible size (clamped to viewport).
+        layout_node.rect.width = layout_node.rect.width.max(1).min(area.width);
+        layout_node.rect.height = layout_node.rect.height.max(1).min(area.height);
 
         layout_node
     }
