@@ -1,28 +1,63 @@
+use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus::prelude::*;
 use dioxus_core::VirtualDom;
-use dioxus_tui::element::DomState;
+use dioxus_native_dom::{DioxusDocument, DocumentConfig};
+use dioxus_tui::layout::{build_layout, LayoutNode};
 use dioxus_tui::render::render_tree;
-use ratatui::{backend::TestBackend, Terminal};
 use ratatui::layout::Rect;
+use ratatui::{backend::TestBackend, Terminal};
+use std::sync::Once;
 
-pub fn build_nodes_from_app(app: fn() -> Element) -> (Vec<dioxus_tui::element::DomNode>, Option<dioxus_core::ElementId>) {
-    let mut vdom = VirtualDom::new(app);
-    let mut dom = DomState::default();
-    {
-        let mut writer = dom.writer();
-        vdom.rebuild(&mut writer);
-    }
-    let root = dom.root();
-    (dom.nodes(), root)
+static DEBUG_ONCE: Once = Once::new();
+
+pub fn build_layout_from_app(app: fn() -> Element, width: u16, height: u16) -> Option<LayoutNode> {
+    let vdom = VirtualDom::new(app);
+    let viewport = Viewport::new(width.into(), height.into(), 1.0, ColorScheme::Light);
+    let mut doc = DioxusDocument::new(
+        vdom,
+        DocumentConfig {
+            viewport: Some(viewport),
+            ..Default::default()
+        },
+    );
+    doc.initial_build();
+    DEBUG_ONCE.call_once(|| {
+        fn dump(doc: &blitz_dom::BaseDocument, id: usize, depth: usize) {
+            if let Some(node) = doc.get_node(id) {
+                let indent = "  ".repeat(depth);
+                let tag = node
+                    .element_data()
+                    .map(|el| el.name.local.to_string())
+                    .unwrap_or_else(|| "#text".to_string());
+                let text = node
+                    .text_data()
+                    .map(|t| t.content.clone())
+                    .unwrap_or_default();
+                println!("{indent}{tag} id={id} text={text:?}");
+                for child in node.children.iter() {
+                    dump(doc, *child, depth + 1);
+                }
+            }
+        }
+        println!("-- debug blitz tree --");
+        let root = doc.inner.root_node().id;
+        dump(&doc.inner, root, 0);
+    });
+    build_layout(&mut doc, Rect::new(0, 0, width, height))
 }
 
-pub fn render_app_to_buffer(app: fn() -> Element, width: u16, height: u16) -> ratatui::buffer::Buffer {
-    let (nodes, root_id) = build_nodes_from_app(app);
+pub fn render_app_to_buffer(
+    app: fn() -> Element,
+    width: u16,
+    height: u16,
+) -> ratatui::buffer::Buffer {
+    let layout = build_layout_from_app(app, width, height)
+        .expect("layout should be available for rendered app");
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|f| {
-            render_tree(f, &nodes, root_id.or_else(|| nodes.first().map(|n| n.id)));
+            render_tree(f, &layout);
         })
         .unwrap();
     let buf = terminal.backend_mut().buffer().clone();

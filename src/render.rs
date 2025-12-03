@@ -1,6 +1,8 @@
 use std::{any::Any, pin::Pin, rc::Rc, time::Duration};
 
 use anyhow::Result;
+use blitz_dom::Document;
+use blitz_traits::shell::{ColorScheme, Viewport};
 use crossterm::cursor::{RestorePosition, SavePosition, Show};
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event as TermEvent, KeyCode, KeyModifiers,
@@ -11,6 +13,7 @@ use crossterm::terminal::{
 };
 use dioxus_core::{ElementId, Event, VirtualDom};
 use dioxus_html::PlatformEventData;
+use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use futures::{pin_mut, StreamExt};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use ratatui::widgets::Paragraph;
@@ -19,8 +22,6 @@ use ratatui::{backend::CrosstermBackend, layout::Rect, Terminal};
 use tokio::select;
 
 use crate::config::Config;
-use crate::element::{DomNode, DomState};
-use crate::events::SerializedHtmlEventConverter;
 use crate::hooks::event_from_crossterm;
 use crate::layout::{build_layout, LayoutNode};
 use crate::styles::{compute_styles, list_item_label, Attrs, ListStyle};
@@ -55,35 +56,39 @@ pub enum InputEvent {
 }
 
 pub(crate) struct DioxusRenderer {
-    pub(crate) vdom: VirtualDom,
-    pub(crate) dom: DomState,
+    pub(crate) doc: DioxusDocument,
     #[cfg(all(feature = "hot-reload", debug_assertions))]
     pub(crate) hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<dioxus_hot_reload::HotReloadMsg>,
 }
 
 impl DioxusRenderer {
     pub fn new(
-        mut vdom: VirtualDom,
+        vdom: VirtualDom,
     ) -> (
         Self,
         UnboundedSender<InputEvent>,
         UnboundedReceiver<InputEvent>,
     ) {
-        dioxus_html::set_event_converter(Box::new(SerializedHtmlEventConverter));
         let (event_tx, event_rx) = channel();
         let ctx = TuiContext::new(event_tx.clone());
-        vdom = vdom.with_root_context(ctx);
+        let vdom = vdom.with_root_context(ctx);
 
-        let mut dom = DomState::default();
-        {
-            let mut writer = dom.writer();
-            vdom.rebuild(&mut writer);
-        }
+        let viewport = {
+            let (w, h) = size().unwrap_or((80, 24));
+            Viewport::new(w.into(), h.into(), 1.0, ColorScheme::Light)
+        };
+        let mut doc = DioxusDocument::new(
+            vdom,
+            DocumentConfig {
+                viewport: Some(viewport),
+                ..Default::default()
+            },
+        );
+        doc.initial_build();
 
         (
             Self {
-                vdom,
-                dom,
+                doc,
                 #[cfg(all(feature = "hot-reload", debug_assertions))]
                 hot_reload_rx: {
                     let (hot_reload_tx, hot_reload_rx) =
@@ -100,14 +105,16 @@ impl DioxusRenderer {
     }
 
     fn update(&mut self) {
-        let mut writer = self.dom.writer();
-        self.vdom.render_immediate(&mut writer);
+        while self.doc.poll(None) {}
     }
 
     fn handle_event(&mut self, id: ElementId, event: &str, value: Box<dyn Any>, bubbles: bool) {
         let platform_event = Rc::new(PlatformEventData::new(value));
         let runtime_event = Event::new(platform_event, bubbles).into_any();
-        self.vdom.runtime().handle_event(event, runtime_event, id);
+        self.doc
+            .vdom
+            .runtime()
+            .handle_event(event, runtime_event, id);
     }
 
     fn poll_async(&mut self) -> Pin<Box<dyn futures::Future<Output = ()> + '_>> {
@@ -115,7 +122,7 @@ impl DioxusRenderer {
         return Box::pin(async {
             let hot_reload_wait = self.hot_reload_rx.recv();
             let mut hot_reload_msg = None;
-            let wait_for_work = self.vdom.wait_for_work();
+            let wait_for_work = self.doc.vdom.wait_for_work();
             tokio::select! {
                 Some(msg) = hot_reload_wait => {
                     #[cfg(all(feature = "hot-reload", debug_assertions))]
@@ -130,7 +137,7 @@ impl DioxusRenderer {
             if let Some(msg) = hot_reload_msg {
                 match msg {
                     dioxus_hot_reload::HotReloadMsg::UpdateTemplate(template) => {
-                        self.vdom.replace_template(template);
+                        self.doc.vdom.replace_template(template);
                     }
                     dioxus_hot_reload::HotReloadMsg::Shutdown => {
                         std::process::exit(0);
@@ -141,15 +148,15 @@ impl DioxusRenderer {
         });
 
         #[cfg(not(all(feature = "hot-reload", debug_assertions)))]
-        Box::pin(self.vdom.wait_for_work())
+        Box::pin(self.doc.vdom.wait_for_work())
     }
 
     fn root_id(&self) -> Option<ElementId> {
-        self.dom.root()
+        Some(ElementId(0))
     }
 
-    fn nodes_snapshot(&mut self) -> Vec<DomNode> {
-        self.dom.nodes()
+    fn layout_snapshot(&mut self, area: Rect) -> Option<LayoutNode> {
+        build_layout(&mut self.doc, area)
     }
 }
 
@@ -162,18 +169,12 @@ pub(crate) fn run_renderer(
     if cfg.rendering_mode == crate::config::RenderingMode::Debug {
         renderer.update();
         println!("-- dioxus-tui debug snapshot --");
-        let nodes = renderer.nodes_snapshot();
-        let root_id = renderer.root_id().or_else(|| nodes.first().map(|n| n.id));
-        if let Some(root_id) = root_id {
-            if let Some(root) = nodes.iter().find(|n| n.id == root_id) {
-                let (w, h) = size().unwrap_or((80, 24));
-                let layout_root = build_layout(&nodes, root, Rect::new(0, 0, w, h));
-                print_layout(&layout_root, 0);
-            } else {
-                println!("(root node missing)");
-            }
+        let (w, h) = size().unwrap_or((80, 24));
+        let area = Rect::new(0, 0, w, h);
+        if let Some(layout_root) = renderer.layout_snapshot(area) {
+            print_layout(&layout_root, 0);
         } else {
-            println!("(no nodes captured)");
+            println!("(no layout captured)");
         }
         return Ok(());
     }
@@ -255,8 +256,9 @@ pub(crate) fn run_renderer(
                 if let Some(term) = &mut terminal {
                     execute!(term.backend_mut(), SavePosition).unwrap();
                     term.draw(|f| {
-                        let nodes = renderer.nodes_snapshot();
-                        render_tree(f, &nodes, renderer.root_id());
+                        if let Some(layout) = renderer.layout_snapshot(f.area()) {
+                            render_tree(f, &layout);
+                        }
                     }).unwrap();
                     execute!(term.backend_mut(), RestorePosition, Show).unwrap();
                 }
@@ -273,14 +275,8 @@ pub(crate) fn run_renderer(
 }
 
 /// Render the captured node tree into a ratatui frame using the computed layout.
-pub fn render_tree(frame: &mut Frame, nodes: &[DomNode], root_id: Option<ElementId>) {
-    let root_id = root_id.or_else(|| nodes.first().map(|n| n.id));
-    if let Some(root_id) = root_id {
-        if let Some(root) = nodes.iter().find(|n| n.id == root_id) {
-            let layout_tree = build_layout(nodes, root, frame.area());
-            render_layout_node(frame, &layout_tree, true);
-        }
-    }
+pub fn render_tree(frame: &mut Frame, layout: &LayoutNode) {
+    render_layout_node(frame, layout, true);
 }
 
 fn print_layout(node: &LayoutNode, depth: usize) {

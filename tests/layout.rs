@@ -1,6 +1,6 @@
-use dioxus_tui::layout::build_layout;
-use dioxus_tui::element::{DomNode, NodeText};
 use dioxus_core::ElementId;
+use dioxus_tui::element::{DomNode, NodeText};
+use dioxus_tui::layout::build_layout;
 use ratatui::layout::Rect as UiRect;
 
 fn text_node(id: usize, text: &str) -> DomNode {

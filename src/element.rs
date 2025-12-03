@@ -62,7 +62,13 @@ impl DomState {
         if let Some(entity) = self.id_to_entity.get(&id) {
             return *entity;
         }
-        let entity = self.world.spawn(DomNode { id, ..Default::default() }).id();
+        let entity = self
+            .world
+            .spawn(DomNode {
+                id,
+                ..Default::default()
+            })
+            .id();
         self.id_to_entity.insert(id, entity);
         entity
     }
@@ -120,7 +126,11 @@ impl WriteMutations for DomWriter<'_> {
 
         if let Some(prev_id) = previous.filter(|old| *old != id) {
             if let Some(prev_entity) = self.dom.id_to_entity.remove(&prev_id) {
-                let cloned = self.dom.world.get::<DomNode>(prev_entity).map(|c| c.clone());
+                let cloned = self
+                    .dom
+                    .world
+                    .get::<DomNode>(prev_entity)
+                    .map(|c| c.clone());
                 if let Some(mut cloned) = cloned {
                     cloned.id = id;
                     self.dom.with_node_mut(id, |node| {

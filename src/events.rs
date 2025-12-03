@@ -2,6 +2,7 @@ use dioxus_html::*;
 
 use crate::hooks::EventData;
 
+#[allow(dead_code)]
 fn downcast(event: &PlatformEventData) -> EventData {
     event
         .downcast::<EventData>()
@@ -9,6 +10,7 @@ fn downcast(event: &PlatformEventData) -> EventData {
         .clone()
 }
 
+#[allow(dead_code)]
 pub(crate) struct SerializedHtmlEventConverter;
 
 impl HtmlEventConverter for SerializedHtmlEventConverter {
