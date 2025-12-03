@@ -21,7 +21,7 @@ crossterm = "0.29.0"
 tokio = { version = "1.36", features = ["full"] }
 futures = "0.3.30"
 futures-channel = "0.3.30"
-ratatui = "0.29.0"
+termwiz = "0.22"
 anyhow = "1.0.42"
 bevy_ecs = { version = "0.11", default-features = false }
 blitz-dom = { version = "0.2.2", default-features = false, features = ["system_fonts"] }

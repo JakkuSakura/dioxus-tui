@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_tui::layout::node_rect;
-use ratatui::layout::Rect as UiRect;
+use dioxus_tui::Rect as UiRect;
 
 mod common;
 use common::build_doc_with_layout;

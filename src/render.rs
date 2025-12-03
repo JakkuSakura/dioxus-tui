@@ -3,7 +3,6 @@ use std::{any::Any, pin::Pin, rc::Rc, time::Duration};
 use anyhow::Result;
 use blitz_dom::Document;
 use blitz_traits::shell::{ColorScheme, Viewport};
-use crossterm::cursor::{RestorePosition, SavePosition, Show};
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event as TermEvent, KeyCode, KeyModifiers,
 };
@@ -16,14 +15,21 @@ use dioxus_html::PlatformEventData;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use futures::{pin_mut, StreamExt};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use ratatui::Frame;
-use ratatui::{backend::CrosstermBackend, layout::Alignment, layout::Rect, Terminal};
+use termwiz::terminal::Terminal;
+use termwiz::{
+    caps::Capabilities,
+    color::ColorAttribute,
+    surface::{Change, Position},
+    terminal::{buffered::BufferedTerminal, ScreenSize, SystemTerminal},
+};
 use tokio::select;
 
 use crate::config::Config;
+use crate::geometry::{Alignment, Rect};
 use crate::hooks::event_from_crossterm;
 use crate::layout::{node_alignment, node_rect, print_layout, resolve_document};
 use crate::styles::{list_item_label, ListStyle};
+use crate::surface::Surface;
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
     unbounded()
@@ -197,16 +203,15 @@ pub(crate) async fn run_renderer(
         });
     }
 
-    let mut terminal = (cfg.rendering_mode != crate::config::RenderingMode::Headless).then(|| {
-        enable_raw_mode().unwrap();
-        let mut stdout = std::io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture).unwrap();
-        let backend = CrosstermBackend::new(std::io::stdout());
-        Terminal::new(backend).unwrap()
-    });
-    if let Some(term) = &mut terminal {
-        term.clear().unwrap();
-    }
+    let mut terminal = (cfg.rendering_mode != crate::config::RenderingMode::Headless)
+        .then(|| -> Result<BufferedTerminal<SystemTerminal>> {
+            enable_raw_mode().unwrap();
+            execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture).unwrap();
+            let buffered =
+                BufferedTerminal::new(SystemTerminal::new(Capabilities::new_from_env()?)?)?;
+            Ok(buffered)
+        })
+        .transpose()?;
 
     renderer.update();
 
@@ -231,7 +236,8 @@ pub(crate) async fn run_renderer(
             match evt {
                 InputEvent::Close => break,
                 InputEvent::UserInput(term_evt) => {
-                    if matches!(term_evt, TermEvent::Key(key) if matches!(key.code, KeyCode::Char('c' | 'C')) && key.modifiers.contains(KeyModifiers::CONTROL) && cfg.ctrl_c_quit) {
+                    if matches!(term_evt, TermEvent::Key(key) if matches!(key.code, KeyCode::Char('c' | 'C')) && key.modifiers.contains(KeyModifiers::CONTROL) && cfg.ctrl_c_quit)
+                    {
                         break;
                     }
                     if let Some(root) = renderer.root_id() {
@@ -247,27 +253,46 @@ pub(crate) async fn run_renderer(
         renderer.update();
 
         if let Some(term) = &mut terminal {
-            execute!(term.backend_mut(), SavePosition).unwrap();
-            term.draw(|f| {
-                if let Some(root) = renderer.layout_root(f.area()) {
-                    render_tree(f, &renderer.doc.inner, root, true, None, None);
-                }
-            }).unwrap();
-            execute!(term.backend_mut(), RestorePosition, Show).unwrap();
+            let area = terminal_size(term)?;
+            let mut surface = Surface::new(area.width, area.height);
+            if let Some(root) = renderer.layout_root(area) {
+                render_tree(&mut surface, &renderer.doc.inner, root, true, None, None);
+            }
+            flush_surface(term, &surface)?;
         }
     }
 
-    if let Some(term) = &mut terminal {
+    if cfg.rendering_mode != crate::config::RenderingMode::Headless {
         disable_raw_mode().unwrap();
-        execute!(term.backend_mut(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
-        term.show_cursor().unwrap();
+        execute!(std::io::stdout(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
+        if let Some(term) = &mut terminal {
+            term.terminal().flush()?;
+        }
     }
 
     Ok(())
 }
 
+fn terminal_size(term: &mut BufferedTerminal<SystemTerminal>) -> Result<Rect> {
+    let ScreenSize { cols, rows, .. } = term.terminal().get_screen_size()?;
+    Ok(Rect::new(0, 0, cols as u16, rows as u16))
+}
+
+fn flush_surface(term: &mut BufferedTerminal<SystemTerminal>, surface: &Surface) -> Result<()> {
+    term.add_change(Change::ClearScreen(ColorAttribute::Default));
+    for (y, line) in surface.lines().iter().enumerate() {
+        term.add_change(Change::CursorPosition {
+            x: Position::Absolute(0),
+            y: Position::Absolute(y),
+        });
+        term.add_change(Change::Text(line.clone()));
+    }
+    term.flush()?;
+    Ok(())
+}
+
 pub fn render_tree(
-    frame: &mut Frame,
+    surface: &mut Surface,
     doc: &blitz_dom::BaseDocument,
     root_id: usize,
     is_root: bool,
@@ -285,7 +310,11 @@ pub fn render_tree(
                 buf.push_str(&t);
             }
         }
-        if buf.is_empty() { None } else { Some(buf) }
+        if buf.is_empty() {
+            None
+        } else {
+            Some(buf)
+        }
     }
 
     let node = match doc.get_node(root_id) {
@@ -293,7 +322,7 @@ pub fn render_tree(
         None => return,
     };
 
-    let area = frame.area();
+    let area = surface.area();
     let rect = rect_override.unwrap_or_else(|| node_rect(node, area));
     let tag = node
         .element_data()
@@ -363,10 +392,19 @@ pub fn render_tree(
                         child_height = child_node.children.len() as u16;
                     }
                 }
-                let child_height = child_height.min(area.height.saturating_sub(cursor_y)).max(1);
+                let child_height = child_height
+                    .min(area.height.saturating_sub(cursor_y))
+                    .max(1);
                 let override_rect = Rect::new(rect.x, cursor_y, rect.width, child_height);
                 cursor_y = cursor_y.saturating_add(child_height);
-                render_tree(frame, doc, *child, false, Some(override_rect), parent_align_attr);
+                render_tree(
+                    surface,
+                    doc,
+                    *child,
+                    false,
+                    Some(override_rect),
+                    parent_align_attr,
+                );
             }
         }
         return;
@@ -404,14 +442,7 @@ pub fn render_tree(
                 }
             }
         };
-        let buf = frame.buffer_mut();
-        buf.set_stringn(
-            area.x,
-            area.y,
-            content,
-            width,
-            ratatui::style::Style::default(),
-        );
+        surface.set_stringn(area.x, area.y, content, width);
     };
 
     match tag.as_str() {
@@ -451,7 +482,7 @@ pub fn render_tree(
                 draw_text(rect, text, align);
             }
             for child in node.children.iter() {
-                render_tree(frame, doc, *child, false, None, None);
+                render_tree(surface, doc, *child, false, None, None);
             }
         }
         _ => {
@@ -459,7 +490,7 @@ pub fn render_tree(
                 draw_text(rect, text, align);
             }
             for child in node.children.iter() {
-                render_tree(frame, doc, *child, false, None, None);
+                render_tree(surface, doc, *child, false, None, None);
             }
         }
     }

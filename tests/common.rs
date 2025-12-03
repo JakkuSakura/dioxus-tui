@@ -5,8 +5,7 @@ use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use dioxus_tui::layout::node_rect;
 use dioxus_tui::layout::resolve_document;
 use dioxus_tui::render::render_tree;
-use ratatui::layout::Rect;
-use ratatui::{backend::TestBackend, Terminal};
+use dioxus_tui::{Rect, Surface};
 
 pub fn build_doc_with_layout(
     app: fn() -> Element,
@@ -53,21 +52,11 @@ pub fn build_doc_with_layout(
     (doc, root)
 }
 
-pub fn render_app_to_buffer(
-    app: fn() -> Element,
-    width: u16,
-    height: u16,
-) -> ratatui::buffer::Buffer {
+pub fn render_app_to_buffer(app: fn() -> Element, width: u16, height: u16) -> Surface {
     let (doc, root) = build_doc_with_layout(app, width, height);
-    let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).unwrap();
-    terminal
-        .draw(|f| {
-            render_tree(f, &doc.inner, root, true, None, None);
-        })
-        .unwrap();
-    let buf = terminal.backend_mut().buffer().clone();
-    buf
+    let mut surface = Surface::new(width, height);
+    render_tree(&mut surface, &doc.inner, root, true, None, None);
+    surface
 }
 
 /// Minimal test-only terminal that captures the rendered buffer and exposes text rows
@@ -80,11 +69,11 @@ pub struct FakeTerminal {
 impl FakeTerminal {
     pub fn from_app(app: fn() -> Element, width: u16, height: u16) -> Self {
         let buffer = render_app_to_buffer(app, width, height);
-        let area = buffer.area;
+        let area = buffer.area();
         let width = area.width as usize;
         let mut rows = Vec::with_capacity(area.height as usize);
         for chunk in buffer.content.chunks(width) {
-            let mut line: String = chunk.iter().map(|c| c.symbol()).collect();
+            let mut line: String = chunk.iter().collect();
             if width <= 20 {
                 while line.len() > width {
                     line.pop();

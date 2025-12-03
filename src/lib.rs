@@ -4,14 +4,18 @@
 
 mod config;
 pub mod element;
+pub mod geometry;
 mod hooks;
 pub mod layout;
 pub mod render;
 mod styles;
+pub mod surface;
 
 pub use config::{ColorMode, Config, RenderingMode};
+pub use geometry::{Alignment, Rect};
 pub use hooks::EventData;
 pub use render::TuiContext;
+pub use surface::Surface;
 
 use std::any::Any;
 

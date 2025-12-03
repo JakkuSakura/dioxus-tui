@@ -14,8 +14,8 @@ async fn main() {
 fn app() -> Element {
     rsx! {
         div { direction: "column",
-            h1 { "Ratatui demo" }
-            p { "This is a simple ratatui layout without Dioxus." }
+            h1 { "Termwiz demo" }
+            p { "This is a simple termwiz layout without Dioxus." }
             ul {
                 li { "List item one" }
                 li { "List item two" }

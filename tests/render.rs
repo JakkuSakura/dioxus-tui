@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use ratatui::layout::Rect;
+use dioxus_tui::Rect;
 
 mod common;
 use common::FakeTerminal;
@@ -141,8 +141,8 @@ fn renders_dioxus_basic_rsxd() {
     fn app() -> Element {
         rsx! {
             div { direction: "column",
-                h1 { "Ratatui demo" }
-                p { "This is a simple ratatui layout without Dioxus." }
+                h1 { "Termwiz demo" }
+                p { "This is a simple termwiz layout without Dioxus." }
                 ul {
                     li { "List item one" }
                     li { "List item two" }
@@ -154,8 +154,8 @@ fn renders_dioxus_basic_rsxd() {
 
     let term = FakeTerminal::from_app(app, 40, 10);
     let expected = vec![
-        format!("{}", "Ratatui demo".to_string() + &" ".repeat(28)),
-        "This is a simple ratatui layout without ".to_string(),
+        format!("{}", "Termwiz demo".to_string() + &" ".repeat(28)),
+        "This is a simple termwiz layout without ".to_string(),
         format!("{}", "• List item one".to_string() + &" ".repeat(25)),
         format!("{}", "• List item two".to_string() + &" ".repeat(25)),
         format!("{}", "Press Ctrl+C to exit.".to_string() + &" ".repeat(19)),

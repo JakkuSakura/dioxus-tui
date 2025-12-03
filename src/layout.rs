@@ -1,7 +1,7 @@
+use crate::geometry::{Alignment, Rect as UiRect};
 use blitz_dom::{BaseDocument, Node};
 use blitz_traits::shell::Viewport;
 use dioxus_native_dom::DioxusDocument;
-use ratatui::layout::{Alignment, Rect as UiRect};
 
 // Minimal UA overrides for TUI rendering.
 const TUI_UA_CSS: &str = r#"
