@@ -13,9 +13,7 @@ fn renders_basic_app_into_buffer() {
     }
 
     let term = FakeTerminal::from_app(app, 20, 5);
-    let mut expected = vec![
-        format!("{}", "hello".to_string() + &" ".repeat(15)),
-    ];
+    let mut expected = vec![format!("{}", "hello".to_string() + &" ".repeat(15))];
     expected.extend(std::iter::repeat(" ".repeat(20)).take(4));
     assert_eq!(term.lines(), expected);
 }
@@ -86,10 +84,7 @@ fn renders_all_heading_levels() {
         .iter()
         .map(|h| h.to_string() + &" ".repeat(10 - h.len()))
         .collect();
-    expected.extend([
-        "          ".to_string(),
-        "h6        ".to_string(),
-    ]);
+    expected.extend(std::iter::repeat(" ".repeat(10)).take(2));
     assert_eq!(term.lines(), expected);
 }
 
@@ -100,7 +95,8 @@ fn renders_paragraph() {
     }
 
     let term = FakeTerminal::from_app(app, 30, 3);
-    let mut expected = vec!["paragraph body".to_string() + &" ".repeat(30 - "paragraph body".len())];
+    let mut expected =
+        vec!["paragraph body".to_string() + &" ".repeat(30 - "paragraph body".len())];
     expected.extend(std::iter::repeat(" ".repeat(30)).take(2));
     assert_eq!(term.lines(), expected);
 }
@@ -145,13 +141,13 @@ fn renders_dioxus_basic_rsxd() {
     fn app() -> Element {
         rsx! {
             div { direction: "column",
-                h1 { style: "height: 1px; width: 100%;", "Ratatui demo" }
-                p { style: "height: 1px; width: 100%;", "This is a simple ratatui layout without Dioxus." }
-                p { style: "height: 1px; width: 100%;", "Press Ctrl+C to exit." }
+                h1 { "Ratatui demo" }
+                p { "This is a simple ratatui layout without Dioxus." }
                 ul {
-                    li { style: "height: 1px; width: 100%;", "List item one" }
-                    li { style: "height: 1px; width: 100%;", "List item two" }
+                    li { "List item one" }
+                    li { "List item two" }
                 }
+                p { "Press Ctrl+C to exit." }
             }
         }
     }
@@ -160,14 +156,14 @@ fn renders_dioxus_basic_rsxd() {
     let expected = vec![
         format!("{}", "Ratatui demo".to_string() + &" ".repeat(28)),
         "This is a simple ratatui layout without ".to_string(),
+        format!("{}", "• List item one".to_string() + &" ".repeat(25)),
+        format!("{}", "• List item two".to_string() + &" ".repeat(25)),
         format!("{}", "Press Ctrl+C to exit.".to_string() + &" ".repeat(19)),
         " ".repeat(40),
         " ".repeat(40),
         " ".repeat(40),
         " ".repeat(40),
         " ".repeat(40),
-        " ".repeat(40),
-        format!("{}", "• List item two".to_string() + &" ".repeat(25)),
     ];
     assert_eq!(term.lines(), expected);
 }

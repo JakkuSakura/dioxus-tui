@@ -14,11 +14,11 @@ fn app() -> Element {
         div { direction: "column",
             h1 { "Ratatui demo" }
             p { "This is a simple ratatui layout without Dioxus." }
-            p { "Press Ctrl+C to exit." }
             ul {
                 li { "List item one" }
                 li { "List item two" }
             }
+            p { "Press Ctrl+C to exit." }
         }
     }
 }

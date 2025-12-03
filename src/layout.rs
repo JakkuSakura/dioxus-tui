@@ -200,12 +200,17 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
         }
 
         // Minimum size for text leaves to ensure visibility even if Blitz reports zero.
-        if layout_node.text.is_some() {
+        if let Some(text) = &layout_node.text {
+            let line_count = text.lines().count().max(1) as u16;
+            let max_line = text.lines().map(|l| l.len() as u16).max().unwrap_or(1);
             if layout_node.rect.width == 0 {
-                layout_node.rect.width = 1;
+                let remaining_w = area.width.saturating_sub(layout_node.rect.x);
+                layout_node.rect.width = max_line.min(remaining_w).max(1);
             }
             if layout_node.rect.height == 0 {
-                layout_node.rect.height = 1;
+                layout_node.rect.height = line_count;
+            } else {
+                layout_node.rect.height = layout_node.rect.height.max(line_count);
             }
         }
 
@@ -216,34 +221,42 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
             }
         }
 
-        // Stack children vertically if their y positions would overlap or parent size is zero.
-        if !layout_node.children.is_empty() {
-            let mut cursor_y = layout_node.rect.y;
-            for child in &mut layout_node.children {
-                child.rect.x = layout_node.rect.x;
+        // Stack children vertically relative to the parent; recurse to keep subtree positions consistent.
+        fn restack(node: &mut LayoutNode) {
+            if node.children.is_empty() {
+                return;
+            }
+
+            let mut cursor_y = node.rect.y;
+            for child in &mut node.children {
+                child.rect.x = node.rect.x;
                 if !child.attrs.contains_key("width") {
-                    child.rect.width = layout_node.rect.width.max(1);
+                    child.rect.width = node.rect.width.max(1);
                 }
                 child.rect.y = cursor_y;
-                if child.rect.height == 0 {
-                    child.rect.height = 1;
-                }
                 if !child.attrs.contains_key("height") {
+                    child.rect.height = 1;
+                } else if child.rect.height == 0 {
                     child.rect.height = 1;
                 }
                 cursor_y = child.rect.y.saturating_add(child.rect.height);
+
+                restack(child);
             }
-            let mut max_right = layout_node.rect.x as i32 + layout_node.rect.width as i32;
-            let mut max_bottom = layout_node.rect.y as i32 + layout_node.rect.height as i32;
-            for child in &layout_node.children {
+
+            let mut max_right = node.rect.x as i32 + node.rect.width as i32;
+            let mut max_bottom = node.rect.y as i32 + node.rect.height as i32;
+            for child in &node.children {
                 max_right = max_right.max(child.rect.x as i32 + child.rect.width as i32);
                 max_bottom = max_bottom.max(child.rect.y as i32 + child.rect.height as i32);
             }
-            let new_w = (max_right - layout_node.rect.x as i32).max(0) as u16;
-            let new_h = (max_bottom - layout_node.rect.y as i32).max(0) as u16;
-            layout_node.rect.width = layout_node.rect.width.max(new_w);
-            layout_node.rect.height = layout_node.rect.height.max(new_h);
+            let new_w = (max_right - node.rect.x as i32).max(0) as u16;
+            let new_h = (max_bottom - node.rect.y as i32).max(0) as u16;
+            node.rect.width = node.rect.width.max(new_w);
+            node.rect.height = node.rect.height.max(new_h);
         }
+
+        restack(&mut layout_node);
 
         fn clamp_rect(rect: &mut UiRect, area: UiRect) {
             if rect.x >= area.width {
