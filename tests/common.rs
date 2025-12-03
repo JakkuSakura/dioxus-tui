@@ -6,9 +6,6 @@ use dioxus_tui::layout::{build_layout, LayoutNode};
 use dioxus_tui::render::render_tree;
 use ratatui::layout::Rect;
 use ratatui::{backend::TestBackend, Terminal};
-use std::sync::Once;
-
-static DEBUG_ONCE: Once = Once::new();
 
 pub fn build_layout_from_app(app: fn() -> Element, width: u16, height: u16) -> Option<LayoutNode> {
     let vdom = VirtualDom::new(app);
@@ -21,29 +18,25 @@ pub fn build_layout_from_app(app: fn() -> Element, width: u16, height: u16) -> O
         },
     );
     doc.initial_build();
-    DEBUG_ONCE.call_once(|| {
-        fn dump(doc: &blitz_dom::BaseDocument, id: usize, depth: usize) {
-            if let Some(node) = doc.get_node(id) {
-                let indent = "  ".repeat(depth);
-                let tag = node
-                    .element_data()
-                    .map(|el| el.name.local.to_string())
-                    .unwrap_or_else(|| "#text".to_string());
-                let text = node
-                    .text_data()
-                    .map(|t| t.content.clone())
-                    .unwrap_or_default();
-                println!("{indent}{tag} id={id} text={text:?}");
-                for child in node.children.iter() {
-                    dump(doc, *child, depth + 1);
-                }
+    let layout = build_layout(&mut doc, Rect::new(0, 0, width, height));
+    if std::env::var("DEBUG_LAYOUT_TREE").is_ok() {
+        fn dump(node: &LayoutNode, depth: usize) {
+            let indent = "  ".repeat(depth);
+            let tag = node.tag.clone().unwrap_or_else(|| "#text".to_string());
+            eprintln!(
+                "{indent}{tag} id={:?} rect=({}, {}) {}x{} text={:?}",
+                node.id, node.rect.x, node.rect.y, node.rect.width, node.rect.height, node.text
+            );
+            for child in node.children.iter() {
+                dump(child, depth + 1);
             }
         }
-        println!("-- debug blitz tree --");
-        let root = doc.inner.root_node().id;
-        dump(&doc.inner, root, 0);
-    });
-    build_layout(&mut doc, Rect::new(0, 0, width, height))
+        if let Some(layout) = layout.as_ref() {
+            eprintln!("-- layout tree --");
+            dump(layout, 0);
+        }
+    }
+    layout
 }
 
 pub fn render_app_to_buffer(

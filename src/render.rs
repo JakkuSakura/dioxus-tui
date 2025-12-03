@@ -315,18 +315,27 @@ fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
         return;
     }
 
+    let text_opt = collect_text(node);
+    let mut rect = node.rect;
+    if rect.height == 0 && text_opt.is_some() {
+        rect.height = 1;
+    }
+    if rect.width == 0 && text_opt.is_some() {
+        rect.width = 1;
+    }
+
     match tag {
         "p" | "span" => {
-            let text = collect_text(node).unwrap_or_default();
-            frame.render_widget(Paragraph::new(text).alignment(node.align), node.rect);
+            let text = text_opt.unwrap_or_default();
+            frame.render_widget(Paragraph::new(text).alignment(node.align), rect);
         }
         "li" => {
-            let text = collect_text(node).unwrap_or_default();
+            let text = text_opt.clone().unwrap_or_default();
             let styles = compute_styles(tag, Attrs::new(&node.attrs));
             let default_style = ListStyle::Disc;
             let style_ref = styles.list_style.unwrap_or(default_style);
             let content = list_item_label(&style_ref, 0, &text);
-            frame.render_widget(Paragraph::new(content).alignment(node.align), node.rect);
+            frame.render_widget(Paragraph::new(content).alignment(node.align), rect);
         }
         "ul" | "ol" => {
             let styles = compute_styles(tag, Attrs::new(&node.attrs));
@@ -343,30 +352,21 @@ fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
             }
         }
         "h1" | "h2" | "h3" => {
-            let text = collect_text(node).unwrap_or_default();
-            frame.render_widget(Paragraph::new(text).alignment(node.align), node.rect);
-        }
-        "div" => {
-            // container: render children only
-            for child in node.children.iter() {
-                render_layout_node(frame, child, false);
-            }
+            let text = text_opt.unwrap_or_default();
+            frame.render_widget(Paragraph::new(text).alignment(node.align), rect);
         }
         "" => {
             // Raw text node: render text only, then recurse into children if any.
             if let Some(text) = &node.text {
-                frame.render_widget(
-                    Paragraph::new(text.clone()).alignment(node.align),
-                    node.rect,
-                );
+                frame.render_widget(Paragraph::new(text.clone()).alignment(node.align), rect);
             }
             for child in node.children.iter() {
                 render_layout_node(frame, child, false);
             }
         }
         _ => {
-            if let Some(text) = collect_text(node) {
-                frame.render_widget(Paragraph::new(text).alignment(node.align), node.rect);
+            if let Some(text) = text_opt {
+                frame.render_widget(Paragraph::new(text).alignment(node.align), rect);
             }
             for child in node.children.iter() {
                 render_layout_node(frame, child, false);
