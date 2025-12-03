@@ -275,15 +275,16 @@ pub fn render_tree(
 ) {
     fn collect_text(doc: &blitz_dom::BaseDocument, id: usize) -> Option<String> {
         let node = doc.get_node(id)?;
+        let mut buf = String::new();
         if let Some(t) = node.text_data() {
-            return Some(t.content.clone());
+            buf.push_str(&t.content);
         }
         for child in node.children.iter() {
             if let Some(t) = collect_text(doc, *child) {
-                return Some(t);
+                buf.push_str(&t);
             }
         }
-        None
+        if buf.is_empty() { None } else { Some(buf) }
     }
 
     let node = match doc.get_node(root_id) {
@@ -307,18 +308,16 @@ pub fn render_tree(
                 if cursor_y >= area.height {
                     break;
                 }
-                let available_height = area.height.saturating_sub(cursor_y);
-                let desired_height = child_node
-                    .element_data()
-                    .map(|el| match el.name.local.as_ref() {
-                        "ul" | "ol" => child_node.children.len() as u16,
-                        _ => 1,
-                    })
-                    .unwrap_or(1);
-                let child_height = available_height.min(desired_height.max(1));
+                let mut child_height = 1;
+                if let Some(el) = child_node.element_data() {
+                    if matches!(el.name.local.as_ref(), "ul" | "ol") {
+                        child_height = child_node.children.len() as u16;
+                    }
+                }
+                let child_height = child_height.min(area.height.saturating_sub(cursor_y)).max(1);
                 let override_rect = Rect::new(rect.x, cursor_y, rect.width, child_height);
-                render_tree(frame, doc, *child, false, Some(override_rect));
                 cursor_y = cursor_y.saturating_add(child_height);
+                render_tree(frame, doc, *child, false, Some(override_rect));
             }
         }
         return;
