@@ -103,7 +103,7 @@ pub fn node_alignment(node: &Node) -> Alignment {
         .and_then(|el| {
             el.attrs.iter().find_map(|a| {
                 let name = a.name.local.as_ref();
-                if name == "text_align" || name == "align" {
+                if matches!(name, "text_align" | "align" | "align_items") {
                     Some(a.value.clone())
                 } else {
                     None

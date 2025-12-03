@@ -250,7 +250,7 @@ pub(crate) async fn run_renderer(
             execute!(term.backend_mut(), SavePosition).unwrap();
             term.draw(|f| {
                 if let Some(root) = renderer.layout_root(f.area()) {
-                    render_tree(f, &renderer.doc.inner, root, true, None);
+                    render_tree(f, &renderer.doc.inner, root, true, None, None);
                 }
             }).unwrap();
             execute!(term.backend_mut(), RestorePosition, Show).unwrap();
@@ -272,6 +272,7 @@ pub fn render_tree(
     root_id: usize,
     is_root: bool,
     rect_override: Option<Rect>,
+    parent_align: Option<Alignment>,
 ) {
     fn collect_text(doc: &blitz_dom::BaseDocument, id: usize) -> Option<String> {
         let node = doc.get_node(id)?;
@@ -298,11 +299,59 @@ pub fn render_tree(
         .element_data()
         .map(|el| el.name.local.to_string())
         .unwrap_or_default();
-    let align = node_alignment(node);
+    let align = parent_align.unwrap_or_else(|| node_alignment(node));
     let text_opt = collect_text(doc, root_id);
 
     if is_root || matches!(tag.as_str(), "div" | "main" | "body" | "html") {
+        let parent_align_attr = node
+            .element_data()
+            .and_then(|el| {
+                el.attrs.iter().find_map(|a| {
+                    let name = a.name.local.as_ref();
+                    if name == "align_items" {
+                        Some(a.value.clone())
+                    } else {
+                        None
+                    }
+                })
+            })
+            .map(|v| match v.to_lowercase().as_str() {
+                "center" => Alignment::Center,
+                "right" => Alignment::Right,
+                _ => Alignment::Left,
+            });
+
+        let justify_content = node.element_data().and_then(|el| {
+            el.attrs.iter().find_map(|a| {
+                if a.name.local.as_ref() == "justify_content" {
+                    Some(a.value.to_lowercase())
+                } else {
+                    None
+                }
+            })
+        });
+
+        let children = node.children.clone();
+        let mut total_height: u16 = 0;
+        for child in children.iter() {
+            if let Some(child_node) = doc.get_node(*child) {
+                let mut h = 1;
+                if let Some(el) = child_node.element_data() {
+                    if matches!(el.name.local.as_ref(), "ul" | "ol") {
+                        h = child_node.children.len() as u16;
+                    }
+                }
+                total_height = total_height.saturating_add(h.max(1));
+            }
+        }
+
         let mut cursor_y = rect.y;
+        if let Some(justify) = justify_content {
+            if justify == "center" && total_height < rect.height {
+                let pad = rect.height.saturating_sub(total_height);
+                cursor_y = cursor_y.saturating_add(pad / 2);
+            }
+        }
         for child in node.children.iter() {
             if let Some(child_node) = doc.get_node(*child) {
                 if cursor_y >= area.height {
@@ -317,7 +366,7 @@ pub fn render_tree(
                 let child_height = child_height.min(area.height.saturating_sub(cursor_y)).max(1);
                 let override_rect = Rect::new(rect.x, cursor_y, rect.width, child_height);
                 cursor_y = cursor_y.saturating_add(child_height);
-                render_tree(frame, doc, *child, false, Some(override_rect));
+                render_tree(frame, doc, *child, false, Some(override_rect), parent_align_attr);
             }
         }
         return;
@@ -402,7 +451,7 @@ pub fn render_tree(
                 draw_text(rect, text, align);
             }
             for child in node.children.iter() {
-                render_tree(frame, doc, *child, false, None);
+                render_tree(frame, doc, *child, false, None, None);
             }
         }
         _ => {
@@ -410,7 +459,7 @@ pub fn render_tree(
                 draw_text(rect, text, align);
             }
             for child in node.children.iter() {
-                render_tree(frame, doc, *child, false, None);
+                render_tree(frame, doc, *child, false, None, None);
             }
         }
     }
