@@ -23,7 +23,7 @@ use tokio::select;
 
 use crate::config::Config;
 use crate::hooks::event_from_crossterm;
-use crate::layout::{build_layout, LayoutNode};
+use crate::layout::{collect_attrs, node_alignment, node_rect, resolve_document};
 use crate::styles::{compute_styles, list_item_label, Attrs, ListStyle};
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
@@ -155,8 +155,8 @@ impl DioxusRenderer {
         Some(ElementId(0))
     }
 
-    fn layout_snapshot(&mut self, area: Rect) -> Option<LayoutNode> {
-        build_layout(&mut self.doc, area)
+    fn layout_root(&mut self, area: Rect) -> Option<usize> {
+        resolve_document(&mut self.doc, area)
     }
 }
 
@@ -171,10 +171,8 @@ pub(crate) fn run_renderer(
         println!("-- dioxus-tui debug snapshot --");
         let (w, h) = size().unwrap_or((80, 24));
         let area = Rect::new(0, 0, w, h);
-        if let Some(layout_root) = renderer.layout_snapshot(area) {
-            print_layout(&layout_root, 0);
-        } else {
-            println!("(no layout captured)");
+        if let Some(root) = renderer.layout_root(area) {
+            print_layout(&renderer.doc.inner, root, 0, area);
         }
         return Ok(());
     }
@@ -256,8 +254,8 @@ pub(crate) fn run_renderer(
                 if let Some(term) = &mut terminal {
                     execute!(term.backend_mut(), SavePosition).unwrap();
                     term.draw(|f| {
-                        if let Some(layout) = renderer.layout_snapshot(f.area()) {
-                            render_tree(f, &layout);
+                        if let Some(root) = renderer.layout_root(f.area()) {
+                            render_tree(f, &renderer.doc.inner, root, true);
                         }
                     }).unwrap();
                     execute!(term.backend_mut(), RestorePosition, Show).unwrap();
@@ -274,71 +272,63 @@ pub(crate) fn run_renderer(
         })
 }
 
-/// Render the captured node tree into a ratatui frame using the computed layout.
-pub fn render_tree(frame: &mut Frame, layout: &LayoutNode) {
-    render_layout_node(frame, layout, true);
-}
-
-fn print_layout(node: &LayoutNode, depth: usize) {
-    let indent = "  ".repeat(depth);
-    let tag = node.tag.as_deref().unwrap_or("(root)");
-    let text = node.text.as_deref().unwrap_or("");
-    println!(
-        "{indent}- {tag} id={:?} area=({}, {}) {}x{} text=\"{}\"",
-        node.id, node.rect.x, node.rect.y, node.rect.width, node.rect.height, text
-    );
-    for child in node.children.iter() {
-        print_layout(child, depth + 1);
-    }
-}
-
-fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
-    let tag = node.tag.as_deref().unwrap_or("");
-    let _stylesheet = (); // placeholder, layout hints not yet used
-
-    fn collect_text(n: &LayoutNode) -> Option<String> {
-        if let Some(t) = &n.text {
-            return Some(t.clone());
+/// Render the blitz node tree into a ratatui frame using the computed layout.
+pub fn render_tree(
+    frame: &mut Frame,
+    doc: &blitz_dom::BaseDocument,
+    root_id: usize,
+    is_root: bool,
+) {
+    fn collect_text(doc: &blitz_dom::BaseDocument, id: usize) -> Option<String> {
+        let node = doc.get_node(id)?;
+        if let Some(t) = node.text_data() {
+            return Some(t.content.clone());
         }
-        for child in n.children.iter() {
-            if let Some(t) = collect_text(child) {
+        for child in node.children.iter() {
+            if let Some(t) = collect_text(doc, *child) {
                 return Some(t);
             }
         }
         None
     }
 
+    let node = match doc.get_node(root_id) {
+        Some(n) => n,
+        None => return,
+    };
+
     if is_root {
         for child in node.children.iter() {
-            render_layout_node(frame, child, false);
+            render_tree(frame, doc, *child, false);
         }
         return;
     }
 
-    let text_opt = collect_text(node);
-    let mut rect = node.rect;
-    if rect.height == 0 && text_opt.is_some() {
-        rect.height = 1;
-    }
-    if rect.width == 0 && text_opt.is_some() {
-        rect.width = 1;
-    }
+    let area = frame.area();
+    let rect = node_rect(node, area);
+    let tag = node
+        .element_data()
+        .map(|el| el.name.local.to_string())
+        .unwrap_or_default();
+    let attrs = collect_attrs(node);
+    let align = node_alignment(node);
+    let text_opt = collect_text(doc, root_id);
 
-    match tag {
+    match tag.as_str() {
         "p" | "span" => {
             let text = text_opt.unwrap_or_default();
-            frame.render_widget(Paragraph::new(text).alignment(node.align), rect);
+            frame.render_widget(Paragraph::new(text).alignment(align), rect);
         }
         "li" => {
             let text = text_opt.clone().unwrap_or_default();
-            let styles = compute_styles(tag, Attrs::new(&node.attrs));
+            let styles = compute_styles(&tag, Attrs::new(&attrs));
             let default_style = ListStyle::Disc;
             let style_ref = styles.list_style.unwrap_or(default_style);
             let content = list_item_label(&style_ref, 0, &text);
-            frame.render_widget(Paragraph::new(content).alignment(node.align), rect);
+            frame.render_widget(Paragraph::new(content).alignment(align), rect);
         }
         "ul" | "ol" => {
-            let styles = compute_styles(tag, Attrs::new(&node.attrs));
+            let styles = compute_styles(&tag, Attrs::new(&attrs));
             let default_style = if tag == "ol" {
                 ListStyle::Decimal
             } else {
@@ -346,31 +336,57 @@ fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
             };
             let style_ref = styles.list_style.unwrap_or(default_style);
             for (idx, child) in node.children.iter().enumerate() {
-                let text = collect_text(child).unwrap_or_default();
+                let text = collect_text(doc, *child).unwrap_or_default();
                 let label = list_item_label(&style_ref, idx, &text);
-                frame.render_widget(Paragraph::new(label).alignment(child.align), child.rect);
+                if let Some(child_node) = doc.get_node(*child) {
+                    let child_rect = node_rect(child_node, area);
+                    let child_align = node_alignment(child_node);
+                    frame.render_widget(Paragraph::new(label).alignment(child_align), child_rect);
+                }
             }
         }
-        "h1" | "h2" | "h3" => {
+        "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
             let text = text_opt.unwrap_or_default();
-            frame.render_widget(Paragraph::new(text).alignment(node.align), rect);
+            frame.render_widget(Paragraph::new(text).alignment(align), rect);
         }
         "" => {
-            // Raw text node: render text only, then recurse into children if any.
-            if let Some(text) = &node.text {
-                frame.render_widget(Paragraph::new(text.clone()).alignment(node.align), rect);
+            if let Some(text) = text_opt {
+                frame.render_widget(Paragraph::new(text).alignment(align), rect);
             }
             for child in node.children.iter() {
-                render_layout_node(frame, child, false);
+                render_tree(frame, doc, *child, false);
             }
         }
         _ => {
             if let Some(text) = text_opt {
-                frame.render_widget(Paragraph::new(text).alignment(node.align), rect);
+                frame.render_widget(Paragraph::new(text).alignment(align), rect);
             }
             for child in node.children.iter() {
-                render_layout_node(frame, child, false);
+                render_tree(frame, doc, *child, false);
             }
         }
+    }
+}
+
+fn print_layout(doc: &blitz_dom::BaseDocument, node_id: usize, depth: usize, area: Rect) {
+    let Some(node) = doc.get_node(node_id) else {
+        return;
+    };
+    let indent = "  ".repeat(depth);
+    let tag = node
+        .element_data()
+        .map(|el| el.name.local.to_string())
+        .unwrap_or_else(|| "#text".to_string());
+    let text = node
+        .text_data()
+        .map(|t| t.content.clone())
+        .unwrap_or_default();
+    let rect = node_rect(node, area);
+    println!(
+        "{indent}- {tag} id={} area=({}, {}) {}x{} text=\"{}\"",
+        node_id, rect.x, rect.y, rect.width, rect.height, text
+    );
+    for child in node.children.iter() {
+        print_layout(doc, *child, depth + 1, area);
     }
 }

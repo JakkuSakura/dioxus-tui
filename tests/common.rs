@@ -2,12 +2,17 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus::prelude::*;
 use dioxus_core::VirtualDom;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
-use dioxus_tui::layout::{build_layout, LayoutNode};
+use dioxus_tui::layout::node_rect;
+use dioxus_tui::layout::resolve_document;
 use dioxus_tui::render::render_tree;
 use ratatui::layout::Rect;
 use ratatui::{backend::TestBackend, Terminal};
 
-pub fn build_layout_from_app(app: fn() -> Element, width: u16, height: u16) -> Option<LayoutNode> {
+pub fn build_doc_with_layout(
+    app: fn() -> Element,
+    width: u16,
+    height: u16,
+) -> (DioxusDocument, usize) {
     let vdom = VirtualDom::new(app);
     let viewport = Viewport::new(width.into(), height.into(), 1.0, ColorScheme::Light);
     let mut doc = DioxusDocument::new(
@@ -18,25 +23,34 @@ pub fn build_layout_from_app(app: fn() -> Element, width: u16, height: u16) -> O
         },
     );
     doc.initial_build();
-    let layout = build_layout(&mut doc, Rect::new(0, 0, width, height));
+    let root = resolve_document(&mut doc, Rect::new(0, 0, width, height))
+        .expect("main root should exist after layout");
     if std::env::var("DEBUG_LAYOUT_TREE").is_ok() {
-        fn dump(node: &LayoutNode, depth: usize) {
-            let indent = "  ".repeat(depth);
-            let tag = node.tag.clone().unwrap_or_else(|| "#text".to_string());
-            eprintln!(
-                "{indent}{tag} id={:?} rect=({}, {}) {}x{} text={:?}",
-                node.id, node.rect.x, node.rect.y, node.rect.width, node.rect.height, node.text
-            );
-            for child in node.children.iter() {
-                dump(child, depth + 1);
+        fn dump(doc: &blitz_dom::BaseDocument, id: usize, depth: usize, area: Rect) {
+            if let Some(node) = doc.get_node(id) {
+                let indent = "  ".repeat(depth);
+                let tag = node
+                    .element_data()
+                    .map(|el| el.name.local.to_string())
+                    .unwrap_or_else(|| "#text".to_string());
+                let text = node
+                    .text_data()
+                    .map(|t| t.content.clone())
+                    .unwrap_or_default();
+                let rect = node_rect(node, area);
+                eprintln!(
+                    "{indent}{tag} id={id} rect=({}, {}) {}x{} text={:?}",
+                    rect.x, rect.y, rect.width, rect.height, text
+                );
+                for child in node.children.iter() {
+                    dump(doc, *child, depth + 1, area);
+                }
             }
         }
-        if let Some(layout) = layout.as_ref() {
-            eprintln!("-- layout tree --");
-            dump(layout, 0);
-        }
+        eprintln!("-- layout tree --");
+        dump(&doc.inner, root, 0, Rect::new(0, 0, width, height));
     }
-    layout
+    (doc, root)
 }
 
 pub fn render_app_to_buffer(
@@ -44,13 +58,12 @@ pub fn render_app_to_buffer(
     width: u16,
     height: u16,
 ) -> ratatui::buffer::Buffer {
-    let layout = build_layout_from_app(app, width, height)
-        .expect("layout should be available for rendered app");
+    let (doc, root) = build_doc_with_layout(app, width, height);
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|f| {
-            render_tree(f, &layout);
+            render_tree(f, &doc.inner, root, true);
         })
         .unwrap();
     let buf = terminal.backend_mut().buffer().clone();
