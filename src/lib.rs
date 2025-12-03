@@ -4,7 +4,6 @@
 
 mod config;
 pub mod element;
-mod events;
 mod hooks;
 pub mod layout;
 pub mod render;
