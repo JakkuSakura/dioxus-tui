@@ -216,3 +216,28 @@ fn renders_dioxus_basic_rsxd() {
     ];
     assert_eq!(term.lines(), expected);
 }
+
+#[test]
+fn renders_quadrants_with_flex() {
+    fn app() -> Element {
+        rsx! {
+            div { direction: "row",
+                div { style: "width: 50%; height: 2px;", "A" }
+                div { style: "width: 50%; height: 2px;", "B" }
+            }
+            div { direction: "row",
+                div { style: "width: 50%; height: 2px;", "C" }
+                div { style: "width: 50%; height: 2px;", "D" }
+            }
+        }
+    }
+
+    let term = FakeTerminal::from_app(app, 10, 4);
+    let expected = vec![
+        "A         ".to_string(),
+        "C         ".to_string(),
+        "D         ".to_string(),
+        "          ".to_string(),
+    ];
+    assert_eq!(term.lines(), expected);
+}

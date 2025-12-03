@@ -433,7 +433,11 @@ pub fn render_tree(
     };
 
     let area = surface.area();
-    let rect = rect_override.unwrap_or_else(|| node_rect(node, area));
+    let mut rect = rect_override.unwrap_or_else(|| node_rect(node, area));
+    if rect.width == 1 && area.width > 1 {
+        rect.x = 0;
+        rect.width = area.width;
+    }
     let tag = node
         .element_data()
         .map(|el| el.name.local.to_string())
@@ -460,14 +464,19 @@ pub fn render_tree(
                 _ => Alignment::Left,
             });
 
-        let justify_content = node.element_data().and_then(|el| {
-            el.attrs.iter().find_map(|a| {
-                if a.name.local.as_ref() == "justify_content" {
-                    Some(a.value.to_lowercase())
-                } else {
-                    None
-                }
-            })
+        let (justify_content, direction_row) = node.element_data().map_or((None, false), |el| {
+            (
+                el.attrs.iter().find_map(|a| {
+                    if a.name.local.as_ref() == "justify_content" {
+                        Some(a.value.to_lowercase())
+                    } else {
+                        None
+                    }
+                }),
+                el.attrs.iter().any(|a| {
+                    a.name.local.as_ref() == "direction" && a.value.to_lowercase() == "row"
+                }),
+            )
         });
 
         let children = node.children.clone();
@@ -491,33 +500,63 @@ pub fn render_tree(
                 cursor_y = cursor_y.saturating_add(pad / 2);
             }
         }
-        for child in node.children.iter() {
-            if let Some(child_node) = doc.get_node(*child) {
-                if cursor_y >= area.height {
-                    break;
-                }
-                let mut child_height = 1;
-                if let Some(el) = child_node.element_data() {
-                    if matches!(el.name.local.as_ref(), "ul" | "ol") {
-                        child_height = child_node.children.len() as u16;
+        if direction_row {
+            let child_count = node.children.len().max(1) as u16;
+            let child_width = (rect.width / child_count.max(1)).max(1);
+            for (idx, child) in node.children.iter().enumerate() {
+                if let Some(_) = doc.get_node(*child) {
+                    let x = rect
+                        .x
+                        .saturating_add((idx as u16).saturating_mul(child_width));
+                    let override_rect = Rect::new(x, rect.y, child_width, rect.height);
+                    if let Some(text) = collect_text(doc, *child) {
+                        surface.set_stringn(
+                            override_rect.x,
+                            override_rect.y,
+                            text,
+                            override_rect.width as usize,
+                        );
                     }
+                    render_tree(
+                        surface,
+                        doc,
+                        *child,
+                        false,
+                        Some(override_rect),
+                        parent_align_attr,
+                    );
                 }
-                let child_height = child_height
-                    .min(area.height.saturating_sub(cursor_y))
-                    .max(1);
-                let override_rect = Rect::new(rect.x, cursor_y, rect.width, child_height);
-                cursor_y = cursor_y.saturating_add(child_height);
-                render_tree(
-                    surface,
-                    doc,
-                    *child,
-                    false,
-                    Some(override_rect),
-                    parent_align_attr,
-                );
             }
+            return;
+        } else {
+            for child in node.children.iter() {
+                if let Some(child_node) = doc.get_node(*child) {
+                    if cursor_y >= area.height {
+                        break;
+                    }
+                    let mut child_height = 1;
+                    if let Some(el) = child_node.element_data() {
+                        if matches!(el.name.local.as_ref(), "ul" | "ol") {
+                            child_height = child_node.children.len() as u16;
+                        }
+                    }
+                    let child_height = child_height
+                        .min(area.height.saturating_sub(cursor_y))
+                        .max(1);
+                    let override_rect = Rect::new(rect.x, cursor_y, rect.width, child_height);
+                    cursor_y = cursor_y.saturating_add(child_height);
+                    render_tree(
+                        surface,
+                        doc,
+                        *child,
+                        false,
+                        Some(override_rect),
+                        parent_align_attr,
+                    );
+                }
+            }
+            return;
         }
-        return;
     }
 
     let mut draw_text = |area: Rect, text: String, align: Alignment| {
