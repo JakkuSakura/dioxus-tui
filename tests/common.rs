@@ -2,10 +2,9 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus::prelude::*;
 use dioxus_core::VirtualDom;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
-use dioxus_tui::layout::node_rect;
 use dioxus_tui::layout::resolve_document;
-use dioxus_tui::render::render_tree;
-use dioxus_tui::{Rect, Surface};
+use dioxus_tui::{CellMetrics, Rect, Surface, TerminalScene};
+use std::collections::VecDeque;
 
 pub fn build_doc_with_layout(
     app: fn() -> Element,
@@ -24,38 +23,26 @@ pub fn build_doc_with_layout(
     doc.initial_build();
     let root = resolve_document(&mut doc, Rect::new(0, 0, width, height))
         .expect("main root should exist after layout");
-    if std::env::var("DEBUG_LAYOUT_TREE").is_ok() {
-        fn dump(doc: &blitz_dom::BaseDocument, id: usize, depth: usize, area: Rect) {
-            if let Some(node) = doc.get_node(id) {
-                let indent = "  ".repeat(depth);
-                let tag = node
-                    .element_data()
-                    .map(|el| el.name.local.to_string())
-                    .unwrap_or_else(|| "#text".to_string());
-                let text = node
-                    .text_data()
-                    .map(|t| t.content.clone())
-                    .unwrap_or_default();
-                let rect = node_rect(node, area);
-                eprintln!(
-                    "{indent}{tag} id={id} rect=({}, {}) {}x{} text={:?}",
-                    rect.x, rect.y, rect.width, rect.height, text
-                );
-                for child in node.children.iter() {
-                    dump(doc, *child, depth + 1, area);
-                }
-            }
-        }
-        eprintln!("-- layout tree --");
-        dump(&doc.inner, root, 0, Rect::new(0, 0, width, height));
-    }
     (doc, root)
 }
 
 pub fn render_app_to_buffer(app: fn() -> Element, width: u16, height: u16) -> Surface {
     let (doc, root) = build_doc_with_layout(app, width, height);
     let mut surface = Surface::new(width, height);
-    render_tree(&mut surface, &doc.inner, root, true, None, None);
+    let mut images = VecDeque::new();
+    let metrics = CellMetrics {
+        cell_w_px: 1.0,
+        cell_h_px: 1.0,
+    };
+    let mut scene = TerminalScene::new(&mut surface, &mut images, metrics);
+    blitz::paint::paint_scene(
+        &mut scene,
+        &doc.inner,
+        doc.inner.viewport().scale_f64(),
+        doc.inner.viewport().window_size.0,
+        doc.inner.viewport().window_size.1,
+    );
+    // Images ignored in tests unless inline rendering is added
     surface
 }
 
