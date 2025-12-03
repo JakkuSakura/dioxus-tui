@@ -13,7 +13,7 @@ use dioxus_core::{ElementId, Event, VirtualDom};
 use dioxus_html::PlatformEventData;
 use futures::{pin_mut, StreamExt};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use ratatui::widgets::{List, ListItem, Paragraph};
+use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 use ratatui::{backend::CrosstermBackend, layout::Rect, Terminal};
 use tokio::select;
@@ -345,28 +345,18 @@ fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
                 ListStyle::Disc
             };
             let style_ref = styles.list_style.unwrap_or(default_style);
-            let items: Vec<ListItem> = node
-                .children
-                .iter()
-                .enumerate()
-                .map(|(idx, child)| {
-                    let text = collect_text(child).unwrap_or_default();
-                    let label = list_item_label(&style_ref, idx, &text);
-                    ListItem::new(label)
-                })
-                .collect();
-            let list = List::new(items);
-            frame.render_widget(list, node.rect);
+            for (idx, child) in node.children.iter().enumerate() {
+                let text = collect_text(child).unwrap_or_default();
+                let label = list_item_label(&style_ref, idx, &text);
+                frame.render_widget(Paragraph::new(label).alignment(child.align), child.rect);
+            }
         }
         "h1" | "h2" | "h3" => {
             let text = collect_text(node).unwrap_or_default();
             frame.render_widget(Paragraph::new(text).alignment(node.align), node.rect);
         }
         "div" => {
-            // container, no border by default
-            if let Some(text) = collect_text(node) {
-                frame.render_widget(Paragraph::new(text).alignment(node.align), node.rect);
-            }
+            // container: render children only
             for child in node.children.iter() {
                 render_layout_node(frame, child, false);
             }

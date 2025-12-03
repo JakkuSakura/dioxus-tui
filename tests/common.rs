@@ -3,7 +3,6 @@ use dioxus_core::VirtualDom;
 use dioxus_tui::element::DomState;
 use dioxus_tui::render::render_tree;
 use ratatui::{backend::TestBackend, Terminal};
-use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
 pub fn build_nodes_from_app(app: fn() -> Element) -> (Vec<dioxus_tui::element::DomNode>, Option<dioxus_core::ElementId>) {
@@ -34,7 +33,6 @@ pub fn render_app_to_buffer(app: fn() -> Element, width: u16, height: u16) -> ra
 /// for exact comparisons, including whitespace and empty lines.
 pub struct FakeTerminal {
     pub area: Rect,
-    pub buffer: Buffer,
     pub rows: Vec<String>,
 }
 
@@ -48,7 +46,7 @@ impl FakeTerminal {
             let line: String = chunk.iter().map(|c| c.symbol()).collect();
             rows.push(line);
         }
-        Self { area, buffer, rows }
+        Self { area, rows }
     }
 
     /// Return the captured rows for additional assertions.

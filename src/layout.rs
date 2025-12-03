@@ -220,10 +220,15 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
         if !layout_node.children.is_empty() {
             let mut cursor_y = layout_node.rect.y;
             for child in &mut layout_node.children {
-                if child.rect.y < cursor_y {
-                    child.rect.y = cursor_y;
+                child.rect.x = layout_node.rect.x;
+                if !child.attrs.contains_key("width") {
+                    child.rect.width = layout_node.rect.width.max(1);
                 }
+                child.rect.y = cursor_y;
                 if child.rect.height == 0 {
+                    child.rect.height = 1;
+                }
+                if !child.attrs.contains_key("height") {
                     child.rect.height = 1;
                 }
                 cursor_y = child.rect.y.saturating_add(child.rect.height);
@@ -263,6 +268,15 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
         }
 
         // Final guard: ensure a minimum visible size (clamped to viewport).
+        let parent_right = layout_node.rect.x.saturating_add(layout_node.rect.width);
+        let parent_bottom = layout_node.rect.y.saturating_add(layout_node.rect.height);
+        for child in &mut layout_node.children {
+            let remaining_w = parent_right.saturating_sub(child.rect.x);
+            let remaining_h = parent_bottom.saturating_sub(child.rect.y);
+            child.rect.width = child.rect.width.max(1).min(remaining_w.max(1));
+            child.rect.height = child.rect.height.max(1).min(remaining_h.max(1));
+        }
+
         layout_node.rect.width = layout_node.rect.width.max(1).min(area.width);
         layout_node.rect.height = layout_node.rect.height.max(1).min(area.height);
 

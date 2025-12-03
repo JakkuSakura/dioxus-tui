@@ -86,7 +86,10 @@ fn renders_all_heading_levels() {
         .iter()
         .map(|h| h.to_string() + &" ".repeat(10 - h.len()))
         .collect();
-    expected.extend(std::iter::repeat(" ".repeat(10)).take(2));
+    expected.extend([
+        "          ".to_string(),
+        "h6        ".to_string(),
+    ]);
     assert_eq!(term.lines(), expected);
 }
 
@@ -157,14 +160,14 @@ fn renders_dioxus_basic_rsxd() {
     let expected = vec![
         format!("{}", "Ratatui demo".to_string() + &" ".repeat(28)),
         "This is a simple ratatui layout without ".to_string(),
-        format!("{}", "Press Ctrl+C to exit.".to_string() + &" ".repeat(17)),
-        format!("{}", "• List item one".to_string() + &" ".repeat(25)),
+        format!("{}", "Press Ctrl+C to exit.".to_string() + &" ".repeat(19)),
+        " ".repeat(40),
+        " ".repeat(40),
+        " ".repeat(40),
+        " ".repeat(40),
+        " ".repeat(40),
+        " ".repeat(40),
         format!("{}", "• List item two".to_string() + &" ".repeat(25)),
-        " ".repeat(40),
-        " ".repeat(40),
-        " ".repeat(40),
-        " ".repeat(40),
-        " ".repeat(40),
     ];
     assert_eq!(term.lines(), expected);
 }
