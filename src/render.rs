@@ -23,8 +23,8 @@ use tokio::select;
 
 use crate::config::Config;
 use crate::hooks::event_from_crossterm;
-use crate::layout::{collect_attrs, node_alignment, node_rect, resolve_document};
-use crate::styles::{compute_styles, list_item_label, Attrs, ListStyle};
+use crate::layout::{node_alignment, node_rect, resolve_document};
+use crate::styles::{list_item_label, ListStyle};
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
     unbounded()
@@ -310,7 +310,6 @@ pub fn render_tree(
         .element_data()
         .map(|el| el.name.local.to_string())
         .unwrap_or_default();
-    let attrs = collect_attrs(node);
     let align = node_alignment(node);
     let text_opt = collect_text(doc, root_id);
 
@@ -321,20 +320,15 @@ pub fn render_tree(
         }
         "li" => {
             let text = text_opt.clone().unwrap_or_default();
-            let styles = compute_styles(&tag, Attrs::new(&attrs));
-            let default_style = ListStyle::Disc;
-            let style_ref = styles.list_style.unwrap_or(default_style);
-            let content = list_item_label(&style_ref, 0, &text);
+            let content = list_item_label(&ListStyle::Disc, 0, &text);
             frame.render_widget(Paragraph::new(content).alignment(align), rect);
         }
         "ul" | "ol" => {
-            let styles = compute_styles(&tag, Attrs::new(&attrs));
-            let default_style = if tag == "ol" {
+            let style_ref = if tag == "ol" {
                 ListStyle::Decimal
             } else {
                 ListStyle::Disc
             };
-            let style_ref = styles.list_style.unwrap_or(default_style);
             for (idx, child) in node.children.iter().enumerate() {
                 let text = collect_text(doc, *child).unwrap_or_default();
                 let label = list_item_label(&style_ref, idx, &text);
