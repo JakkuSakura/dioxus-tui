@@ -26,7 +26,6 @@
     <img src="https://github.com/dioxuslabs/dioxus/actions/workflows/main.yml/badge.svg"
       alt="CI status" />
   </a>
-
   <!--Awesome -->
   <a href="https://github.com/dioxuslabs/awesome-dioxus">
     <img src="https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg" alt="Awesome Page" />
@@ -60,38 +59,72 @@ fn app() -> Element {
 
 ![demo app](examples/example.png)
 
-## Background
+## Pick the right entrypoint (functions)
 
-You can use Html-like semantics with inline styles, tree hierarchy, components, and more in your [`text-based user interface (TUI)`](https://en.wikipedia.org/wiki/Text-based_user_interface) application.
+- Static HTML you already have: create a `blitz_html::HtmlDocument` with
+  `HtmlDocument::from_html(html, DocumentConfig { viewport: Some(Viewport::new(..)), ..Default::default() })`.
+- Custom DOM construction: start with `blitz_dom::BaseDocument::new(DocumentConfig { ..Default::default() })`, then
+  mutate it through `BaseDocument::mutate()` (returns `DocumentMutator`) to build nodes.
+- Dioxus app: use `dioxus_native_dom::DioxusDocument::new(...)` if you want Blitz driven by a Dioxus `VirtualDom`.
+- To (re)layout after mutations or resizes: call `BaseDocument::set_viewport(...)` (or `viewport_mut()`) then
+  `BaseDocument::resolve(now_seconds_f64)` to run style + layout.
+- To paint: implement `anyrender::PaintScene` for your terminal backend and call
+  `blitz_paint::paint_scene(&mut scene, &doc, scale, width_px, height_px)`.
+- To feed input: call `Document::handle_ui_event(event)` on your document implementation when you receive keyboard/mouse
+  events from the terminal.
+- To progress async fetches (images/stylesheets): call `Document::poll(task_context)` in your event loop and re-resolve
+  when it returns `true`.
 
-Dioxus TUI is essentially a port of [Ink](https://github.com/vadimdemedes/ink) but for [`Rust`](https://www.rust-lang.org/) and [`Dioxus`](https://dioxuslabs.com/). Dioxus TUI doesn't depend on Node.js or any other JavaScript runtime, so your binaries are portable and beautiful.
+## Architecture for a terminal renderer
 
-## Limitations
+1. **DOM + Style (Blitz)**: use `BaseDocument` or `HtmlDocument` for parsing, style resolution, and layout (`resolve`).
+2. **Display list (Blitz Paint)**: `blitz_paint::paint_scene` traverses the laid-out tree and emits AnyRender paint
+   commands.
+3. **Terminal adapter (yours)**: implement `anyrender::PaintScene` that:
+    - Accumulates text runs into a cell buffer (respect wide chars/emoji widths).
+    - Captures image draws into pixel buffers; emit Inline Images Protocol escape sequences at the target cell position
+      with the requested pixel size.
+    - Applies fills/borders/box shadows as best-effort ANSI or braille/block fallbacks when possible.
+4. **Compositor**: diff cell buffers + inline images per frame to minimize redraws. Redraw on resize or when
+   `Document::poll`/events require it.
 
-- **Subset of Html**
-  Terminals can only render a subset of HTML. We support as much as we can.
-- **Particular frontend design**
-  Terminals and browsers are and look different. Therefore, the same design might not be the best to cover both renderers.
+## Inline Images specifics
 
-## Status
+- The painter will call your `PaintScene::draw_image` (and related) with an RGBA buffer and target rectangle. Encode
+  that buffer (e.g., PNG + base64) and emit Inline Images Protocol escapes at the corresponding row/column.
+- Keep a mapping from pixel coords to terminal cells to position the image correctly. Use your terminal font metrics (
+  cell width/height) to convert `width_px/height_px` to a cell anchor.
+- Provide a fallback when the terminal lacks inline image support: downsample to ANSI blocks/braille or skip images.
 
-**WARNING: Dioxus TUI is currently under construction!**
+## Event handling in a TUI
 
-Rendering a VirtualDom works fine, but the ecosystem of hooks is not yet ready. Additionally, some bugs in the flexbox implementation might be quirky at times.
+- Map terminal events to `UiEvent` variants and pass them to `Document::handle_ui_event` (clicks, scroll, key input).
+  You can synthesize positions by translating cell coords to CSS px via your cell size and current viewport scroll.
+- Keep track of hover/focus nodes if you need to show debug overlays; `BaseDocument::get_hover_node_id` helps when
+  highlighting.
 
-## Features
+## Resizing and scrolling
 
-Dioxus TUI features:
+- On every terminal resize, call `BaseDocument::set_viewport` (or mutate via `viewport_mut`) before the next `resolve`.
+- Scroll by mutating `BaseDocument::scroll_viewport_by(dx, dy)` (then re-paint). Clamp/quantize to cells if you want
+  whole-line scrolling in the terminal.
 
-- [x] Flexbox-based layout system
-- [ ] CSS selectors
-- [x] inline CSS support
-- [x] Built-in focusing system
+## What you need to implement
 
-* [x] Widgets<sup>1</sup>
-* [ ] Support for events, hooks, and callbacks<sup>2</sup>
-* [ ] Html tags<sup>3</sup>
+- A terminal `PaintScene` backend that turns AnyRender commands into: (a) a text cell buffer; (b) inline image
+  escapes; (c) optional ANSI styling for borders/backgrounds.
+- A small compositor that diffs buffers to minimize terminal writes.
+- Capability detection (truecolor? inline images? fallback palette) to decide how to map colors and images.
 
-<sup>1</sup> Currently only a subset of the input element is implemented as a component (not an element). The `Input` component supports sliders, text, numbers, passwords, buttons, and checkboxes.
-<sup>2</sup> Basic keyboard, mouse, and focus events are implemented.
-<sup>3</sup> Currently, most HTML tags don't translate into any meaning inside of Dioxus TUI. So an `input` _element_ won't mean anything nor does it have any additional functionality.
+## Future design considerations
+
+- Stabilize a shared TUI scene abstraction so Dioxus/Blitz integrations can swap backends without changing app code.
+- Explore richer fallback strategies for terminals without inline images (ANSI dithering, braille downsampling) to keep
+  layouts consistent.
+- Standardize capability negotiation (truecolor, italics, image support) to guide paint decisions and avoid noisy
+  redraws.
+- Provide a higher-level ergonomic API for Dioxus apps that hides viewport management and event wiring while keeping
+  escape hatches for advanced control.
+
+This separation keeps Blitz responsible for DOM, style, layout, and paint ordering, while your TUI backend only
+translates paint commands into terminal-friendly output and cursor movement.
