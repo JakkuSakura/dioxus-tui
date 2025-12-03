@@ -188,9 +188,12 @@ impl<'a> PaintScene for TerminalScene<'a> {
         };
         match brush.into() {
             PaintRef::Solid(_c) => {
+                // Leave spaces for default background; only paint when non-zero area
                 let w_px = bbox.width() as f32;
                 let h_px = bbox.height() as f32;
-                self.paint_rect('█', x_px, y_px, w_px, h_px);
+                if w_px > 0.0 && h_px > 0.0 {
+                    self.paint_rect(' ', x_px, y_px, w_px, h_px);
+                }
             }
             PaintRef::Image(img) => self.push_image(img, x_px, y_px),
             _ => {}

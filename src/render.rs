@@ -335,9 +335,10 @@ fn flush_surface(
         term.add_change(Change::ClearScreen(ColorAttribute::Default));
     }
 
+    // dirty lines: compare line-by-line, emit minimal cursor moves; future: extend to rect diff
     let width = surface.width() as usize;
     for (y, chunk) in surface.content.chunks(width).enumerate() {
-        let should_emit = if full_redraw {
+        let is_dirty = if full_redraw {
             true
         } else if let Some(prev_surface) = prev {
             let prev_width = prev_surface.width() as usize;
@@ -352,7 +353,7 @@ fn flush_surface(
             true
         };
 
-        if !should_emit {
+        if !is_dirty {
             continue;
         }
 
