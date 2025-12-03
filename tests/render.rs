@@ -43,7 +43,7 @@ fn renders_basic_app_into_buffer() {
     assert!(buf
         .content
         .iter()
-        .any(|cell| !cell.symbol().is_empty() && cell.symbol() != " "));
+        .any(|cell| cell.symbol() == "h"));
 }
 
 #[test]
@@ -64,4 +64,36 @@ fn respects_viewport_bounds() {
     let buf = terminal.backend().buffer().clone();
     // Buffer has limited size; ensure we didn't panic and buffer size matches viewport
     assert_eq!(buf.area, Rect::new(0, 0, 10, 3));
+}
+
+#[test]
+fn renders_multiple_lines() {
+    fn app() -> Element {
+        rsx! {
+            div {
+                p { style: "height: 1px; width: 100%;", "first" }
+                p { style: "height: 1px; width: 100%;", "second" }
+            }
+        }
+    }
+
+    let (nodes, root_id) = build_nodes_from_app(app);
+    let backend = TestBackend::new(10, 4);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| {
+            render_tree(f, &nodes, root_id.or_else(|| nodes.first().map(|n| n.id)));
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer().clone();
+    let width = buf.area.width as usize;
+    let mut rows: Vec<String> = Vec::new();
+    for chunk in buf.content.chunks(width) {
+        let line: String = chunk.iter().map(|c| c.symbol()).collect();
+        rows.push(line);
+    }
+    let joined = rows.join("\n");
+    assert!(joined.contains("first"), "first not rendered: {joined}");
+    assert!(joined.contains("second"), "second not rendered: {joined}");
 }

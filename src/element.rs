@@ -110,13 +110,11 @@ pub struct DomWriter<'a> {
 
 impl WriteMutations for DomWriter<'_> {
     fn append_children(&mut self, id: ElementId, _m: usize) {
-        eprintln!("append_children id={id:?} m={_m}");
         self.dom.ensure_entity(id);
         self.dom.resolve_children();
     }
 
     fn assign_node_id(&mut self, path: &'static [u8], id: ElementId) {
-        eprintln!("assign_node_id id={id:?} path={:?}", path);
         let path_vec = path.to_vec();
         let previous = self.dom.path_to_id.insert(path_vec.clone(), id);
 
@@ -157,23 +155,16 @@ impl WriteMutations for DomWriter<'_> {
     }
 
     fn create_placeholder(&mut self, id: ElementId) {
-        eprintln!("create_placeholder id={id:?}");
         self.dom.ensure_entity(id);
     }
 
     fn create_text_node(&mut self, value: &str, id: ElementId) {
-        eprintln!("create_text_node id={id:?} value={value}");
         self.dom.upsert_text(id, value.to_string());
         self.dom.ensure_entity(id);
         self.dom.resolve_children();
     }
 
     fn load_template(&mut self, template: Template, _index: usize, _id: ElementId) {
-        eprintln!(
-            "load_template id={_id:?} roots={} attr_paths={} index={_index}",
-            template.roots.len(),
-            template.attr_paths.len()
-        );
         let mut path = vec![0];
 
         fn collect(

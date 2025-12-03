@@ -72,3 +72,45 @@ fn block_elements_stack_and_have_space() {
         last_y = child.rect.y;
     }
 }
+
+#[test]
+fn text_nodes_have_nonzero_size() {
+    let mut nodes = Vec::new();
+    let t1 = text_node(2, "alpha");
+    let t2 = text_node(3, "beta");
+    let root = DomNode {
+        id: ElementId(1),
+        tag: Some("div".into()),
+        children: vec![t1.id, t2.id],
+        ..Default::default()
+    };
+    nodes.push(root.clone());
+    nodes.push(t1);
+    nodes.push(t2);
+
+    let layout = build_layout(&nodes, &root, UiRect::new(0, 0, 40, 10));
+    for child in &layout.children {
+        assert!(child.rect.width > 0 && child.rect.height > 0);
+    }
+}
+
+#[test]
+fn explicit_sizes_are_respected() {
+    let mut nodes = Vec::new();
+    let mut child = element(2, "div", vec![]);
+    child.attrs.insert("width".into(), "10px".into());
+    child.attrs.insert("height".into(), "2px".into());
+    let root = DomNode {
+        id: ElementId(1),
+        tag: Some("div".into()),
+        children: vec![child.id],
+        ..Default::default()
+    };
+    nodes.push(root.clone());
+    nodes.push(child);
+
+    let layout = build_layout(&nodes, &root, UiRect::new(0, 0, 80, 20));
+    let child_rect = &layout.children[0].rect;
+    assert_eq!(child_rect.width, 10);
+    assert_eq!(child_rect.height, 2);
+}
