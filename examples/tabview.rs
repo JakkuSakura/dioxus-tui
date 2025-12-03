@@ -1,10 +1,10 @@
 use dioxus::prelude::*;
-use dioxus_tui::components::TabStrip;
 
 const TABS: [&str; 3] = ["Status", "Logs", "Settings"];
 
-fn main() {
-    dioxus_tui::launch(app);
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    dioxus_tui::launch(app).await;
 }
 
 fn app() -> Element {
@@ -44,6 +44,22 @@ fn MinimalTabView() -> Element {
                         1 => rsx!( "Logs tab content" ),
                         _ => rsx!( "Settings tab content" ),
                     }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn TabStrip(titles: &'static [&'static str], active: Signal<usize>) -> Element {
+    rsx! {
+        div { display: "flex", gap: "8px", padding: "8px",
+            for (idx, title) in titles.iter().enumerate() {
+                span {
+                    padding: "4px 8px",
+                    background_color: if active() == idx { "rgb(30, 41, 59)" } else { "transparent" },
+                    border_radius: "4px",
+                    "{title}"
                 }
             }
         }

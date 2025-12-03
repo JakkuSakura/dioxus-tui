@@ -1,8 +1,9 @@
 use dioxus::prelude::*;
 use std::{fmt::Debug, rc::Rc};
 
-fn main() {
-    dioxus_tui::launch(app);
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    dioxus_tui::launch(app).await;
 }
 
 const MAX_EVENTS: usize = 8;

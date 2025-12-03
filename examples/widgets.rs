@@ -1,8 +1,9 @@
 use dioxus::prelude::*;
 use dioxus_tui::Config;
 
-fn main() {
-    dioxus_tui::launch_cfg(app, Config::new());
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    dioxus_tui::launch_cfg(app, Config::new()).await;
 }
 
 fn app() -> Element {

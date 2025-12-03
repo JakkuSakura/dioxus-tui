@@ -159,7 +159,7 @@ impl DioxusRenderer {
     }
 }
 
-pub(crate) fn run_renderer(
+pub(crate) async fn run_renderer(
     cfg: Config,
     mut renderer: DioxusRenderer,
     mut raw_event_reciever: UnboundedReceiver<InputEvent>,
@@ -208,67 +208,62 @@ pub(crate) fn run_renderer(
         term.clear().unwrap();
     }
 
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?
-        .block_on(async {
-            renderer.update();
+    renderer.update();
 
-            loop {
-                let mut input_event: Option<InputEvent> = None;
+    loop {
+        let mut input_event: Option<InputEvent> = None;
 
-                {
-                    let wait = renderer.poll_async();
-                    pin_mut!(wait);
+        {
+            let wait = renderer.poll_async();
+            pin_mut!(wait);
 
-                    select! {
-                        _ = wait => {},
-                        evt = raw_event_reciever.next() => {
-                            if let Some(evt) = evt {
-                                input_event = Some(evt);
-                            }
+            select! {
+                _ = wait => {},
+                evt = raw_event_reciever.next() => {
+                    if let Some(evt) = evt {
+                        input_event = Some(evt);
+                    }
+                }
+            }
+        }
+
+        if let Some(evt) = input_event {
+            match evt {
+                InputEvent::Close => break,
+                InputEvent::UserInput(term_evt) => {
+                    if matches!(term_evt, TermEvent::Key(key) if matches!(key.code, KeyCode::Char('c' | 'C')) && key.modifiers.contains(KeyModifiers::CONTROL) && cfg.ctrl_c_quit) {
+                        break;
+                    }
+                    if let Some(root) = renderer.root_id() {
+                        for (target, name, data, bubbles) in event_from_crossterm(term_evt, root) {
+                            let runtime_event = data.into_platform_event(bubbles);
+                            renderer.handle_event(target, name, runtime_event, bubbles);
                         }
                     }
                 }
-
-                if let Some(evt) = input_event {
-                    match evt {
-                        InputEvent::Close => break,
-                        InputEvent::UserInput(term_evt) => {
-                            if matches!(term_evt, TermEvent::Key(key) if matches!(key.code, KeyCode::Char('c' | 'C')) && key.modifiers.contains(KeyModifiers::CONTROL) && cfg.ctrl_c_quit) {
-                                break;
-                            }
-                            if let Some(root) = renderer.root_id() {
-                                for (target, name, data, bubbles) in event_from_crossterm(term_evt, root) {
-                                    let runtime_event = data.into_platform_event(bubbles);
-                                    renderer.handle_event(target, name, runtime_event, bubbles);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                renderer.update();
-
-                if let Some(term) = &mut terminal {
-                    execute!(term.backend_mut(), SavePosition).unwrap();
-                    term.draw(|f| {
-                        if let Some(root) = renderer.layout_root(f.area()) {
-                            render_tree(f, &renderer.doc.inner, root, true, None);
-                        }
-                    }).unwrap();
-                    execute!(term.backend_mut(), RestorePosition, Show).unwrap();
-                }
             }
+        }
 
-            if let Some(term) = &mut terminal {
-                disable_raw_mode().unwrap();
-                execute!(term.backend_mut(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
-                term.show_cursor().unwrap();
-            }
+        renderer.update();
 
-            Ok(())
-        })
+        if let Some(term) = &mut terminal {
+            execute!(term.backend_mut(), SavePosition).unwrap();
+            term.draw(|f| {
+                if let Some(root) = renderer.layout_root(f.area()) {
+                    render_tree(f, &renderer.doc.inner, root, true, None);
+                }
+            }).unwrap();
+            execute!(term.backend_mut(), RestorePosition, Show).unwrap();
+        }
+    }
+
+    if let Some(term) = &mut terminal {
+        disable_raw_mode().unwrap();
+        execute!(term.backend_mut(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
+        term.show_cursor().unwrap();
+    }
+
+    Ok(())
 }
 
 pub fn render_tree(
@@ -306,15 +301,24 @@ pub fn render_tree(
     let text_opt = collect_text(doc, root_id);
 
     if is_root || matches!(tag.as_str(), "div" | "main" | "body" | "html") {
-        let parent_rect = rect;
-        let mut cursor_y = parent_rect.y;
+        let mut cursor_y = rect.y;
         for child in node.children.iter() {
-            if doc.get_node(*child).is_some() {
-                let child_height = 1;
-                let override_rect =
-                    Rect::new(parent_rect.x, cursor_y, parent_rect.width, child_height);
-                cursor_y = cursor_y.saturating_add(child_height);
+            if let Some(child_node) = doc.get_node(*child) {
+                if cursor_y >= area.height {
+                    break;
+                }
+                let available_height = area.height.saturating_sub(cursor_y);
+                let desired_height = child_node
+                    .element_data()
+                    .map(|el| match el.name.local.as_ref() {
+                        "ul" | "ol" => child_node.children.len() as u16,
+                        _ => 1,
+                    })
+                    .unwrap_or(1);
+                let child_height = available_height.min(desired_height.max(1));
+                let override_rect = Rect::new(rect.x, cursor_y, rect.width, child_height);
                 render_tree(frame, doc, *child, false, Some(override_rect));
+                cursor_y = cursor_y.saturating_add(child_height);
             }
         }
         return;
@@ -325,23 +329,32 @@ pub fn render_tree(
             return;
         }
         let width = area.width as usize;
+        let text_len = text.len();
         let content = match align {
             Alignment::Center => {
-                if text.len() >= width {
+                if text_len >= width {
                     text
                 } else {
-                    let pad = width.saturating_sub(text.len());
+                    let pad = width.saturating_sub(text_len);
                     let left = pad / 2;
                     let right = pad - left;
-                    format!(
-                        "{spaces_left}{text}{spaces_right}",
-                        spaces_left = " ".repeat(left),
-                        spaces_right = " ".repeat(right)
-                    )
+                    format!("{}{}{}", " ".repeat(left), text, " ".repeat(right))
                 }
             }
-            Alignment::Right => format!("{text:>width$}", width = width),
-            Alignment::Left => format!("{text:<width$}", width = width),
+            Alignment::Right => {
+                if text_len >= width {
+                    text
+                } else {
+                    format!("{}{}", " ".repeat(width - text_len), text)
+                }
+            }
+            Alignment::Left => {
+                if text_len >= width {
+                    text
+                } else {
+                    format!("{}{}", text, " ".repeat(width - text_len))
+                }
+            }
         };
         let buf = frame.buffer_mut();
         buf.set_stringn(
@@ -370,14 +383,13 @@ pub fn render_tree(
                 ListStyle::Disc
             };
             for (idx, child) in node.children.iter().enumerate() {
+                let line_y = rect.y.saturating_add(idx as u16);
+                let li_rect = Rect::new(rect.x, line_y, rect.width, 1);
                 let text = collect_text(doc, *child).unwrap_or_default();
                 let label = list_item_label(&style_ref, idx, &text);
-                let line_y = rect.y.saturating_add(idx as u16);
-                let li_width = rect.width.saturating_sub(4).max(1);
-                let li_rect = Rect::new(rect.x, line_y, li_width, 1);
                 let child_align = doc
                     .get_node(*child)
-                    .map(|n| node_alignment(n))
+                    .map(node_alignment)
                     .unwrap_or(Alignment::Left);
                 draw_text(li_rect, label, child_align);
             }

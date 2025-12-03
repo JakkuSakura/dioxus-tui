@@ -1,10 +1,12 @@
 use dioxus::prelude::*;
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
     dioxus_tui::launch_cfg(
         app,
         dioxus_tui::Config::default().with_color_mode(dioxus_tui::ColorMode::Ansi),
-    );
+    )
+    .await;
 }
 
 fn app() -> Element {

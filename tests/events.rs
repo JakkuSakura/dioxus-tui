@@ -5,6 +5,7 @@ use dioxus_tui::TuiContext;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio::runtime::Builder;
 
 /// The tui renderer will look for any event that has occured or any future that has resolved in a loop.
 /// It will resolve at most one event per loop.
@@ -28,10 +29,20 @@ impl Future for PollN {
     }
 }
 
+fn run_launch(app: fn() -> Element, cfg: dioxus_tui::Config) {
+    Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async move {
+            dioxus_tui::launch_cfg(app, cfg).await;
+        });
+}
+
 #[test]
 #[ignore]
 fn key_down() {
-    dioxus_tui::launch_cfg(
+    run_launch(
         app,
         dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless),
     );
@@ -78,7 +89,7 @@ fn key_down() {
 #[test]
 #[ignore]
 fn mouse_down() {
-    dioxus_tui::launch_cfg(
+    run_launch(
         app,
         dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless),
     );
@@ -118,7 +129,7 @@ fn mouse_down() {
 #[test]
 #[ignore]
 fn mouse_up() {
-    dioxus_tui::launch_cfg(
+    run_launch(
         app,
         dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless),
     );
@@ -161,7 +172,7 @@ fn mouse_up() {
 #[test]
 #[ignore]
 fn mouse_enter() {
-    dioxus_tui::launch_cfg(
+    run_launch(
         app,
         dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless),
     );
@@ -204,7 +215,7 @@ fn mouse_enter() {
 #[test]
 #[ignore]
 fn mouse_exit() {
-    dioxus_tui::launch_cfg(
+    run_launch(
         app,
         dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless),
     );
@@ -247,7 +258,7 @@ fn mouse_exit() {
 #[test]
 #[ignore]
 fn mouse_move() {
-    dioxus_tui::launch_cfg(
+    run_launch(
         app,
         dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless),
     );
@@ -290,7 +301,7 @@ fn mouse_move() {
 #[test]
 #[ignore]
 fn wheel() {
-    dioxus_tui::launch_cfg(
+    run_launch(
         app,
         dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless),
     );
@@ -334,7 +345,7 @@ fn wheel() {
 #[test]
 #[ignore]
 fn click() {
-    dioxus_tui::launch_cfg(
+    run_launch(
         app,
         dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless),
     );
@@ -377,7 +388,7 @@ fn click() {
 #[test]
 #[ignore]
 fn context_menu() {
-    dioxus_tui::launch_cfg(
+    run_launch(
         app,
         dioxus_tui::Config::new().with_rendering_mode(dioxus_tui::RenderingMode::Headless),
     );

@@ -2,8 +2,9 @@
 
 use dioxus::prelude::*;
 
-fn main() {
-    dioxus_tui::launch_cfg(app, Default::default());
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    dioxus_tui::launch_cfg(app, Default::default()).await;
 }
 
 #[component]

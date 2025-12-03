@@ -1,7 +1,8 @@
 use dioxus::prelude::*;
 
-fn main() {
-    dioxus_tui::launch(app);
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    dioxus_tui::launch(app).await;
 }
 
 fn app() -> Element {

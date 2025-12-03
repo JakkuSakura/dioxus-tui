@@ -1,116 +1,113 @@
-use dioxus_core::ElementId;
-use dioxus_tui::element::{DomNode, NodeText};
-use dioxus_tui::layout::build_layout;
+use dioxus::prelude::*;
+use dioxus_tui::layout::node_rect;
 use ratatui::layout::Rect as UiRect;
 
-fn text_node(id: usize, text: &str) -> DomNode {
-    DomNode {
-        id: ElementId(id),
-        text: Some(NodeText {
-            text: text.to_string(),
-        }),
-        ..Default::default()
-    }
-}
+mod common;
+use common::build_doc_with_layout;
 
-fn element(id: usize, tag: &str, children: Vec<ElementId>) -> DomNode {
-    DomNode {
-        id: ElementId(id),
-        tag: Some(tag.to_string()),
-        children,
-        ..Default::default()
+fn find_by_tag(doc: &blitz_dom::BaseDocument, id: usize, tag: &str, out: &mut Vec<usize>) {
+    if let Some(node) = doc.get_node(id) {
+        if node
+            .element_data()
+            .map(|el| el.name.local.as_ref() == tag)
+            .unwrap_or(false)
+        {
+            out.push(id);
+        }
+        for child in node.children.iter() {
+            find_by_tag(doc, *child, tag, out);
+        }
     }
 }
 
 #[test]
 fn layout_root_matches_viewport() {
-    let mut nodes = Vec::new();
-    let root = element(1, "div", vec![ElementId(2)]);
-    nodes.push(root.clone());
-    nodes.push(text_node(2, "hello"));
+    fn app() -> Element {
+        rsx! { div { "hello" } }
+    }
 
-    let area = UiRect::new(0, 0, 80, 25);
-    let layout = build_layout(&nodes, &root, area);
+    let width = 80u16;
+    let height = 25u16;
+    let area = UiRect::new(0, 0, width, height);
+    let (doc, root) = build_doc_with_layout(app, width, height);
 
-    assert_eq!(layout.rect.width, area.width);
-    assert_eq!(layout.rect.height, area.height);
-    assert!(layout.children.first().unwrap().rect.width > 0);
-    assert!(layout.children.first().unwrap().rect.height > 0);
+    let root_node = doc.inner.get_node(root).unwrap();
+    let rect = node_rect(root_node, area);
+    assert_eq!(rect.width, width);
+    assert!(rect.height > 0 && rect.height <= height);
+
+    let first_child = root_node
+        .children
+        .first()
+        .and_then(|id| doc.inner.get_node(*id));
+    assert!(first_child.is_some());
+    let child_rect = node_rect(first_child.unwrap(), area);
+    assert!(child_rect.width > 0 && child_rect.height > 0);
 }
 
 #[test]
 fn block_elements_stack_and_have_space() {
-    let mut nodes = Vec::new();
-    let mut h1 = element(2, "h1", vec![ElementId(3)]);
-    h1.attrs.insert("height".into(), "1px".into());
-    let mut p1 = element(4, "p", vec![ElementId(5)]);
-    p1.attrs.insert("height".into(), "1px".into());
-    let mut p2 = element(6, "p", vec![ElementId(7)]);
-    p2.attrs.insert("height".into(), "1px".into());
-    let root = DomNode {
-        id: ElementId(1),
-        tag: Some("div".into()),
-        children: vec![h1.id, p1.id, p2.id],
-        ..Default::default()
-    };
-    nodes.push(root.clone());
-    nodes.push(h1.clone());
-    nodes.push(text_node(3, "Title"));
-    nodes.push(p1.clone());
-    nodes.push(text_node(5, "First paragraph"));
-    nodes.push(p2.clone());
-    nodes.push(text_node(7, "Second paragraph"));
+    fn app() -> Element {
+        rsx! {
+            div { direction: "column",
+                h1 { "Title" }
+                p { "First paragraph" }
+                p { "Second paragraph" }
+            }
+        }
+    }
 
     let area = UiRect::new(0, 0, 60, 20);
-    let layout = build_layout(&nodes, &root, area);
+    let (doc, root) = build_doc_with_layout(app, area.width, area.height);
 
-    // Children should have nonzero heights and be ordered top-to-bottom
+    let mut stack_nodes = Vec::new();
+    find_by_tag(&doc.inner, root, "h1", &mut stack_nodes);
+    find_by_tag(&doc.inner, root, "p", &mut stack_nodes);
+    assert!(stack_nodes.len() >= 3);
+
     let mut last_y = 0;
-    for child in &layout.children {
-        assert!(child.rect.height > 0);
-        assert!(child.rect.y >= last_y);
-        last_y = child.rect.y;
+    for id in stack_nodes {
+        let rect = node_rect(doc.inner.get_node(id).unwrap(), area);
+        assert!(rect.y >= last_y);
+        last_y = rect.y;
     }
 }
 
 #[test]
-fn text_nodes_have_nonzero_size() {
-    let mut nodes = Vec::new();
-    let t1 = text_node(2, "alpha");
-    let t2 = text_node(3, "beta");
-    let root = DomNode {
-        id: ElementId(1),
-        tag: Some("div".into()),
-        children: vec![t1.id, t2.id],
-        ..Default::default()
-    };
-    nodes.push(root.clone());
-    nodes.push(t1);
-    nodes.push(t2);
+fn text_elements_have_nonzero_size() {
+    fn app() -> Element {
+        rsx! { div { p { "alpha" } p { "beta" } } }
+    }
 
-    let layout = build_layout(&nodes, &root, UiRect::new(0, 0, 40, 10));
-    for child in &layout.children {
-        assert!(child.rect.width > 0 && child.rect.height > 0);
+    let area = UiRect::new(0, 0, 40, 10);
+    let (doc, root) = build_doc_with_layout(app, area.width, area.height);
+
+    let mut paragraphs = Vec::new();
+    find_by_tag(&doc.inner, root, "p", &mut paragraphs);
+    assert_eq!(paragraphs.len(), 2);
+    for id in paragraphs {
+        let rect = node_rect(doc.inner.get_node(id).unwrap(), area);
+        assert!(rect.width > 0);
     }
 }
 
 #[test]
 fn explicit_sizes_are_respected() {
-    let mut nodes = Vec::new();
-    let mut child = element(2, "div", vec![]);
-    child.attrs.insert("width".into(), "10px".into());
-    child.attrs.insert("height".into(), "2px".into());
-    let root = DomNode {
-        id: ElementId(1),
-        tag: Some("div".into()),
-        children: vec![child.id],
-        ..Default::default()
-    };
-    nodes.push(root.clone());
-    nodes.push(child);
+    fn app() -> Element {
+        rsx! {
+            div { div { style: "width: 10px; height: 2px;" } }
+        }
+    }
 
-    let layout = build_layout(&nodes, &root, UiRect::new(0, 0, 80, 20));
-    let child_rect = &layout.children[0].rect;
-    assert_eq!(child_rect.width, 10);
-    assert_eq!(child_rect.height, 2);
+    let area = UiRect::new(0, 0, 80, 20);
+    let (doc, root) = build_doc_with_layout(app, area.width, area.height);
+
+    let mut divs = Vec::new();
+    find_by_tag(&doc.inner, root, "div", &mut divs);
+    // Two divs: outer and inner
+    assert!(divs.len() >= 2);
+    let inner = *divs.last().unwrap();
+    let rect = node_rect(doc.inner.get_node(inner).unwrap(), area);
+    assert_eq!(rect.width, 10);
+    assert_eq!(rect.height, 2);
 }

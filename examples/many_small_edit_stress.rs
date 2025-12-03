@@ -2,7 +2,8 @@ use dioxus::prelude::*;
 use dioxus_tui::{Config, TuiContext};
 
 /// This benchmarks the cache performance of the TUI for small edits by changing one box at a time.
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
     for size in 1..=20usize {
         for _ in 0..10 {
             let dom = VirtualDom::new(app).with_root_context(size);
@@ -10,6 +11,7 @@ fn main() {
                 dom,
                 Config::default().with_rendering_mode(dioxus_tui::RenderingMode::Headless),
             )
+            .await;
         }
     }
 }

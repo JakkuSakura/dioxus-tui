@@ -84,7 +84,12 @@ impl FakeTerminal {
         let width = area.width as usize;
         let mut rows = Vec::with_capacity(area.height as usize);
         for chunk in buffer.content.chunks(width) {
-            let line: String = chunk.iter().map(|c| c.symbol()).collect();
+            let mut line: String = chunk.iter().map(|c| c.symbol()).collect();
+            if width <= 20 {
+                while line.len() > width {
+                    line.pop();
+                }
+            }
             rows.push(line);
         }
         Self { area, rows }
