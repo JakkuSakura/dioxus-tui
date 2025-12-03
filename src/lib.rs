@@ -3,7 +3,6 @@
 #![doc(html_favicon_url = "https://avatars.githubusercontent.com/u/79236386")]
 
 pub mod capabilities;
-pub mod capabilities;
 mod config;
 pub mod element;
 pub mod geometry;
@@ -15,7 +14,6 @@ pub mod scene;
 mod styles;
 pub mod surface;
 
-pub use capabilities::TerminalCapabilities;
 pub use capabilities::TerminalCapabilities;
 pub use config::{ColorMode, Config, RenderingMode};
 pub use geometry::{Alignment, Rect};

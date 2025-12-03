@@ -29,9 +29,11 @@ blitz-dom = { version = "0.2.2", default-features = false, features = ["system_f
 blitz-traits = { version = "0.2.0" }
 dioxus-native-dom = "0.7.1"
 anyrender = "0.6"
-blitz = { version = "0.2", default-features = false }
+blitz = { version = "0.2" }
 png = "0.17"
 base64 = "0.22"
+peniko = "0.5"
+kurbo = "0.12"
 
 [dev-dependencies]
 dioxus = { version = "0.7.1" }

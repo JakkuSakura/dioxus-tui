@@ -1,6 +1,7 @@
 use std::{any::Any, pin::Pin, rc::Rc, time::Duration};
 
 use anyhow::Result;
+use blitz_dom::Document;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event as TermEvent, KeyCode, KeyModifiers,
@@ -18,7 +19,7 @@ use termwiz::{
     caps::Capabilities,
     color::ColorAttribute,
     surface::{Change, Position},
-    terminal::{buffered::BufferedTerminal, ScreenSize, SystemTerminal},
+    terminal::{buffered::BufferedTerminal, ScreenSize, SystemTerminal, Terminal},
 };
 use tokio::select;
 
@@ -218,10 +219,6 @@ pub(crate) async fn run_renderer(
         truecolor: false,
         inline_images: false,
     });
-    let metrics = CellMetrics {
-        cell_w_px: 1.0,
-        cell_h_px: 1.0,
-    };
     let mut last_surface: Option<Surface> = None;
 
     renderer.update();
@@ -264,10 +261,10 @@ pub(crate) async fn run_renderer(
         renderer.update();
 
         if let Some(term) = &mut terminal {
-            let area = terminal_size(term)?;
+            let (area, metrics) = terminal_size(term)?;
             let mut surface = Surface::new(area.width, area.height);
             let mut images = std::collections::VecDeque::new();
-            if let Some(root) = renderer.layout_root(area) {
+            if renderer.layout_root(area).is_some() {
                 let mut scene = TerminalScene::new(&mut surface, &mut images, metrics);
                 blitz::paint::paint_scene(
                     &mut scene,
@@ -276,6 +273,9 @@ pub(crate) async fn run_renderer(
                     renderer.doc.inner.viewport().window_size.0,
                     renderer.doc.inner.viewport().window_size.1,
                 );
+            }
+            if !capabilities.inline_images && !images.is_empty() {
+                paint_image_fallback(&mut surface, &images, metrics);
             }
             flush_surface(
                 term,
@@ -300,9 +300,25 @@ pub(crate) async fn run_renderer(
     Ok(())
 }
 
-fn terminal_size(term: &mut BufferedTerminal<SystemTerminal>) -> Result<Rect> {
-    let ScreenSize { cols, rows, .. } = term.terminal().get_screen_size()?;
-    Ok(Rect::new(0, 0, cols as u16, rows as u16))
+fn terminal_size(term: &mut BufferedTerminal<SystemTerminal>) -> Result<(Rect, CellMetrics)> {
+    let ScreenSize {
+        cols,
+        rows,
+        xpixel,
+        ypixel,
+    } = term.terminal().get_screen_size()?;
+    let (cell_w_px, cell_h_px) = if xpixel > 0 && ypixel > 0 {
+        (xpixel as f32 / cols as f32, ypixel as f32 / rows as f32)
+    } else {
+        (1.0, 1.0)
+    };
+    Ok((
+        Rect::new(0, 0, cols as u16, rows as u16),
+        CellMetrics {
+            cell_w_px,
+            cell_h_px,
+        },
+    ))
 }
 
 fn flush_surface(
@@ -319,20 +335,33 @@ fn flush_surface(
         term.add_change(Change::ClearScreen(ColorAttribute::Default));
     }
 
-    for (y, line) in surface.lines().iter().enumerate() {
-        let should_emit = full_redraw
-            || prev
-                .and_then(|p| p.lines().get(y))
-                .map(|prev_line| prev_line != line)
-                .unwrap_or(true);
+    let width = surface.width() as usize;
+    for (y, chunk) in surface.content.chunks(width).enumerate() {
+        let should_emit = if full_redraw {
+            true
+        } else if let Some(prev_surface) = prev {
+            let prev_width = prev_surface.width() as usize;
+            if prev_width != width || y >= prev_surface.height() as usize {
+                true
+            } else {
+                let start = y * prev_width;
+                let end = start + prev_width;
+                &prev_surface.content[start..end] != chunk
+            }
+        } else {
+            true
+        };
+
         if !should_emit {
             continue;
         }
+
+        let line: String = chunk.iter().collect();
         term.add_change(Change::CursorPosition {
             x: Position::Absolute(0),
             y: Position::Absolute(y),
         });
-        term.add_change(Change::Text(line.clone()));
+        term.add_change(Change::Text(line));
     }
     // Emit inline images after text to preserve ordering
     if caps.inline_images && !images.is_empty() {
@@ -342,6 +371,31 @@ fn flush_surface(
     }
     term.flush()?;
     Ok(())
+}
+
+fn paint_image_fallback(
+    surface: &mut Surface,
+    images: &std::collections::VecDeque<crate::scene::InlineImage>,
+    metrics: CellMetrics,
+) {
+    for img in images {
+        let x_px = img.x_px;
+        let y_px = img.y_px;
+        let w_px = img.width_px as f32;
+        let h_px = img.height_px as f32;
+        let x0 = (x_px / metrics.cell_w_px).floor().max(0.0) as u16;
+        let y0 = (y_px / metrics.cell_h_px).floor().max(0.0) as u16;
+        let x1 = ((x_px + w_px) / metrics.cell_w_px).ceil().max(0.0) as u16;
+        let y1 = ((y_px + h_px) / metrics.cell_h_px).ceil().max(0.0) as u16;
+        for y in y0..y1.min(surface.height()) {
+            for x in x0..x1.min(surface.width()) {
+                let idx = y as usize * surface.width() as usize + x as usize;
+                if let Some(slot) = surface.content.get_mut(idx) {
+                    *slot = '░';
+                }
+            }
+        }
+    }
 }
 
 pub fn render_tree(

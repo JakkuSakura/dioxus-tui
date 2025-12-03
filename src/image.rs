@@ -2,8 +2,8 @@ use anyhow::Result;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use png::{BitDepth, ColorType, Encoder};
+use std::collections::VecDeque;
 use std::io::Write;
-use termwiz::escape::{osc, Action, CSI};
 
 use crate::scene::InlineImage;
 
@@ -21,7 +21,7 @@ fn rgba_to_png_bytes(data: &[u8], width: u32, height: u32) -> Result<Vec<u8>> {
 }
 
 pub fn emit_inline_images(
-    images: &[InlineImage],
+    images: &VecDeque<InlineImage>,
     out: &mut Vec<u8>,
     cell_w_px: f32,
     cell_h_px: f32,
@@ -40,12 +40,8 @@ pub fn emit_inline_images(
             w_cell, h_cell
         );
         let payload = format!("\u{1b}]1337;{spec}:{}\u{7}", b64);
-        // Move cursor to position
-        let goto = CSI::CursorPosition {
-            line: (y_cell + 1) as usize,
-            col: (x_cell + 1) as usize,
-        };
-        goto.write_to(out)?;
+        let goto = format!("\u{1b}[{};{}H", y_cell + 1, x_cell + 1);
+        out.write_all(goto.as_bytes())?;
         out.write_all(payload.as_bytes())?;
     }
     Ok(())
