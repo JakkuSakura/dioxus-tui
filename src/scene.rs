@@ -54,6 +54,9 @@ impl<'a> TerminalScene<'a> {
             width,
             height,
         } = *self.clip_stack.last().unwrap();
+        if width == 0 || height == 0 {
+            return true;
+        }
         let within_x = x >= cx && x < cx.saturating_add(width);
         let within_y = y >= cy && y < cy.saturating_add(height);
         within_x && within_y
@@ -218,7 +221,8 @@ impl<'a> PaintScene for TerminalScene<'a> {
         }
         for glyph in glyphs {
             let p = transform * Point::new(glyph.x as f64, glyph.y as f64 - font_size as f64);
-            self.push_text("█", p.x as f32, p.y as f32);
+            let ch = std::char::from_u32(glyph.id).unwrap_or('█');
+            self.push_text(&ch.to_string(), p.x as f32, p.y as f32);
         }
     }
 

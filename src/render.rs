@@ -264,7 +264,7 @@ pub(crate) async fn run_renderer(
             let (area, metrics) = terminal_size(term)?;
             let mut surface = Surface::new(area.width, area.height);
             let mut images = std::collections::VecDeque::new();
-            if renderer.layout_root(area).is_some() {
+            if let Some(root) = renderer.layout_root(area) {
                 let mut scene = TerminalScene::new(&mut surface, &mut images, metrics);
                 blitz::paint::paint_scene(
                     &mut scene,
@@ -273,6 +273,8 @@ pub(crate) async fn run_renderer(
                     renderer.doc.inner.viewport().window_size.0,
                     renderer.doc.inner.viewport().window_size.1,
                 );
+                // Overlay text via legacy traversal to ensure readable glyphs in TUI
+                render_tree(&mut surface, &renderer.doc.inner, root, true, None, None);
             }
             if !capabilities.inline_images && !images.is_empty() {
                 paint_image_fallback(&mut surface, &images, metrics);

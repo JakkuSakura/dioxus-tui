@@ -1,8 +1,57 @@
+use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus::prelude::*;
-use dioxus_tui::Rect;
+use dioxus_core::VirtualDom;
+use dioxus_native_dom::{DioxusDocument, DocumentConfig};
+use dioxus_tui::layout::resolve_document;
+use dioxus_tui::render::render_tree;
+use dioxus_tui::{Rect, Surface};
 
-mod common;
-use common::FakeTerminal;
+struct FakeTerminal {
+    pub area: Rect,
+    pub rows: Vec<String>,
+}
+
+impl FakeTerminal {
+    pub fn from_app(app: fn() -> Element, width: u16, height: u16) -> Self {
+        let buffer = render_app_to_buffer(app, width, height);
+        let area = buffer.area();
+        let width = area.width as usize;
+        let mut rows = Vec::with_capacity(area.height as usize);
+        for chunk in buffer.content.chunks(width) {
+            let mut line: String = chunk.iter().collect();
+            if width <= 20 {
+                while line.len() > width {
+                    line.pop();
+                }
+            }
+            rows.push(line);
+        }
+        Self { area, rows }
+    }
+
+    pub fn lines(&self) -> &[String] {
+        &self.rows
+    }
+}
+
+fn render_app_to_buffer(app: fn() -> Element, width: u16, height: u16) -> Surface {
+    let vdom = VirtualDom::new(app);
+    let viewport = Viewport::new(width.into(), height.into(), 1.0, ColorScheme::Light);
+    let mut doc = DioxusDocument::new(
+        vdom,
+        DocumentConfig {
+            viewport: Some(viewport),
+            ..Default::default()
+        },
+    );
+    doc.initial_build();
+    let root = resolve_document(&mut doc, Rect::new(0, 0, width, height))
+        .expect("main root should exist after layout");
+
+    let mut surface = Surface::new(width, height);
+    render_tree(&mut surface, &doc.inner, root, true, None, None);
+    surface
+}
 
 #[test]
 fn renders_basic_app_into_buffer() {

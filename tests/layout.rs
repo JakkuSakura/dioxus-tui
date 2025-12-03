@@ -1,9 +1,25 @@
+use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus::prelude::*;
-use dioxus_tui::layout::node_rect;
+use dioxus_core::VirtualDom;
+use dioxus_native_dom::{DioxusDocument, DocumentConfig};
+use dioxus_tui::layout::{node_rect, resolve_document};
 use dioxus_tui::Rect as UiRect;
 
-mod common;
-use common::build_doc_with_layout;
+fn build_doc_with_layout(app: fn() -> Element, width: u16, height: u16) -> (DioxusDocument, usize) {
+    let vdom = VirtualDom::new(app);
+    let viewport = Viewport::new(width.into(), height.into(), 1.0, ColorScheme::Light);
+    let mut doc = DioxusDocument::new(
+        vdom,
+        DocumentConfig {
+            viewport: Some(viewport),
+            ..Default::default()
+        },
+    );
+    doc.initial_build();
+    let root = resolve_document(&mut doc, UiRect::new(0, 0, width, height))
+        .expect("main root should exist after layout");
+    (doc, root)
+}
 
 fn find_by_tag(doc: &blitz_dom::BaseDocument, id: usize, tag: &str, out: &mut Vec<usize>) {
     if let Some(node) = doc.get_node(id) {
