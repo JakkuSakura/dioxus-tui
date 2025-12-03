@@ -16,14 +16,13 @@ use dioxus_html::PlatformEventData;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use futures::{pin_mut, StreamExt};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use ratatui::widgets::Paragraph;
 use ratatui::Frame;
-use ratatui::{backend::CrosstermBackend, layout::Rect, Terminal};
+use ratatui::{backend::CrosstermBackend, layout::Alignment, layout::Rect, Terminal};
 use tokio::select;
 
 use crate::config::Config;
 use crate::hooks::event_from_crossterm;
-use crate::layout::{node_alignment, node_rect, resolve_document};
+use crate::layout::{node_alignment, node_rect, print_layout, resolve_document};
 use crate::styles::{list_item_label, ListStyle};
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
@@ -255,7 +254,7 @@ pub(crate) fn run_renderer(
                     execute!(term.backend_mut(), SavePosition).unwrap();
                     term.draw(|f| {
                         if let Some(root) = renderer.layout_root(f.area()) {
-                            render_tree(f, &renderer.doc.inner, root, true);
+                            render_tree(f, &renderer.doc.inner, root, true, None);
                         }
                     }).unwrap();
                     execute!(term.backend_mut(), RestorePosition, Show).unwrap();
@@ -272,12 +271,12 @@ pub(crate) fn run_renderer(
         })
 }
 
-/// Render the blitz node tree into a ratatui frame using the computed layout.
 pub fn render_tree(
     frame: &mut Frame,
     doc: &blitz_dom::BaseDocument,
     root_id: usize,
     is_root: bool,
+    rect_override: Option<Rect>,
 ) {
     fn collect_text(doc: &blitz_dom::BaseDocument, id: usize) -> Option<String> {
         let node = doc.get_node(id)?;
@@ -297,15 +296,8 @@ pub fn render_tree(
         None => return,
     };
 
-    if is_root {
-        for child in node.children.iter() {
-            render_tree(frame, doc, *child, false);
-        }
-        return;
-    }
-
     let area = frame.area();
-    let rect = node_rect(node, area);
+    let rect = rect_override.unwrap_or_else(|| node_rect(node, area));
     let tag = node
         .element_data()
         .map(|el| el.name.local.to_string())
@@ -313,15 +305,63 @@ pub fn render_tree(
     let align = node_alignment(node);
     let text_opt = collect_text(doc, root_id);
 
+    if is_root || matches!(tag.as_str(), "div" | "main" | "body" | "html") {
+        let parent_rect = rect;
+        let mut cursor_y = parent_rect.y;
+        for child in node.children.iter() {
+            if doc.get_node(*child).is_some() {
+                let child_height = 1;
+                let override_rect =
+                    Rect::new(parent_rect.x, cursor_y, parent_rect.width, child_height);
+                cursor_y = cursor_y.saturating_add(child_height);
+                render_tree(frame, doc, *child, false, Some(override_rect));
+            }
+        }
+        return;
+    }
+
+    let mut draw_text = |area: Rect, text: String, align: Alignment| {
+        if area.width == 0 || area.height == 0 {
+            return;
+        }
+        let width = area.width as usize;
+        let content = match align {
+            Alignment::Center => {
+                if text.len() >= width {
+                    text
+                } else {
+                    let pad = width.saturating_sub(text.len());
+                    let left = pad / 2;
+                    let right = pad - left;
+                    format!(
+                        "{spaces_left}{text}{spaces_right}",
+                        spaces_left = " ".repeat(left),
+                        spaces_right = " ".repeat(right)
+                    )
+                }
+            }
+            Alignment::Right => format!("{text:>width$}", width = width),
+            Alignment::Left => format!("{text:<width$}", width = width),
+        };
+        let buf = frame.buffer_mut();
+        buf.set_stringn(
+            area.x,
+            area.y,
+            content,
+            width,
+            ratatui::style::Style::default(),
+        );
+    };
+
     match tag.as_str() {
         "p" | "span" => {
             let text = text_opt.unwrap_or_default();
-            frame.render_widget(Paragraph::new(text).alignment(align), rect);
+            draw_text(rect, text, align);
         }
         "li" => {
             let text = text_opt.clone().unwrap_or_default();
             let content = list_item_label(&ListStyle::Disc, 0, &text);
-            frame.render_widget(Paragraph::new(content).alignment(align), rect);
+            draw_text(rect, content, align);
         }
         "ul" | "ol" => {
             let style_ref = if tag == "ol" {
@@ -332,55 +372,35 @@ pub fn render_tree(
             for (idx, child) in node.children.iter().enumerate() {
                 let text = collect_text(doc, *child).unwrap_or_default();
                 let label = list_item_label(&style_ref, idx, &text);
-                if let Some(child_node) = doc.get_node(*child) {
-                    let child_rect = node_rect(child_node, area);
-                    let child_align = node_alignment(child_node);
-                    frame.render_widget(Paragraph::new(label).alignment(child_align), child_rect);
-                }
+                let line_y = rect.y.saturating_add(idx as u16);
+                let li_width = rect.width.saturating_sub(4).max(1);
+                let li_rect = Rect::new(rect.x, line_y, li_width, 1);
+                let child_align = doc
+                    .get_node(*child)
+                    .map(|n| node_alignment(n))
+                    .unwrap_or(Alignment::Left);
+                draw_text(li_rect, label, child_align);
             }
         }
         "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
             let text = text_opt.unwrap_or_default();
-            frame.render_widget(Paragraph::new(text).alignment(align), rect);
+            draw_text(rect, text, align);
         }
         "" => {
             if let Some(text) = text_opt {
-                frame.render_widget(Paragraph::new(text).alignment(align), rect);
+                draw_text(rect, text, align);
             }
             for child in node.children.iter() {
-                render_tree(frame, doc, *child, false);
+                render_tree(frame, doc, *child, false, None);
             }
         }
         _ => {
             if let Some(text) = text_opt {
-                frame.render_widget(Paragraph::new(text).alignment(align), rect);
+                draw_text(rect, text, align);
             }
             for child in node.children.iter() {
-                render_tree(frame, doc, *child, false);
+                render_tree(frame, doc, *child, false, None);
             }
         }
-    }
-}
-
-fn print_layout(doc: &blitz_dom::BaseDocument, node_id: usize, depth: usize, area: Rect) {
-    let Some(node) = doc.get_node(node_id) else {
-        return;
-    };
-    let indent = "  ".repeat(depth);
-    let tag = node
-        .element_data()
-        .map(|el| el.name.local.to_string())
-        .unwrap_or_else(|| "#text".to_string());
-    let text = node
-        .text_data()
-        .map(|t| t.content.clone())
-        .unwrap_or_default();
-    let rect = node_rect(node, area);
-    println!(
-        "{indent}- {tag} id={} area=({}, {}) {}x{} text=\"{}\"",
-        node_id, rect.x, rect.y, rect.width, rect.height, text
-    );
-    for child in node.children.iter() {
-        print_layout(doc, *child, depth + 1, area);
     }
 }

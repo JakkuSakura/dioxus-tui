@@ -63,7 +63,7 @@ pub fn render_app_to_buffer(
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|f| {
-            render_tree(f, &doc.inner, root, true);
+            render_tree(f, &doc.inner, root, true, None);
         })
         .unwrap();
     let buf = terminal.backend_mut().buffer().clone();

@@ -2,7 +2,6 @@ use blitz_dom::{BaseDocument, Node};
 use blitz_traits::shell::Viewport;
 use dioxus_native_dom::DioxusDocument;
 use ratatui::layout::{Alignment, Rect as UiRect};
-use std::collections::HashMap;
 
 // Minimal UA overrides for TUI rendering.
 const TUI_UA_CSS: &str = r#"
@@ -72,10 +71,10 @@ pub fn node_rect(node: &Node, area: UiRect) -> UiRect {
         let y = layout.location.y.max(0.0).round() as u16;
         let mut w = layout.size.width.max(0.0).ceil() as u16;
         let mut h = layout.size.height.max(0.0).ceil() as u16;
-        if w == 0 && (!node.children.is_empty() || node.text_data().is_some()) {
+        if w == 0 {
             w = 1;
         }
-        if h == 0 && (!node.children.is_empty() || node.text_data().is_some()) {
+        if h == 0 {
             h = 1;
         }
         UiRect::new(x, y, w, h)
@@ -119,13 +118,25 @@ pub fn node_alignment(node: &Node) -> Alignment {
         .unwrap_or(Alignment::Left)
 }
 
-pub fn collect_attrs(node: &Node) -> HashMap<String, String> {
-    node.element_data()
-        .map(|el| {
-            el.attrs
-                .iter()
-                .map(|a| (a.name.local.to_string(), a.value.clone()))
-                .collect()
-        })
-        .unwrap_or_default()
+pub fn print_layout(doc: &BaseDocument, node_id: usize, depth: usize, area: UiRect) {
+    let Some(node) = doc.get_node(node_id) else {
+        return;
+    };
+    let indent = "  ".repeat(depth);
+    let tag = node
+        .element_data()
+        .map(|el| el.name.local.to_string())
+        .unwrap_or_else(|| "#text".to_string());
+    let text = node
+        .text_data()
+        .map(|t| t.content.clone())
+        .unwrap_or_default();
+    let rect = node_rect(node, area);
+    println!(
+        "{indent}- {tag} id={} area=({}, {}) {}x{} text=\"{}\"",
+        node_id, rect.x, rect.y, rect.width, rect.height, text
+    );
+    for child in node.children.iter() {
+        print_layout(doc, *child, depth + 1, area);
+    }
 }
