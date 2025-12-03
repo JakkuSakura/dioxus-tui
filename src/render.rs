@@ -301,20 +301,15 @@ fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
     let _stylesheet = (); // placeholder, layout hints not yet used
 
     fn collect_text(n: &LayoutNode) -> Option<String> {
-        let mut parts = Vec::new();
         if let Some(t) = &n.text {
-            parts.push(t.clone());
+            return Some(t.clone());
         }
         for child in n.children.iter() {
             if let Some(t) = collect_text(child) {
-                parts.push(t);
+                return Some(t);
             }
         }
-        if parts.is_empty() {
-            None
-        } else {
-            Some(parts.join(" "))
-        }
+        None
     }
 
     if is_root {
@@ -347,7 +342,6 @@ fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
             let style_ref = styles.list_style.unwrap_or(default_style);
             for (idx, child) in node.children.iter().enumerate() {
                 let text = collect_text(child).unwrap_or_default();
-                // eprintln!("render li idx {idx} text: {text:?}");
                 let label = list_item_label(&style_ref, idx, &text);
                 frame.render_widget(Paragraph::new(label).alignment(child.align), child.rect);
             }

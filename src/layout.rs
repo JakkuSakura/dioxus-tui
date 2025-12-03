@@ -3,8 +3,11 @@ use std::collections::HashMap;
 use crate::element::DomNode;
 use blitz_dom::{
     local_name, ns, Attribute, BaseDocument, DocumentConfig, DocumentMutator, LocalName, QualName,
+    DEFAULT_CSS,
 };
 use blitz_traits::shell::{ColorScheme, Viewport};
+use dioxus_native_dom::DioxusDocument;
+use dioxus_native_dom::DEFAULT_CSS;
 use ratatui::layout::{Alignment, Rect as UiRect};
 
 pub struct LayoutNode {
@@ -15,6 +18,23 @@ pub struct LayoutNode {
     pub text: Option<String>,
     pub attrs: std::collections::HashMap<String, String>,
     pub align: Alignment,
+}
+
+fn clamp_rect(rect: &mut UiRect, area: UiRect) {
+    if rect.x >= area.width {
+        rect.x = area.width.saturating_sub(1);
+        rect.width = 0;
+    }
+    if rect.y >= area.height {
+        rect.y = area.height.saturating_sub(1);
+        rect.height = 0;
+    }
+    if rect.x + rect.width > area.width {
+        rect.width = area.width.saturating_sub(rect.x);
+    }
+    if rect.y + rect.height > area.height {
+        rect.height = area.height.saturating_sub(rect.y);
+    }
 }
 
 fn parse_alignment(node: &DomNode) -> Alignment {
@@ -49,10 +69,16 @@ fn blitz_style_for(node: &DomNode) -> String {
         .attrs
         .get("flex_direction")
         .or_else(|| node.attrs.get("direction"));
-    if flex_dir.is_some() || node.attrs.contains_key("justify_content") || node.attrs.contains_key("align_items") {
+    if flex_dir.is_some()
+        || node.attrs.contains_key("justify_content")
+        || node.attrs.contains_key("align_items")
+    {
         rules.push("display: flex".into());
         has_display = true;
-        rules.push(format!("flex-direction: {}", flex_dir.unwrap_or(&"column".to_string())));
+        rules.push(format!(
+            "flex-direction: {}",
+            flex_dir.unwrap_or(&"column".to_string())
+        ));
     }
 
     if let Some(justify) = node.attrs.get("justify_content") {
@@ -75,7 +101,10 @@ fn blitz_style_for(node: &DomNode) -> String {
     }
 
     // Default block width for common block tags to ensure they occupy the available space.
-    if matches!(node.tag.as_deref(), Some("div" | "p" | "h1" | "h2" | "h3" | "ul" | "ol" | "li")) {
+    if matches!(
+        node.tag.as_deref(),
+        Some("div" | "p" | "h1" | "h2" | "h3" | "ul" | "ol" | "li")
+    ) {
         if !node.attrs.contains_key("width") {
             rules.push("width: 100%".into());
         }
@@ -98,18 +127,29 @@ fn blitz_style_for(node: &DomNode) -> String {
 
 /// Build layout using Blitz (Stylo + Taffy) to mirror web semantics.
 pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNode {
-    let mut doc = BaseDocument::new(DocumentConfig {
-        viewport: Some(Viewport::new(
-            area.width.into(),
-            area.height.into(),
-            1.0,
-            ColorScheme::Light,
-        )),
-        ..Default::default()
-    });
+    // Build a Blitz DioxusDocument once and feed the entire tree (we don't use the dioxus VDOM).
+    // Build a Blitz document without relying on a live dioxus VDOM; we only need the DOM container.
+    let dummy_vdom = dioxus_core::VirtualDom::new(|| dioxus::prelude::rsx! { div { "" } });
+    let mut doc = DioxusDocument::new(
+        dummy_vdom,
+        DocumentConfig {
+            viewport: Some(Viewport::new(
+                area.width.into(),
+                area.height.into(),
+                1.0,
+                ColorScheme::Light,
+            )),
+            ..Default::default()
+        },
+    );
+    // Apply Blitz UA stylesheet for sensible defaults.
+    doc.inner.add_user_agent_stylesheet(DEFAULT_CSS);
 
-    let id_map: HashMap<dioxus_core::ElementId, &DomNode> = nodes.iter().map(|n| (n.id, n)).collect();
+    // Recreate the DOM tree inside Blitz in one traversal under <body>.
+    let id_map: HashMap<dioxus_core::ElementId, &DomNode> =
+        nodes.iter().map(|n| (n.id, n)).collect();
     let mut blitz_ids: HashMap<dioxus_core::ElementId, usize> = HashMap::new();
+    let body_id = doc.body_element_id;
 
     fn build_blitz_subtree(
         node: &DomNode,
@@ -117,6 +157,18 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
         id_map: &HashMap<dioxus_core::ElementId, &DomNode>,
         blitz_ids: &mut HashMap<dioxus_core::ElementId, usize>,
     ) -> usize {
+        // Text-only node: create a text node directly.
+        if node.tag.is_none() {
+            let text = node
+                .text
+                .as_ref()
+                .map(|t| t.text.clone())
+                .unwrap_or_default();
+            let text_id = mutator.create_text_node(&text);
+            blitz_ids.insert(node.id, text_id);
+            return text_id;
+        }
+
         let tag = node.tag.as_deref().unwrap_or("div");
         let qual = blitz_name(tag);
 
@@ -155,148 +207,76 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
         element_id
     }
 
-    let root_container_id = doc.root_node().id;
     {
         let mut mutator = doc.mutate();
         let root_blitz_id = build_blitz_subtree(root, &mut mutator, &id_map, &mut blitz_ids);
-        mutator.append_children(root_container_id, &[root_blitz_id]);
-
-        // Ensure the root fills the viewport to avoid zero-sized descendants when no author styles are present.
-        mutator.set_style_property(root_blitz_id, "display", "block");
-        mutator.set_style_property(root_blitz_id, "width", "100%");
-        mutator.set_style_property(root_blitz_id, "height", "100%");
+        mutator.append_children(body_id, &[root_blitz_id]);
     }
 
-    doc.resolve(0.0);
+    doc.inner.resolve(0.0);
 
-    fn dom_text(node: &DomNode, id_map: &HashMap<dioxus_core::ElementId, &DomNode>) -> String {
-        let mut out = String::new();
-        if let Some(t) = &node.text {
-            out.push_str(&t.text);
-        }
-        for child_id in &node.children {
-            if let Some(child) = id_map.get(child_id) {
-                let child_text = dom_text(child, id_map);
-                if !child_text.is_empty() {
-                    if !out.is_empty() {
-                        out.push(' ');
-                    }
-                    out.push_str(&child_text);
-                }
-            }
-        }
-        out
+    // Build reverse map Blitz node -> Dioxus ElementId when available.
+    let mut blitz_to_dom: HashMap<usize, dioxus_core::ElementId> = HashMap::new();
+    for (dom_id, blitz_id) in blitz_ids.iter() {
+        blitz_to_dom.insert(*blitz_id, *dom_id);
     }
 
-    fn assemble_layout(
-        node: &DomNode,
-        id_map: &HashMap<dioxus_core::ElementId, &DomNode>,
-        blitz_ids: &HashMap<dioxus_core::ElementId, usize>,
+    // Recursively assemble layout starting from the app root blitz id so we only include the user subtree.
+    fn assemble_from_blitz(
+        blitz_id: usize,
         doc: &BaseDocument,
+        blitz_to_dom: &HashMap<usize, dioxus_core::ElementId>,
+        id_map: &HashMap<dioxus_core::ElementId, &DomNode>,
         area: UiRect,
     ) -> LayoutNode {
+        let node = doc.get_node(blitz_id).expect("invalid blitz node id");
+
+        let dom_id = blitz_to_dom
+            .get(&blitz_id)
+            .cloned()
+            .unwrap_or(dioxus_core::ElementId(blitz_id as u64));
+        let dom_node = id_map.get(&dom_id).copied();
+
+        let tag = node.element_data().map(|el| el.name.local.to_string());
+        let text = node.text_data().map(|t| t.content.clone());
+        let attrs = dom_node.map(|n| n.attrs.clone()).unwrap_or_default();
+
         let mut layout_node = LayoutNode {
-            id: node.id,
+            id: dom_id,
             rect: UiRect::default(),
             children: Vec::new(),
-            tag: node.tag.clone(),
-            text: node.text.as_ref().map(|t| t.text.clone()),
-            attrs: node.attrs.clone(),
-            align: parse_alignment(node),
+            tag,
+            text,
+            attrs,
+            align: dom_node.map(parse_alignment).unwrap_or(Alignment::Left),
         };
 
-        if layout_node.text.is_none() {
-            let fallback = dom_text(node, id_map);
-            if !fallback.is_empty() {
-                layout_node.text = Some(fallback);
-            }
+        let layout = node.final_layout;
+        let mut x = layout.location.x.max(0.0);
+        let mut y = layout.location.y.max(0.0);
+        x = x.min((area.width.saturating_sub(1)) as f32);
+        y = y.min((area.height.saturating_sub(1)) as f32);
+        let mut w = layout.size.width.max(0.0);
+        let mut h = layout.size.height.max(0.0);
+        w = w.min((area.width as f32 - x).max(0.0));
+        h = h.min((area.height as f32 - y).max(0.0));
+        layout_node.rect = UiRect::new(x as u16, y as u16, w as u16, h as u16);
+
+        for child_id in node.children.iter() {
+            layout_node.children.push(assemble_from_blitz(
+                *child_id,
+                doc,
+                blitz_to_dom,
+                id_map,
+                area,
+            ));
         }
 
-        if let Some(node_id) = blitz_ids.get(&node.id).and_then(|id| doc.get_node(*id)) {
-            let layout = node_id.final_layout;
-            let mut x = layout.location.x.max(0.0);
-            let mut y = layout.location.y.max(0.0);
-            x = x.min((area.width.saturating_sub(1)) as f32);
-            y = y.min((area.height.saturating_sub(1)) as f32);
-            let mut w = layout.size.width.max(0.0);
-            let mut h = layout.size.height.max(0.0);
-            w = w.min((area.width as f32 - x).max(0.0));
-            h = h.min((area.height as f32 - y).max(0.0));
-            layout_node.rect = UiRect::new(x as u16, y as u16, w as u16, h as u16);
+        if layout_node.rect.width == 0 {
+            layout_node.rect.width = 1;
         }
-
-        // Minimum size for text leaves to ensure visibility even if Blitz reports zero.
-        if let Some(text) = &layout_node.text {
-            let line_count = text.lines().count().max(1) as u16;
-            let max_line = text.lines().map(|l| l.len() as u16).max().unwrap_or(1);
-            if layout_node.rect.width == 0 {
-                let remaining_w = area.width.saturating_sub(layout_node.rect.x);
-                layout_node.rect.width = max_line.min(remaining_w).max(1);
-            }
-            if layout_node.rect.height == 0 {
-                layout_node.rect.height = line_count;
-            } else {
-                layout_node.rect.height = layout_node.rect.height.max(line_count);
-            }
-        }
-
-        for child in node.children.iter() {
-            if let Some(child_node) = id_map.get(child) {
-                layout_node.children
-                    .push(assemble_layout(child_node, id_map, blitz_ids, doc, area));
-            }
-        }
-
-        // Stack children vertically relative to the parent; recurse to keep subtree positions consistent.
-        fn restack(node: &mut LayoutNode) {
-            if node.children.is_empty() {
-                return;
-            }
-
-            let mut cursor_y = node.rect.y;
-            for child in &mut node.children {
-                child.rect.x = node.rect.x;
-                if !child.attrs.contains_key("width") && child.rect.width == 0 {
-                    child.rect.width = node.rect.width.max(1);
-                }
-                child.rect.y = cursor_y;
-                if child.rect.height == 0 {
-                    child.rect.height = 1;
-                }
-                cursor_y = child.rect.y.saturating_add(child.rect.height);
-
-                restack(child);
-            }
-
-            let mut max_right = node.rect.x as i32 + node.rect.width as i32;
-            let mut max_bottom = node.rect.y as i32 + node.rect.height as i32;
-            for child in &node.children {
-                max_right = max_right.max(child.rect.x as i32 + child.rect.width as i32);
-                max_bottom = max_bottom.max(child.rect.y as i32 + child.rect.height as i32);
-            }
-            let new_w = (max_right - node.rect.x as i32).max(0) as u16;
-            let new_h = (max_bottom - node.rect.y as i32).max(0) as u16;
-            node.rect.width = node.rect.width.max(new_w);
-            node.rect.height = node.rect.height.max(new_h);
-        }
-
-        restack(&mut layout_node);
-
-        fn clamp_rect(rect: &mut UiRect, area: UiRect) {
-            if rect.x >= area.width {
-                rect.x = area.width.saturating_sub(1);
-                rect.width = 0;
-            }
-            if rect.y >= area.height {
-                rect.y = area.height.saturating_sub(1);
-                rect.height = 0;
-            }
-            if rect.x + rect.width > area.width {
-                rect.width = area.width.saturating_sub(rect.x);
-            }
-            if rect.y + rect.height > area.height {
-                rect.height = area.height.saturating_sub(rect.y);
-            }
+        if layout_node.rect.height == 0 {
+            layout_node.rect.height = 1;
         }
 
         clamp_rect(&mut layout_node.rect, area);
@@ -304,21 +284,9 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
             clamp_rect(&mut child.rect, area);
         }
 
-        // Final guard: ensure a minimum visible size (clamped to viewport).
-        let parent_right = layout_node.rect.x.saturating_add(layout_node.rect.width);
-        let parent_bottom = layout_node.rect.y.saturating_add(layout_node.rect.height);
-        for child in &mut layout_node.children {
-            let remaining_w = parent_right.saturating_sub(child.rect.x);
-            let remaining_h = parent_bottom.saturating_sub(child.rect.y);
-            child.rect.width = child.rect.width.max(1).min(remaining_w.max(1));
-            child.rect.height = child.rect.height.max(1).min(remaining_h.max(1));
-        }
-
-        layout_node.rect.width = layout_node.rect.width.max(1).min(area.width);
-        layout_node.rect.height = layout_node.rect.height.max(1).min(area.height);
-
         layout_node
     }
 
-    assemble_layout(root, &id_map, &blitz_ids, &doc, area)
+    let root_blitz_id = blitz_ids.get(&root.id).copied().unwrap_or(body_id);
+    assemble_from_blitz(root_blitz_id, &doc.inner, &blitz_to_dom, &id_map, area)
 }
