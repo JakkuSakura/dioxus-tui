@@ -169,6 +169,25 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
 
     doc.resolve(0.0);
 
+    fn dom_text(node: &DomNode, id_map: &HashMap<dioxus_core::ElementId, &DomNode>) -> String {
+        let mut out = String::new();
+        if let Some(t) = &node.text {
+            out.push_str(&t.text);
+        }
+        for child_id in &node.children {
+            if let Some(child) = id_map.get(child_id) {
+                let child_text = dom_text(child, id_map);
+                if !child_text.is_empty() {
+                    if !out.is_empty() {
+                        out.push(' ');
+                    }
+                    out.push_str(&child_text);
+                }
+            }
+        }
+        out
+    }
+
     fn assemble_layout(
         node: &DomNode,
         id_map: &HashMap<dioxus_core::ElementId, &DomNode>,
@@ -185,6 +204,13 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
             attrs: node.attrs.clone(),
             align: parse_alignment(node),
         };
+
+        if layout_node.text.is_none() {
+            let fallback = dom_text(node, id_map);
+            if !fallback.is_empty() {
+                layout_node.text = Some(fallback);
+            }
+        }
 
         if let Some(node_id) = blitz_ids.get(&node.id).and_then(|id| doc.get_node(*id)) {
             let layout = node_id.final_layout;
@@ -230,13 +256,11 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
             let mut cursor_y = node.rect.y;
             for child in &mut node.children {
                 child.rect.x = node.rect.x;
-                if !child.attrs.contains_key("width") {
+                if !child.attrs.contains_key("width") && child.rect.width == 0 {
                     child.rect.width = node.rect.width.max(1);
                 }
                 child.rect.y = cursor_y;
-                if !child.attrs.contains_key("height") {
-                    child.rect.height = 1;
-                } else if child.rect.height == 0 {
+                if child.rect.height == 0 {
                     child.rect.height = 1;
                 }
                 cursor_y = child.rect.y.saturating_add(child.rect.height);

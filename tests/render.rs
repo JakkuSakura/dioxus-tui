@@ -114,8 +114,8 @@ fn renders_unordered_list() {
 
     let term = FakeTerminal::from_app(app, 20, 5);
     let mut expected = vec![
-        "• alpha".to_string() + &" ".repeat(20 - 7),
-        "• beta".to_string() + &" ".repeat(20 - 6),
+        "• alpha".to_string() + &" ".repeat(20 - "• alpha".len()),
+        "• beta".to_string() + &" ".repeat(20 - "• beta".len()),
     ];
     expected.extend(std::iter::repeat(" ".repeat(20)).take(3));
     assert_eq!(term.lines(), expected);

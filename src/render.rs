@@ -347,6 +347,7 @@ fn render_layout_node(frame: &mut Frame, node: &LayoutNode, is_root: bool) {
             let style_ref = styles.list_style.unwrap_or(default_style);
             for (idx, child) in node.children.iter().enumerate() {
                 let text = collect_text(child).unwrap_or_default();
+                // eprintln!("render li idx {idx} text: {text:?}");
                 let label = list_item_label(&style_ref, idx, &text);
                 frame.render_widget(Paragraph::new(label).alignment(child.align), child.rect);
             }
