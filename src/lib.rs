@@ -2,19 +2,26 @@
 #![doc(html_logo_url = "https://avatars.githubusercontent.com/u/79236386")]
 #![doc(html_favicon_url = "https://avatars.githubusercontent.com/u/79236386")]
 
+pub mod capabilities;
+pub mod capabilities;
 mod config;
 pub mod element;
 pub mod geometry;
 mod hooks;
+pub mod image;
 pub mod layout;
 pub mod render;
+pub mod scene;
 mod styles;
 pub mod surface;
 
+pub use capabilities::TerminalCapabilities;
+pub use capabilities::TerminalCapabilities;
 pub use config::{ColorMode, Config, RenderingMode};
 pub use geometry::{Alignment, Rect};
 pub use hooks::EventData;
 pub use render::TuiContext;
+pub use scene::{CellMetrics, InlineImage, TerminalScene};
 pub use surface::Surface;
 
 use std::any::Any;

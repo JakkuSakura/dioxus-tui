@@ -22,11 +22,16 @@ tokio = { version = "1.36", features = ["full"] }
 futures = "0.3.30"
 futures-channel = "0.3.30"
 termwiz = "0.22"
+unicode-width = "0.1"
 anyhow = "1.0.42"
 bevy_ecs = { version = "0.11", default-features = false }
 blitz-dom = { version = "0.2.2", default-features = false, features = ["system_fonts"] }
 blitz-traits = { version = "0.2.0" }
 dioxus-native-dom = "0.7.1"
+anyrender = "0.6"
+blitz = { version = "0.2", default-features = false }
+png = "0.17"
+base64 = "0.22"
 
 [dev-dependencies]
 dioxus = { version = "0.7.1" }

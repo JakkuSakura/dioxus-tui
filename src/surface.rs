@@ -1,4 +1,5 @@
 use crate::geometry::Rect;
+use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Clone)]
 pub struct Surface {
@@ -15,6 +16,10 @@ impl Surface {
             height,
             content: vec![' '; len],
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.content.fill(' ');
     }
 
     pub fn width(&self) -> u16 {
@@ -37,13 +42,25 @@ impl Surface {
         let start = y as usize * max_cols;
         let mut col = x as usize;
         for ch in text.as_ref().chars() {
-            if col >= max_cols || col >= x as usize + width {
+            let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1).max(1);
+            if col >= max_cols || col + ch_width > x as usize + width {
                 break;
             }
+
             if let Some(slot) = self.content.get_mut(start + col) {
                 *slot = ch;
             }
-            col += 1;
+
+            // Fill the remainder of a wide char with spaces to avoid stale glyphs
+            if ch_width > 1 {
+                for extra in 1..ch_width {
+                    if let Some(slot) = self.content.get_mut(start + col + extra) {
+                        *slot = ' ';
+                    }
+                }
+            }
+
+            col += ch_width;
         }
     }
 
@@ -53,5 +70,9 @@ impl Surface {
             .chunks(width)
             .map(|chunk| chunk.iter().collect::<String>())
             .collect()
+    }
+
+    pub fn dims(&self) -> (u16, u16) {
+        (self.width, self.height)
     }
 }

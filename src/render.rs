@@ -1,7 +1,6 @@
 use std::{any::Any, pin::Pin, rc::Rc, time::Duration};
 
 use anyhow::Result;
-use blitz_dom::Document;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event as TermEvent, KeyCode, KeyModifiers,
@@ -15,7 +14,6 @@ use dioxus_html::PlatformEventData;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use futures::{pin_mut, StreamExt};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use termwiz::terminal::Terminal;
 use termwiz::{
     caps::Capabilities,
     color::ColorAttribute,
@@ -24,10 +22,13 @@ use termwiz::{
 };
 use tokio::select;
 
+use crate::capabilities::TerminalCapabilities;
 use crate::config::Config;
 use crate::geometry::{Alignment, Rect};
 use crate::hooks::event_from_crossterm;
+use crate::image::emit_inline_images;
 use crate::layout::{node_alignment, node_rect, print_layout, resolve_document};
+use crate::scene::{CellMetrics, TerminalScene};
 use crate::styles::{list_item_label, ListStyle};
 use crate::surface::Surface;
 
@@ -213,6 +214,16 @@ pub(crate) async fn run_renderer(
         })
         .transpose()?;
 
+    let capabilities = TerminalCapabilities::detect().unwrap_or(TerminalCapabilities {
+        truecolor: false,
+        inline_images: false,
+    });
+    let metrics = CellMetrics {
+        cell_w_px: 1.0,
+        cell_h_px: 1.0,
+    };
+    let mut last_surface: Option<Surface> = None;
+
     renderer.update();
 
     loop {
@@ -255,10 +266,26 @@ pub(crate) async fn run_renderer(
         if let Some(term) = &mut terminal {
             let area = terminal_size(term)?;
             let mut surface = Surface::new(area.width, area.height);
+            let mut images = std::collections::VecDeque::new();
             if let Some(root) = renderer.layout_root(area) {
-                render_tree(&mut surface, &renderer.doc.inner, root, true, None, None);
+                let mut scene = TerminalScene::new(&mut surface, &mut images, metrics);
+                blitz::paint::paint_scene(
+                    &mut scene,
+                    &renderer.doc.inner,
+                    renderer.doc.inner.viewport().scale_f64(),
+                    renderer.doc.inner.viewport().window_size.0,
+                    renderer.doc.inner.viewport().window_size.1,
+                );
             }
-            flush_surface(term, &surface)?;
+            flush_surface(
+                term,
+                &surface,
+                last_surface.as_ref(),
+                &capabilities,
+                &images,
+                metrics,
+            )?;
+            last_surface = Some(surface);
         }
     }
 
@@ -278,14 +305,40 @@ fn terminal_size(term: &mut BufferedTerminal<SystemTerminal>) -> Result<Rect> {
     Ok(Rect::new(0, 0, cols as u16, rows as u16))
 }
 
-fn flush_surface(term: &mut BufferedTerminal<SystemTerminal>, surface: &Surface) -> Result<()> {
-    term.add_change(Change::ClearScreen(ColorAttribute::Default));
+fn flush_surface(
+    term: &mut BufferedTerminal<SystemTerminal>,
+    surface: &Surface,
+    prev: Option<&Surface>,
+    caps: &TerminalCapabilities,
+    images: &std::collections::VecDeque<crate::scene::InlineImage>,
+    metrics: CellMetrics,
+) -> Result<()> {
+    let full_redraw = prev.map(|p| p.dims() != surface.dims()).unwrap_or(true);
+
+    if full_redraw {
+        term.add_change(Change::ClearScreen(ColorAttribute::Default));
+    }
+
     for (y, line) in surface.lines().iter().enumerate() {
+        let should_emit = full_redraw
+            || prev
+                .and_then(|p| p.lines().get(y))
+                .map(|prev_line| prev_line != line)
+                .unwrap_or(true);
+        if !should_emit {
+            continue;
+        }
         term.add_change(Change::CursorPosition {
             x: Position::Absolute(0),
             y: Position::Absolute(y),
         });
         term.add_change(Change::Text(line.clone()));
+    }
+    // Emit inline images after text to preserve ordering
+    if caps.inline_images && !images.is_empty() {
+        let mut buf = Vec::new();
+        emit_inline_images(images, &mut buf, metrics.cell_w_px, metrics.cell_h_px)?;
+        term.add_change(Change::Text(String::from_utf8_lossy(&buf).into_owned()));
     }
     term.flush()?;
     Ok(())
