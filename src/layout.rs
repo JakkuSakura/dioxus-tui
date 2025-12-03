@@ -6,8 +6,8 @@ use blitz_dom::{
     DEFAULT_CSS,
 };
 use blitz_traits::shell::{ColorScheme, Viewport};
+use dioxus_core::VirtualDom;
 use dioxus_native_dom::DioxusDocument;
-use dioxus_native_dom::DEFAULT_CSS;
 use ratatui::layout::{Alignment, Rect as UiRect};
 
 pub struct LayoutNode {
@@ -125,13 +125,11 @@ fn blitz_style_for(node: &DomNode) -> String {
     rules.join("; ")
 }
 
-/// Build layout using Blitz (Stylo + Taffy) to mirror web semantics.
+/// Build layout using Blitz to mirror web semantics.
 pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNode {
     // Build a Blitz DioxusDocument once and feed the entire tree (we don't use the dioxus VDOM).
-    // Build a Blitz document without relying on a live dioxus VDOM; we only need the DOM container.
-    let dummy_vdom = dioxus_core::VirtualDom::new(|| dioxus::prelude::rsx! { div { "" } });
     let mut doc = DioxusDocument::new(
-        dummy_vdom,
+        VirtualDom::new(|| dioxus::prelude::rsx! { div {} }),
         DocumentConfig {
             viewport: Some(Viewport::new(
                 area.width.into(),
@@ -142,14 +140,31 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
             ..Default::default()
         },
     );
-    // Apply Blitz UA stylesheet for sensible defaults.
     doc.inner.add_user_agent_stylesheet(DEFAULT_CSS);
 
-    // Recreate the DOM tree inside Blitz in one traversal under <body>.
+    // Recreate the DOM tree inside Blitz in one traversal under the <main> container.
     let id_map: HashMap<dioxus_core::ElementId, &DomNode> =
         nodes.iter().map(|n| (n.id, n)).collect();
     let mut blitz_ids: HashMap<dioxus_core::ElementId, usize> = HashMap::new();
-    let body_id = doc.body_element_id;
+
+    // Find the <main> element created by DioxusDocument scaffolding.
+    fn find_element(doc: &BaseDocument, start: usize, tag: &str) -> Option<usize> {
+        let node = doc.get_node(start)?;
+        if let Some(el) = node.element_data() {
+            if el.name.local.as_ref() == tag {
+                return Some(start);
+            }
+        }
+        for child in node.children.iter() {
+            if let Some(found) = find_element(doc, *child, tag) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    let main_container_id = find_element(&doc.inner, doc.inner.root_node().id, "main")
+        .unwrap_or_else(|| doc.inner.root_node().id);
 
     fn build_blitz_subtree(
         node: &DomNode,
@@ -208,9 +223,9 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
     }
 
     {
-        let mut mutator = doc.mutate();
+        let mut mutator = doc.inner.mutate();
         let root_blitz_id = build_blitz_subtree(root, &mut mutator, &id_map, &mut blitz_ids);
-        mutator.append_children(body_id, &[root_blitz_id]);
+        mutator.append_children(main_container_id, &[root_blitz_id]);
     }
 
     doc.inner.resolve(0.0);
@@ -234,7 +249,7 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
         let dom_id = blitz_to_dom
             .get(&blitz_id)
             .cloned()
-            .unwrap_or(dioxus_core::ElementId(blitz_id as u64));
+            .unwrap_or(dioxus_core::ElementId(blitz_id));
         let dom_node = id_map.get(&dom_id).copied();
 
         let tag = node.element_data().map(|el| el.name.local.to_string());
@@ -287,6 +302,9 @@ pub fn build_layout(nodes: &[DomNode], root: &DomNode, area: UiRect) -> LayoutNo
         layout_node
     }
 
-    let root_blitz_id = blitz_ids.get(&root.id).copied().unwrap_or(body_id);
+    let root_blitz_id = blitz_ids
+        .get(&root.id)
+        .copied()
+        .unwrap_or(main_container_id);
     assemble_from_blitz(root_blitz_id, &doc.inner, &blitz_to_dom, &id_map, area)
 }

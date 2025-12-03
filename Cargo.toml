@@ -24,8 +24,9 @@ futures-channel = "0.3.30"
 ratatui = "0.29.0"
 anyhow = "1.0.42"
 bevy_ecs = { version = "0.11", default-features = false }
-blitz-dom = { git = "https://github.com/dioxuslabs/blitz", branch = "v0.2.x", default-features = false, features = ["system_fonts"] }
-blitz-traits = { git = "https://github.com/dioxuslabs/blitz", branch = "v0.2.x" }
+blitz-dom = { version = "0.2.2", default-features = false, features = ["system_fonts"] }
+blitz-traits = { version = "0.2.0" }
+dioxus-native-dom = "0.7.1"
 
 [dev-dependencies]
 dioxus = { version = "0.7.1" }
