@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use termwiz::terminal::Terminal;
 use termwiz::{
     caps::Capabilities,
     color::ColorAttribute,
@@ -34,6 +35,6 @@ fn main() -> anyhow::Result<()> {
     term.flush()?;
     std::thread::sleep(Duration::from_secs(3));
 
-    term.terminal().leave_alternate_screen()?;
+    term.terminal().exit_alternate_screen()?;
     Ok(())
 }
