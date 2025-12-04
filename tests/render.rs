@@ -4,7 +4,9 @@ use dioxus_core::VirtualDom;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use dioxus_tui::layout::resolve_document;
 use dioxus_tui::render::render_tree;
-use dioxus_tui::{Rect, Surface};
+use dioxus_tui::{CellMetrics, Rect, Surface, TerminalScene};
+use std::collections::VecDeque;
+use termwiz::color::{ColorAttribute, SrgbaTuple};
 
 struct FakeTerminal {
     pub area: Rect,
@@ -18,7 +20,7 @@ impl FakeTerminal {
         let width = area.width as usize;
         let mut rows = Vec::with_capacity(area.height as usize);
         for chunk in buffer.content.chunks(width) {
-            let mut line: String = chunk.iter().collect();
+            let mut line: String = chunk.iter().map(|cell| cell.ch).collect();
             if width <= 20 {
                 while line.len() > width {
                     line.pop();
@@ -50,6 +52,40 @@ fn render_app_to_buffer(app: fn() -> Element, width: u16, height: u16) -> Surfac
 
     let mut surface = Surface::new(width, height);
     render_tree(&mut surface, &doc.inner, root, true, None, None);
+    surface
+}
+
+fn render_app_with_paint(app: fn() -> Element, width: u16, height: u16) -> Surface {
+    let vdom = VirtualDom::new(app);
+    let viewport = Viewport::new(width.into(), height.into(), 1.0, ColorScheme::Light);
+    let mut doc = DioxusDocument::new(
+        vdom,
+        DocumentConfig {
+            viewport: Some(viewport),
+            ..Default::default()
+        },
+    );
+    doc.initial_build();
+    let _root = resolve_document(&mut doc, Rect::new(0, 0, width, height))
+        .expect("main root should exist after layout");
+
+    let mut surface = Surface::new(width, height);
+    let mut images = VecDeque::new();
+    let metrics = CellMetrics {
+        cell_w_px: 1.0,
+        cell_h_px: 1.0,
+    };
+    {
+        let mut scene = TerminalScene::new(&mut surface, &mut images, metrics);
+        blitz::paint::paint_scene(
+            &mut scene,
+            &doc.inner,
+            doc.inner.viewport().scale_f64(),
+            doc.inner.viewport().window_size.0,
+            doc.inner.viewport().window_size.1,
+        );
+    }
+
     surface
 }
 
@@ -111,6 +147,22 @@ fn renders_div_block() {
     let mut expected = vec!["div text".to_string() + &" ".repeat(12)];
     expected.extend(std::iter::repeat(" ".repeat(20)).take(2));
     assert_eq!(term.lines(), expected);
+}
+
+#[test]
+fn paints_background_color() {
+    fn app() -> Element {
+        rsx! { div { width: "2px", height: "1px", background_color: "rgb(255, 0, 0)" } }
+    }
+
+    let surface = render_app_with_paint(app, 4, 2);
+    let expected_bg = Some(ColorAttribute::TrueColorWithDefaultFallback(
+        SrgbaTuple::from((255, 0, 0)),
+    ));
+    let row0 = &surface.content[0..surface.width() as usize];
+    assert_eq!(row0[0].bg, expected_bg);
+    assert_eq!(row0[1].bg, expected_bg);
+    assert_eq!(row0[2].bg, Some(ColorAttribute::Default));
 }
 
 #[test]

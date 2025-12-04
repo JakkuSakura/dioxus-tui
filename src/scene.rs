@@ -2,11 +2,12 @@ use std::collections::VecDeque;
 
 use anyrender::{types::PaintRef, PaintScene};
 use kurbo::{Affine, Point, Rect as KRect, Shape, Stroke};
-use peniko::{BlendMode, Color, Fill, FontData, ImageBrushRef, StyleRef};
+use peniko::{color::Rgba8, BlendMode, Color, Fill, FontData, ImageBrushRef, StyleRef};
 use unicode_width::UnicodeWidthChar;
 
 use crate::geometry::Rect;
 use crate::surface::Surface;
+use termwiz::color::{ColorAttribute, SrgbaTuple};
 
 #[derive(Debug, Clone, Copy)]
 pub struct CellMetrics {
@@ -62,30 +63,48 @@ impl<'a> TerminalScene<'a> {
         within_x && within_y
     }
 
-    fn paint_cell(&mut self, ch: char, x: u16, y: u16) {
+    fn paint_cell(
+        &mut self,
+        ch: char,
+        x: u16,
+        y: u16,
+        fg: Option<ColorAttribute>,
+        bg: Option<ColorAttribute>,
+    ) {
         if !self.in_clip(x, y) {
             return;
         }
         let width = self.surface.width() as usize;
         let start = y as usize * width + x as usize;
         if let Some(slot) = self.surface.content.get_mut(start) {
-            *slot = ch;
+            slot.ch = ch;
+            slot.fg = fg;
+            slot.bg = bg;
         }
     }
 
-    fn paint_rect(&mut self, ch: char, x_px: f32, y_px: f32, w_px: f32, h_px: f32) {
+    fn paint_rect(
+        &mut self,
+        ch: char,
+        x_px: f32,
+        y_px: f32,
+        w_px: f32,
+        h_px: f32,
+        fg: Option<ColorAttribute>,
+        bg: Option<ColorAttribute>,
+    ) {
         let x0 = (x_px / self.metrics.cell_w_px).floor().max(0.0) as u16;
         let y0 = (y_px / self.metrics.cell_h_px).floor().max(0.0) as u16;
         let x1 = ((x_px + w_px) / self.metrics.cell_w_px).ceil().max(0.0) as u16;
         let y1 = ((y_px + h_px) / self.metrics.cell_h_px).ceil().max(0.0) as u16;
         for y in y0..y1.min(self.surface.height()) {
             for x in x0..x1.min(self.surface.width()) {
-                self.paint_cell(ch, x, y);
+                self.paint_cell(ch, x, y, fg, bg);
             }
         }
     }
 
-    fn push_text(&mut self, text: &str, x_px: f32, y_px: f32) {
+    fn push_text(&mut self, text: &str, x_px: f32, y_px: f32, fg: Option<ColorAttribute>) {
         let cell_x = (x_px / self.metrics.cell_w_px).floor().max(0.0) as u16;
         let cell_y = (y_px / self.metrics.cell_h_px).floor().max(0.0) as u16;
         let width = self.surface.width() as usize;
@@ -106,12 +125,14 @@ impl<'a> TerminalScene<'a> {
             }
             let start = cell_y as usize * width + col;
             if let Some(slot) = self.surface.content.get_mut(start) {
-                *slot = ch;
+                slot.ch = ch;
+                slot.fg = fg;
             }
             if ch_width > 1 {
                 for extra in 1..ch_width {
                     if let Some(slot) = self.surface.content.get_mut(start + extra) {
-                        *slot = ' ';
+                        slot.ch = ' ';
+                        slot.fg = fg;
                     }
                 }
             }
@@ -128,6 +149,16 @@ impl<'a> TerminalScene<'a> {
             x_px,
             y_px,
         });
+    }
+
+    fn to_color_attr(color: Color) -> Option<ColorAttribute> {
+        let Rgba8 { r, g, b, a } = color.to_rgba8();
+        let srgb = SrgbaTuple::from((r, g, b));
+        Some(if a == 0 {
+            ColorAttribute::Default
+        } else {
+            ColorAttribute::TrueColorWithDefaultFallback(srgb)
+        })
     }
 }
 
@@ -170,10 +201,10 @@ impl<'a> PaintScene for TerminalScene<'a> {
         let y0 = bbox.y0 as f32;
         let w = bbox.width() as f32;
         let h = bbox.height() as f32;
-        self.paint_rect('▓', x0, y0, w, self.metrics.cell_h_px);
-        self.paint_rect('▓', x0, y0 + h, w, self.metrics.cell_h_px);
-        self.paint_rect('▓', x0, y0, self.metrics.cell_w_px, h);
-        self.paint_rect('▓', x0 + w, y0, self.metrics.cell_w_px, h);
+        self.paint_rect('▓', x0, y0, w, self.metrics.cell_h_px, None, None);
+        self.paint_rect('▓', x0, y0 + h, w, self.metrics.cell_h_px, None, None);
+        self.paint_rect('▓', x0, y0, self.metrics.cell_w_px, h, None, None);
+        self.paint_rect('▓', x0 + w, y0, self.metrics.cell_w_px, h, None, None);
     }
 
     fn fill<'b>(
@@ -190,12 +221,12 @@ impl<'a> PaintScene for TerminalScene<'a> {
             (p.x as f32, p.y as f32)
         };
         match brush.into() {
-            PaintRef::Solid(_c) => {
-                // Leave spaces for default background; only paint when non-zero area
+            PaintRef::Solid(c) => {
+                let bg = Self::to_color_attr(c);
                 let w_px = bbox.width() as f32;
                 let h_px = bbox.height() as f32;
                 if w_px > 0.0 && h_px > 0.0 {
-                    self.paint_rect(' ', x_px, y_px, w_px, h_px);
+                    self.paint_rect(' ', x_px, y_px, w_px, h_px, None, bg);
                 }
             }
             PaintRef::Image(img) => self.push_image(img, x_px, y_px),
@@ -216,13 +247,14 @@ impl<'a> PaintScene for TerminalScene<'a> {
         _glyph_transform: Option<Affine>,
         glyphs: impl Iterator<Item = anyrender::types::Glyph>,
     ) {
-        if !matches!(brush.into(), PaintRef::Solid(_)) {
-            return;
-        }
+        let fg = match brush.into() {
+            PaintRef::Solid(c) => Self::to_color_attr(c),
+            _ => None,
+        };
         for glyph in glyphs {
             let p = transform * Point::new(glyph.x as f64, glyph.y as f64 - font_size as f64);
             let ch = std::char::from_u32(glyph.id).unwrap_or('█');
-            self.push_text(&ch.to_string(), p.x as f32, p.y as f32);
+            self.push_text(&ch.to_string(), p.x as f32, p.y as f32, fg);
         }
     }
 

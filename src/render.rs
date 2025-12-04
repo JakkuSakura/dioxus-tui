@@ -359,12 +359,54 @@ fn flush_surface(
             continue;
         }
 
-        let line: String = chunk.iter().collect();
+        let mut current_fg = ColorAttribute::Default;
+        let mut current_bg = ColorAttribute::Default;
+        let mut buf = String::with_capacity(chunk.len());
+
         term.add_change(Change::CursorPosition {
             x: Position::Absolute(0),
             y: Position::Absolute(y),
         });
-        term.add_change(Change::Text(line));
+
+        for cell in chunk.iter() {
+            let fg = cell.fg.unwrap_or(ColorAttribute::Default);
+            let bg = cell.bg.unwrap_or(ColorAttribute::Default);
+
+            if fg != current_fg || bg != current_bg {
+                if !buf.is_empty() {
+                    term.add_change(Change::Text(std::mem::take(&mut buf)));
+                }
+                if bg != current_bg {
+                    term.add_change(Change::Attribute(
+                        termwiz::cell::AttributeChange::Background(bg),
+                    ));
+                    current_bg = bg;
+                }
+                if fg != current_fg {
+                    term.add_change(Change::Attribute(
+                        termwiz::cell::AttributeChange::Foreground(fg),
+                    ));
+                    current_fg = fg;
+                }
+            }
+
+            buf.push(cell.ch);
+        }
+
+        if !buf.is_empty() {
+            term.add_change(Change::Text(buf));
+        }
+
+        if current_fg != ColorAttribute::Default {
+            term.add_change(Change::Attribute(
+                termwiz::cell::AttributeChange::Foreground(ColorAttribute::Default),
+            ));
+        }
+        if current_bg != ColorAttribute::Default {
+            term.add_change(Change::Attribute(
+                termwiz::cell::AttributeChange::Background(ColorAttribute::Default),
+            ));
+        }
     }
     // Emit inline images after text to preserve ordering
     if caps.inline_images && !images.is_empty() {
@@ -394,7 +436,11 @@ fn paint_image_fallback(
             for x in x0..x1.min(surface.width()) {
                 let idx = y as usize * surface.width() as usize + x as usize;
                 if let Some(slot) = surface.content.get_mut(idx) {
-                    *slot = '░';
+                    *slot = crate::surface::Cell {
+                        ch: '░',
+                        fg: None,
+                        bg: None,
+                    };
                 }
             }
         }

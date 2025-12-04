@@ -1,11 +1,19 @@
 use crate::geometry::Rect;
+use termwiz::color::ColorAttribute;
 use unicode_width::UnicodeWidthChar;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Cell {
+    pub ch: char,
+    pub fg: Option<ColorAttribute>,
+    pub bg: Option<ColorAttribute>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Surface {
     width: u16,
     height: u16,
-    pub content: Vec<char>,
+    pub content: Vec<Cell>,
 }
 
 impl Surface {
@@ -14,12 +22,23 @@ impl Surface {
         Self {
             width,
             height,
-            content: vec![' '; len],
+            content: vec![
+                Cell {
+                    ch: ' ',
+                    fg: None,
+                    bg: None,
+                };
+                len
+            ],
         }
     }
 
     pub fn clear(&mut self) {
-        self.content.fill(' ');
+        for cell in self.content.iter_mut() {
+            cell.ch = ' ';
+            cell.fg = None;
+            cell.bg = None;
+        }
     }
 
     pub fn width(&self) -> u16 {
@@ -35,6 +54,18 @@ impl Surface {
     }
 
     pub fn set_stringn(&mut self, x: u16, y: u16, text: impl AsRef<str>, width: usize) {
+        self.set_stringn_colored(x, y, text, width, None, None);
+    }
+
+    pub fn set_stringn_colored(
+        &mut self,
+        x: u16,
+        y: u16,
+        text: impl AsRef<str>,
+        width: usize,
+        fg: Option<ColorAttribute>,
+        bg: Option<ColorAttribute>,
+    ) {
         if y >= self.height {
             return;
         }
@@ -48,14 +79,25 @@ impl Surface {
             }
 
             if let Some(slot) = self.content.get_mut(start + col) {
-                *slot = ch;
+                slot.ch = ch;
+                if let Some(fg) = fg {
+                    slot.fg = Some(fg);
+                }
+                if let Some(bg) = bg {
+                    slot.bg = Some(bg);
+                }
             }
 
-            // Fill the remainder of a wide char with spaces to avoid stale glyphs
             if ch_width > 1 {
                 for extra in 1..ch_width {
                     if let Some(slot) = self.content.get_mut(start + col + extra) {
-                        *slot = ' ';
+                        slot.ch = ' ';
+                        if let Some(fg) = fg {
+                            slot.fg = Some(fg);
+                        }
+                        if let Some(bg) = bg {
+                            slot.bg = Some(bg);
+                        }
                     }
                 }
             }
@@ -68,7 +110,7 @@ impl Surface {
         let width = self.width as usize;
         self.content
             .chunks(width)
-            .map(|chunk| chunk.iter().collect::<String>())
+            .map(|chunk| chunk.iter().map(|c| c.ch).collect::<String>())
             .collect()
     }
 
