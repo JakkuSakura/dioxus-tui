@@ -4,6 +4,7 @@ use anyrender::{types::PaintRef, PaintScene};
 use kurbo::{Affine, Point, Rect as KRect, Shape, Stroke};
 use peniko::{color::Rgba8, BlendMode, Color, Fill, FontData, ImageBrushRef, StyleRef};
 use unicode_width::UnicodeWidthChar;
+use ttf_parser::{Face, GlyphId};
 
 use crate::config::ColorMode;
 use crate::geometry::Rect;
@@ -186,6 +187,48 @@ impl<'a> TerminalScene<'a> {
     }
 }
 
+fn glyph_id_to_char(font: &FontData, glyph_id: u32) -> Option<char> {
+    let face = Face::parse(font.data.as_ref(), 0).ok()?;
+    let target = GlyphId(glyph_id as u16);
+
+    // Try ASCII fast path
+    for code in 0u32..=0x7f {
+        if let Some(gid) = face.glyph_index(char::from_u32(code)?) {
+            if gid == target {
+                return char::from_u32(code);
+            }
+        }
+    }
+
+    // Broader BMP search (limited to keep it tractable for tests).
+    for code in 0x80u32..=0xffff {
+        if let Some(ch) = char::from_u32(code) {
+            if let Some(gid) = face.glyph_index(ch) {
+                if gid == target {
+                    return Some(ch);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn glyph_id_to_chars(font: &FontData, glyph_id: u32) -> Vec<char> {
+    if let Some(c) = glyph_id_to_char(font, glyph_id) {
+        match c as u32 {
+            0xfb00 => vec!['f', 'f'],
+            0xfb01 => vec!['f', 'i'],
+            0xfb02 => vec!['f', 'l'],
+            0xfb03 => vec!['f', 'f', 'i'],
+            0xfb04 => vec!['f', 'f', 'l'],
+            _ => vec![c],
+        }
+    } else {
+        vec!['█']
+    }
+}
+
 impl<'a> PaintScene for TerminalScene<'a> {
     fn reset(&mut self) {
         self.surface.clear();
@@ -275,10 +318,36 @@ impl<'a> PaintScene for TerminalScene<'a> {
             PaintRef::Solid(c) => self.to_color_attr(c),
             _ => None,
         };
-        for glyph in glyphs {
-            let p = transform * Point::new(glyph.x as f64, glyph.y as f64 - font_size as f64);
-            let ch = std::char::from_u32(glyph.id).unwrap_or('█');
-            self.push_text(&ch.to_string(), p.x as f32, p.y as f32, fg);
+        let collected: Vec<anyrender::types::Glyph> = glyphs.collect();
+        if collected.is_empty() {
+            return;
+        }
+        let anchor = transform
+            * Point::new(collected[0].x as f64, collected[0].y as f64 - font_size as f64);
+        let mut col = (anchor.x / self.metrics.cell_w_px as f64).floor().max(0.0) as u16;
+        let mut row = (anchor.y / self.metrics.cell_h_px as f64).floor().max(0.0) as u16;
+        for glyph in collected {
+            let chars = glyph_id_to_chars(_font, glyph.id);
+            for ch in chars {
+                let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1).max(1) as u16;
+                if col >= self.surface.width() {
+                    col = 0;
+                    row = row.saturating_add(1);
+                }
+                if row >= self.surface.height() {
+                    return;
+                }
+                if self.in_clip(col, row) {
+                    self.paint_cell(ch, col, row, fg, None);
+                    for extra in 1..ch_width {
+                        let cx = col.saturating_add(extra);
+                        if cx < self.surface.width() {
+                            self.paint_cell(' ', cx, row, fg, None);
+                        }
+                    }
+                }
+                col = col.saturating_add(ch_width);
+            }
         }
     }
 

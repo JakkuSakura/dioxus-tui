@@ -34,6 +34,7 @@ png = "0.17"
 base64 = "0.22"
 peniko = "0.5"
 kurbo = "0.12"
+ttf-parser = "0.19"
 
 [dev-dependencies]
 dioxus = { version = "0.7.1" }
