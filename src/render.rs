@@ -28,7 +28,7 @@ use crate::config::Config;
 use crate::geometry::Rect;
 use crate::hooks::event_from_crossterm;
 use crate::image::emit_inline_images;
-use crate::layout::{print_layout, resolve_document};
+use crate::layout::resolve_document;
 use crate::scene::{CellMetrics, TerminalScene};
 use crate::surface::Surface;
 
@@ -175,11 +175,6 @@ pub(crate) async fn run_renderer(
     if cfg.rendering_mode == crate::config::RenderingMode::Debug {
         renderer.update();
         println!("-- dioxus-tui debug snapshot --");
-        let (w, h) = size().unwrap_or((80, 24));
-        let area = Rect::new(0, 0, w, h);
-        if let Some(root) = renderer.layout_root(area) {
-            print_layout(&renderer.doc.inner, root, 0, area);
-        }
         return Ok(());
     }
 

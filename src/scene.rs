@@ -318,35 +318,32 @@ impl<'a> PaintScene for TerminalScene<'a> {
             PaintRef::Solid(c) => self.to_color_attr(c),
             _ => None,
         };
-        let collected: Vec<anyrender::types::Glyph> = glyphs.collect();
-        if collected.is_empty() {
-            return;
-        }
-        let anchor = transform
-            * Point::new(collected[0].x as f64, collected[0].y as f64 - font_size as f64);
-        let mut col = (anchor.x / self.metrics.cell_w_px as f64).floor().max(0.0) as u16;
-        let mut row = (anchor.y / self.metrics.cell_h_px as f64).floor().max(0.0) as u16;
-        for glyph in collected {
+        for glyph in glyphs {
+            let p = transform * Point::new(glyph.x as f64, glyph.y as f64 - font_size as f64);
             let chars = glyph_id_to_chars(_font, glyph.id);
-            for ch in chars {
+            for (idx, ch) in chars.into_iter().enumerate() {
                 let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1).max(1) as u16;
-                if col >= self.surface.width() {
-                    col = 0;
-                    row = row.saturating_add(1);
+                let cell_x = ((p.x / self.metrics.cell_w_px as f64).round() as i32)
+                    .saturating_add(idx as i32);
+                let cell_y = (p.y / self.metrics.cell_h_px as f64).round() as i32;
+                if cell_x < 0 || cell_y < 0 {
+                    continue;
                 }
-                if row >= self.surface.height() {
-                    return;
+                let col = cell_x as u16;
+                let row = cell_y as u16;
+                if row >= self.surface.height() || col >= self.surface.width() {
+                    continue;
                 }
-                if self.in_clip(col, row) {
-                    self.paint_cell(ch, col, row, fg, None);
-                    for extra in 1..ch_width {
-                        let cx = col.saturating_add(extra);
-                        if cx < self.surface.width() {
-                            self.paint_cell(' ', cx, row, fg, None);
-                        }
+                if !self.in_clip(col, row) {
+                    continue;
+                }
+                self.paint_cell(ch, col, row, fg, None);
+                for extra in 1..ch_width {
+                    let cx = col.saturating_add(extra);
+                    if cx < self.surface.width() {
+                        self.paint_cell(' ', cx, row, fg, None);
                     }
                 }
-                col = col.saturating_add(ch_width);
             }
         }
     }
