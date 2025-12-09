@@ -3,7 +3,7 @@ use blitz_dom::{BaseDocument, Node};
 use blitz_traits::shell::Viewport;
 use dioxus_native_dom::DioxusDocument;
 
-// Minimal UA overrides for TUI rendering.
+// Minimal UA overrides for TUI rendering (aligns with Design.md default CSS roles).
 const TUI_UA_CSS: &str = r#"
 html, body, main, div, p, h1, h2, h3, h4, h5, h6, ul, ol, li {
     margin: 0;
@@ -24,31 +24,8 @@ ol { list-style-type: decimal; padding-left: 2ch; }
 li { list-style-position: outside; }
 "#;
 
-fn find_main_container(doc: &BaseDocument) -> usize {
-    fn walk(doc: &BaseDocument, id: usize) -> Option<usize> {
-        let node = doc.get_node(id)?;
-        if let Some(el) = node.element_data() {
-            let is_main = el
-                .attrs
-                .iter()
-                .any(|a| a.name.local.as_ref() == "id" && a.value == "main");
-            if is_main || el.name.local.as_ref() == "main" {
-                return Some(id);
-            }
-        }
-        for child in node.children.iter() {
-            if let Some(found) = walk(doc, *child) {
-                return Some(found);
-            }
-        }
-        None
-    }
-
-    walk(doc, doc.root_node().id).unwrap_or_else(|| doc.root_node().id)
-}
-
 pub fn resolve_document(doc: &mut DioxusDocument, area: UiRect) -> Option<usize> {
-    // Ensure UA stylesheet is present
+    // Ensure UA stylesheet is present for consistent defaults.
     doc.inner.add_user_agent_stylesheet(TUI_UA_CSS);
 
     let viewport = Viewport::new(
@@ -60,8 +37,8 @@ pub fn resolve_document(doc: &mut DioxusDocument, area: UiRect) -> Option<usize>
     doc.inner.set_viewport(viewport);
     doc.inner.resolve(0.0);
 
-    let main_id = find_main_container(&doc.inner);
-    doc.inner.get_node(main_id).map(|_| main_id)
+    let root_id = doc.inner.root_node().id;
+    doc.inner.get_node(root_id).map(|_| root_id)
 }
 
 pub fn node_rect(node: &Node, area: UiRect) -> UiRect {

@@ -83,8 +83,8 @@ pub fn event_from_crossterm(
             modifiers,
         }) => {
             let modifiers = map_modifiers(modifiers);
-            let clamped_x = column.min(viewport.width.saturating_sub(1)).max(0) as i32;
-            let clamped_y = row.min(viewport.height.saturating_sub(1)).max(0) as i32;
+            let clamped_x = column.min(viewport.width.saturating_sub(1)).max(0) as f64;
+            let clamped_y = row.min(viewport.height.saturating_sub(1)).max(0) as f64;
             let screen = ScreenPoint::new(clamped_x, clamped_y);
             let client = ClientPoint::new(clamped_x, clamped_y);
             let element = ElementPoint::new(clamped_x, clamped_y);

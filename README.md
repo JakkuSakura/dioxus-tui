@@ -113,5 +113,6 @@ button:focus, input:focus, select:focus, textarea:focus {
   deterministic dispatch into Servo.
 - [x] Image/media policy (`image.rs`): codify block/degrade/omit rules and fallbacks for terminals without image
   support; verify via tests/examples.
+- [x] Common HTML rendering snapshots (`tests/render_html.rs`): add coverage for headings, paragraphs, and lists using the canonical pipeline.
 
 For deeper details, see `docs/Design.md`.
