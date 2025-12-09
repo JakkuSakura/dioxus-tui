@@ -1915,6 +1915,7 @@ dependencies = [
  "dioxus-hot-reload",
  "dioxus-html 0.7.1",
  "dioxus-native-dom",
+ "font8x8",
  "futures",
  "futures-channel",
  "keyboard-types 0.8.3",
@@ -2263,6 +2264,12 @@ checksum = "39a654f404bbcbd48ea58c617c2993ee91d1cb63727a37bf2323a4edeed1b8c5"
 dependencies = [
  "bytemuck",
 ]
+
+[[package]]
+name = "font8x8"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "875488b8711a968268c7cf5d139578713097ca4635a76044e8fe8eedf831d07e"
 
 [[package]]
 name = "fontconfig-parser"

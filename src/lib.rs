@@ -5,6 +5,7 @@
 pub mod capabilities;
 mod config;
 pub mod element;
+pub mod debug_png;
 pub mod geometry;
 mod hooks;
 pub mod image;

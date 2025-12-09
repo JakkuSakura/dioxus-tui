@@ -319,7 +319,7 @@ impl<'a> PaintScene for TerminalScene<'a> {
             _ => None,
         };
         for glyph in glyphs {
-            let p = transform * Point::new(glyph.x as f64, glyph.y as f64 - font_size as f64);
+            let p = transform * Point::new(glyph.x as f64, glyph.y as f64);
             let chars = glyph_id_to_chars(_font, glyph.id);
             for (idx, ch) in chars.into_iter().enumerate() {
                 let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1).max(1) as u16;
