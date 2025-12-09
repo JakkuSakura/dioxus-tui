@@ -5,6 +5,7 @@ use kurbo::{Affine, Point, Rect as KRect, Shape, Stroke};
 use peniko::{color::Rgba8, BlendMode, Color, Fill, FontData, ImageBrushRef, StyleRef};
 use unicode_width::UnicodeWidthChar;
 
+use crate::config::ColorMode;
 use crate::geometry::Rect;
 use crate::surface::Surface;
 use termwiz::color::{ColorAttribute, SrgbaTuple};
@@ -29,6 +30,8 @@ pub struct TerminalScene<'a> {
     images: &'a mut VecDeque<InlineImage>,
     metrics: CellMetrics,
     clip_stack: Vec<Rect>,
+    color_mode: ColorMode,
+    truecolor: bool,
 }
 
 impl<'a> TerminalScene<'a> {
@@ -36,12 +39,16 @@ impl<'a> TerminalScene<'a> {
         surface: &'a mut Surface,
         images: &'a mut VecDeque<InlineImage>,
         metrics: CellMetrics,
+        color_mode: ColorMode,
+        truecolor: bool,
     ) -> Self {
         Self {
             surface,
             images,
             metrics,
             clip_stack: Vec::new(),
+            color_mode,
+            truecolor,
         }
     }
 
@@ -151,13 +158,30 @@ impl<'a> TerminalScene<'a> {
         });
     }
 
-    fn to_color_attr(color: Color) -> Option<ColorAttribute> {
+    fn to_color_attr(&self, color: Color) -> Option<ColorAttribute> {
         let Rgba8 { r, g, b, a } = color.to_rgba8();
         let srgb = SrgbaTuple::from((r, g, b));
-        Some(if a == 0 {
-            ColorAttribute::Default
-        } else {
-            ColorAttribute::TrueColorWithDefaultFallback(srgb)
+        if a == 0 {
+            return None;
+        }
+
+        let palette_idx_256 =
+            16 + 36 * (r as u16 / 51) as u8 + 6 * (g as u16 / 51) as u8 + (b as u16 / 51) as u8;
+
+        let base_idx = (if r >= 128 { 1 } else { 0 })
+            | (if g >= 128 { 2 } else { 0 })
+            | (if b >= 128 { 4 } else { 0 });
+
+        Some(match self.color_mode {
+            ColorMode::BaseColors => ColorAttribute::PaletteIndex(base_idx),
+            ColorMode::Ansi => ColorAttribute::TrueColorWithPaletteFallback(srgb, palette_idx_256),
+            ColorMode::Rgb => {
+                if self.truecolor {
+                    ColorAttribute::TrueColorWithDefaultFallback(srgb)
+                } else {
+                    ColorAttribute::TrueColorWithPaletteFallback(srgb, palette_idx_256)
+                }
+            }
         })
     }
 }
@@ -222,7 +246,7 @@ impl<'a> PaintScene for TerminalScene<'a> {
         };
         match brush.into() {
             PaintRef::Solid(c) => {
-                let bg = Self::to_color_attr(c);
+                let bg = self.to_color_attr(c);
                 let w_px = bbox.width() as f32;
                 let h_px = bbox.height() as f32;
                 if w_px > 0.0 && h_px > 0.0 {
@@ -248,7 +272,7 @@ impl<'a> PaintScene for TerminalScene<'a> {
         glyphs: impl Iterator<Item = anyrender::types::Glyph>,
     ) {
         let fg = match brush.into() {
-            PaintRef::Solid(c) => Self::to_color_attr(c),
+            PaintRef::Solid(c) => self.to_color_attr(c),
             _ => None,
         };
         for glyph in glyphs {

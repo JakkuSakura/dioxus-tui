@@ -7,6 +7,8 @@ pub struct Config {
     /// Controls if the terminal quit when the user presses `ctrl+c`?
     /// To handle quitting on your own, use the `TuiContext` root context.
     pub(crate) ctrl_c_quit: bool,
+    /// Tick interval used when polling the terminal for input. Can be set to zero for deterministic tests.
+    pub(crate) tick_rate: std::time::Duration,
 }
 
 impl Config {
@@ -31,6 +33,10 @@ impl Config {
             ..self
         }
     }
+
+    pub fn with_tick_rate(self, tick_rate: std::time::Duration) -> Self {
+        Self { tick_rate, ..self }
+    }
 }
 
 impl Default for Config {
@@ -39,6 +45,7 @@ impl Default for Config {
             rendering_mode: RenderingMode::Visual,
             color_mode: ColorMode::Rgb,
             ctrl_c_quit: true,
+            tick_rate: std::time::Duration::from_millis(10),
         }
     }
 }

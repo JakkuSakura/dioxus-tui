@@ -25,12 +25,11 @@ use tokio::select;
 
 use crate::capabilities::TerminalCapabilities;
 use crate::config::Config;
-use crate::geometry::{Alignment, Rect};
+use crate::geometry::Rect;
 use crate::hooks::event_from_crossterm;
 use crate::image::emit_inline_images;
-use crate::layout::{node_alignment, node_rect, print_layout, resolve_document};
+use crate::layout::{print_layout, resolve_document};
 use crate::scene::{CellMetrics, TerminalScene};
-use crate::styles::{list_item_label, ListStyle};
 use crate::surface::Surface;
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
@@ -187,7 +186,7 @@ pub(crate) async fn run_renderer(
     if cfg.rendering_mode != crate::config::RenderingMode::Headless {
         let tx = event_tx.clone();
         std::thread::spawn(move || {
-            let tick_rate = Duration::from_millis(10);
+            let tick_rate = cfg.tick_rate;
             loop {
                 match crossterm::event::poll(tick_rate) {
                     Ok(true) => match crossterm::event::read() {
@@ -265,7 +264,13 @@ pub(crate) async fn run_renderer(
             let mut surface = Surface::new(area.width, area.height);
             let mut images = std::collections::VecDeque::new();
             if let Some(root) = renderer.layout_root(area) {
-                let mut scene = TerminalScene::new(&mut surface, &mut images, metrics);
+                let mut scene = TerminalScene::new(
+                    &mut surface,
+                    &mut images,
+                    metrics,
+                    cfg.color_mode,
+                    capabilities.truecolor,
+                );
                 blitz::paint::paint_scene(
                     &mut scene,
                     &renderer.doc.inner,
@@ -273,8 +278,6 @@ pub(crate) async fn run_renderer(
                     renderer.doc.inner.viewport().window_size.0,
                     renderer.doc.inner.viewport().window_size.1,
                 );
-                // Overlay text via legacy traversal to ensure readable glyphs in TUI
-                render_tree(&mut surface, &renderer.doc.inner, root, true, None, None);
             }
             if !capabilities.inline_images && !images.is_empty() {
                 paint_image_fallback(&mut surface, &images, metrics);
@@ -442,250 +445,6 @@ fn paint_image_fallback(
                         bg: None,
                     };
                 }
-            }
-        }
-    }
-}
-
-pub fn render_tree(
-    surface: &mut Surface,
-    doc: &blitz_dom::BaseDocument,
-    root_id: usize,
-    is_root: bool,
-    rect_override: Option<Rect>,
-    parent_align: Option<Alignment>,
-) {
-    fn collect_text(doc: &blitz_dom::BaseDocument, id: usize) -> Option<String> {
-        let node = doc.get_node(id)?;
-        let mut buf = String::new();
-        if let Some(t) = node.text_data() {
-            buf.push_str(&t.content);
-        }
-        for child in node.children.iter() {
-            if let Some(t) = collect_text(doc, *child) {
-                buf.push_str(&t);
-            }
-        }
-        if buf.is_empty() {
-            None
-        } else {
-            Some(buf)
-        }
-    }
-
-    let node = match doc.get_node(root_id) {
-        Some(n) => n,
-        None => return,
-    };
-
-    let area = surface.area();
-    let mut rect = rect_override.unwrap_or_else(|| node_rect(node, area));
-    if rect.width == 1 && area.width > 1 {
-        rect.x = 0;
-        rect.width = area.width;
-    }
-    let tag = node
-        .element_data()
-        .map(|el| el.name.local.to_string())
-        .unwrap_or_default();
-    let align = parent_align.unwrap_or_else(|| node_alignment(node));
-    let text_opt = collect_text(doc, root_id);
-
-    if is_root || matches!(tag.as_str(), "div" | "main" | "body" | "html") {
-        let parent_align_attr = node
-            .element_data()
-            .and_then(|el| {
-                el.attrs.iter().find_map(|a| {
-                    let name = a.name.local.as_ref();
-                    if name == "align_items" {
-                        Some(a.value.clone())
-                    } else {
-                        None
-                    }
-                })
-            })
-            .map(|v| match v.to_lowercase().as_str() {
-                "center" => Alignment::Center,
-                "right" => Alignment::Right,
-                _ => Alignment::Left,
-            });
-
-        let (justify_content, direction_row) = node.element_data().map_or((None, false), |el| {
-            (
-                el.attrs.iter().find_map(|a| {
-                    if a.name.local.as_ref() == "justify_content" {
-                        Some(a.value.to_lowercase())
-                    } else {
-                        None
-                    }
-                }),
-                el.attrs.iter().any(|a| {
-                    a.name.local.as_ref() == "direction" && a.value.to_lowercase() == "row"
-                }),
-            )
-        });
-
-        let children = node.children.clone();
-        let mut total_height: u16 = 0;
-        for child in children.iter() {
-            if let Some(child_node) = doc.get_node(*child) {
-                let mut h = 1;
-                if let Some(el) = child_node.element_data() {
-                    if matches!(el.name.local.as_ref(), "ul" | "ol") {
-                        h = child_node.children.len() as u16;
-                    }
-                }
-                total_height = total_height.saturating_add(h.max(1));
-            }
-        }
-
-        let mut cursor_y = rect.y;
-        if let Some(justify) = justify_content {
-            if justify == "center" && total_height < rect.height {
-                let pad = rect.height.saturating_sub(total_height);
-                cursor_y = cursor_y.saturating_add(pad / 2);
-            }
-        }
-        if direction_row {
-            let child_count = node.children.len().max(1) as u16;
-            let child_width = (rect.width / child_count.max(1)).max(1);
-            for (idx, child) in node.children.iter().enumerate() {
-                if let Some(_) = doc.get_node(*child) {
-                    let x = rect
-                        .x
-                        .saturating_add((idx as u16).saturating_mul(child_width));
-                    let override_rect = Rect::new(x, rect.y, child_width, rect.height);
-                    if let Some(text) = collect_text(doc, *child) {
-                        surface.set_stringn(
-                            override_rect.x,
-                            override_rect.y,
-                            text,
-                            override_rect.width as usize,
-                        );
-                    }
-                    render_tree(
-                        surface,
-                        doc,
-                        *child,
-                        false,
-                        Some(override_rect),
-                        parent_align_attr,
-                    );
-                }
-            }
-            return;
-        } else {
-            for child in node.children.iter() {
-                if let Some(child_node) = doc.get_node(*child) {
-                    if cursor_y >= area.height {
-                        break;
-                    }
-                    let mut child_height = 1;
-                    if let Some(el) = child_node.element_data() {
-                        if matches!(el.name.local.as_ref(), "ul" | "ol") {
-                            child_height = child_node.children.len() as u16;
-                        }
-                    }
-                    let child_height = child_height
-                        .min(area.height.saturating_sub(cursor_y))
-                        .max(1);
-                    let override_rect = Rect::new(rect.x, cursor_y, rect.width, child_height);
-                    cursor_y = cursor_y.saturating_add(child_height);
-                    render_tree(
-                        surface,
-                        doc,
-                        *child,
-                        false,
-                        Some(override_rect),
-                        parent_align_attr,
-                    );
-                }
-            }
-            return;
-        }
-    }
-
-    let mut draw_text = |area: Rect, text: String, align: Alignment| {
-        if area.width == 0 || area.height == 0 {
-            return;
-        }
-        let width = area.width as usize;
-        let text_len = text.len();
-        let content = match align {
-            Alignment::Center => {
-                if text_len >= width {
-                    text
-                } else {
-                    let pad = width.saturating_sub(text_len);
-                    let left = pad / 2;
-                    let right = pad - left;
-                    format!("{}{}{}", " ".repeat(left), text, " ".repeat(right))
-                }
-            }
-            Alignment::Right => {
-                if text_len >= width {
-                    text
-                } else {
-                    format!("{}{}", " ".repeat(width - text_len), text)
-                }
-            }
-            Alignment::Left => {
-                if text_len >= width {
-                    text
-                } else {
-                    format!("{}{}", text, " ".repeat(width - text_len))
-                }
-            }
-        };
-        surface.set_stringn(area.x, area.y, content, width);
-    };
-
-    match tag.as_str() {
-        "p" | "span" => {
-            let text = text_opt.unwrap_or_default();
-            draw_text(rect, text, align);
-        }
-        "li" => {
-            let text = text_opt.clone().unwrap_or_default();
-            let content = list_item_label(&ListStyle::Disc, 0, &text);
-            draw_text(rect, content, align);
-        }
-        "ul" | "ol" => {
-            let style_ref = if tag == "ol" {
-                ListStyle::Decimal
-            } else {
-                ListStyle::Disc
-            };
-            for (idx, child) in node.children.iter().enumerate() {
-                let line_y = rect.y.saturating_add(idx as u16);
-                let li_rect = Rect::new(rect.x, line_y, rect.width, 1);
-                let text = collect_text(doc, *child).unwrap_or_default();
-                let label = list_item_label(&style_ref, idx, &text);
-                let child_align = doc
-                    .get_node(*child)
-                    .map(node_alignment)
-                    .unwrap_or(Alignment::Left);
-                draw_text(li_rect, label, child_align);
-            }
-        }
-        "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
-            let text = text_opt.unwrap_or_default();
-            draw_text(rect, text, align);
-        }
-        "" => {
-            if let Some(text) = text_opt {
-                draw_text(rect, text, align);
-            }
-            for child in node.children.iter() {
-                render_tree(surface, doc, *child, false, None, None);
-            }
-        }
-        _ => {
-            if let Some(text) = text_opt {
-                draw_text(rect, text, align);
-            }
-            for child in node.children.iter() {
-                render_tree(surface, doc, *child, false, None, None);
             }
         }
     }

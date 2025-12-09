@@ -1,130 +1,117 @@
-<div align="center">
-  <h1>Dioxus TUI</h1>
-  <p>
-    <strong>Beautiful terminal user interfaces in Rust with <a href="https://dioxuslabs.com/">Dioxus </a>.</strong>
-  </p>
-</div>
+# Dioxus TUI
 
-<div align="center">
-  <!-- Crates version -->
-  <a href="https://crates.io/crates/dioxus">
-    <img src="https://img.shields.io/crates/v/dioxus.svg?style=flat-square"
-    alt="Crates.io version" />
-  </a>
-  <!-- Downloads -->
-  <a href="https://crates.io/crates/dioxus">
-    <img src="https://img.shields.io/crates/d/dioxus.svg?style=flat-square"
-      alt="Download" />
-  </a>
-  <!-- docs -->
-  <a href="https://docs.rs/dioxus">
-    <img src="https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square"
-      alt="docs.rs docs" />
-  </a>
-  <!-- CI -->
-  <a href="https://github.com/jkelleyrtp/dioxus/actions">
-    <img src="https://github.com/dioxuslabs/dioxus/actions/workflows/main.yml/badge.svg"
-      alt="CI status" />
-  </a>
-  <!--Awesome -->
-  <a href="https://github.com/dioxuslabs/awesome-dioxus">
-    <img src="https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg" alt="Awesome Page" />
-  </a>
-  <!-- Discord -->
-  <a href="https://discord.gg/XgGxMSkvUM">
-    <img src="https://img.shields.io/discord/899851952891002890.svg?logo=discord&style=flat-square" alt="Discord Link" />
-  </a>
-</div>
+Render HTML via Blitz/Servo into a terminal grid with a single, deterministic pipeline powered by `TerminalScene` and
+`FakeTerminal`.
 
-<br/>
+## Why
 
-Leverage React-like patterns, CSS, HTML, and Rust to build beautiful, portable, terminal user interfaces with Dioxus.
+- React-like authoring with Rust/Dioxus, rendered faithfully in terminals.
+- Single render path: Servo display list → terminal primitives → cell layout → paint → surface.
+- Deterministic, snapshot-testable output via `FakeTerminal` and capability-aware palette roles.
 
-```rust
-use dioxus::prelude::*;
+## Architecture (should-be)
 
-fn app() -> Element {
-    rsx! {
-        div {
-            width: "100%",
-            height: "10px",
-            background_color: "red",
-            justify_content: "center",
-            align_items: "center",
-            "Hello world!"
-        }
-    }
+- Servo boundary: Servo owns DOM, CSS cascade, and layout. This crate adapts the Servo display list to terminal cells.
+- Pipeline: display list → `element.rs` primitives → `geometry.rs` cell mapping → `layout.rs` cell placement →
+  `render.rs` frame buffer → `surface.rs` present (real terminal or `FakeTerminal`).
+- Capabilities/config: `config.rs` (size, palette mode, policies), `capabilities.rs` (color depth, input, inline
+  images), `geometry.rs` (single source for cell metrics and length mapping).
+- Styling: default TUI CSS with palette roles; `styles.rs` maps Servo styles to terminal-friendly values and marks
+  unsupported features.
+- Images/media: `image.rs` policies (block, degrade, omit); animations use deterministic time sources.
+- Events: terminal events normalized by `capabilities.rs`, dispatched by `scene.rs` back to Servo.
+- Hooks: diagnostics, tracing, deterministic clock injection for tests/examples.
+
+## TUI constraints (must-haves)
+
+- Cell grid only: no subpixel positioning; all clipping/scrolling is cell-based.
+- Grapheme-aware text: measure by grapheme width (wide/combining/emoji) before painting.
+- Color caps: support 16/256/truecolor with palette-role fallbacks; no alpha blending.
+- Limited effects: last paint per cell wins; avoid shadows/blur; prefer discrete state changes over animations.
+- Input variance: keyboard-first; mouse/IME/clipboard are best-effort; focus cues must survive minimal terminals.
+
+## Testing and examples
+
+- Fixtures + snapshots: HTML/CSS fixtures mapped to snapshots (text grid + attributes) with normalization for
+  portability.
+- Determinism: fixed terminal size/palette, deterministic render/flush, deterministic time source.
+- Interaction: tests cover tab order, scrolling, selection, forms, and event normalization.
+- Capability variants: test canonical 16/256/truecolor profiles; `FakeTerminal` runs examples in CI for snapshot
+  comparison.
+- Diagnostics: grid diffs (including attributes) on mismatch.
+
+## Default TUI CSS (roles)
+
+Use palette roles and cell-friendly units; map roles per capability profile:
+
+- 16-color: `--bg-primary=black`, `--bg-muted=black`, `--bg-focus=blue`, `--fg-primary=white`, `--accent=cyan`
+- 256-color: `--bg-primary=16`, `--bg-muted=235`, `--bg-focus=24`, `--fg-primary=252`, `--accent=45`
+- truecolor: `--bg-primary=#000000`, `--bg-muted=#111111`, `--bg-focus=#002b36`, `--fg-primary=#e0e0e0`,
+  `--accent=#00bcd4`
+
+```css
+html, body {
+    margin: 0;
+    padding: 0;
+    font-family: monospace;
+    background: var(--bg-primary, black);
+    color: var(--fg-primary, white);
+}
+
+a {
+    color: var(--accent, cyan);
+    text-decoration: underline;
+}
+
+strong, b {
+    font-weight: bold;
+}
+
+em, i {
+    font-style: italic;
+}
+
+code, pre {
+    font-family: monospace;
+    background: var(--bg-muted, #111);
+    padding: 0;
+}
+
+ul, ol {
+    margin: 0;
+    padding-left: 2ch;
+}
+
+button, input, select, textarea {
+    background: var(--bg-muted, #111);
+    color: var(--fg-primary, white);
+    border: none;
+    padding: 0;
+}
+
+button:focus, input:focus, select:focus, textarea:focus {
+    outline: none;
+    background: var(--bg-focus, #002b36);
+    color: var(--accent, cyan);
 }
 ```
 
-![demo app](examples/example.png)
+## TODOs (canonical design, migrate code to match)
 
-## Pick the right entrypoint (functions)
+- [ ] Servo display list contract (`element.rs`): define coordinate space (logical vs px), rounding rules to cells, and
+  invalidation/diff signals; adapt current extraction to that contract.
+- [x] Deterministic clock (config/hooks): add a time provider hook for animations/time-based effects and thread it
+  through render; use in tests/examples.
+- [x] Single render path (scene/render/layout): remove parallel/manual rendering paths and route painting solely through
+  Servo display list → primitives → cell layout → `render.rs` → `surface.rs`.
+- [ ] Capability profiles (`config.rs`/`capabilities.rs`): bake 16/256/truecolor palette role maps and expose them to
+  styles/tests/examples; normalize color mapping accordingly.
+- [ ] Snapshot harness (`tests/fixtures`, `FakeTerminal`): finalize snapshot format + normalization; add fixtures for
+  layout/styles/inheritance, links/lists/forms, overflow/wrapping, wide/combining/RTL text, malformed inputs, and event
+  normalization.
+- [ ] Event model (`hooks.rs`/`scene.rs`): specify terminal event normalization (keyboard/mouse/focus) and ensure
+  deterministic dispatch into Servo.
+- [ ] Image/media policy (`image.rs`): codify block/degrade/omit rules and fallbacks for terminals without image
+  support; verify via tests/examples.
 
-- Static HTML you already have: create a `blitz_html::HtmlDocument` with
-  `HtmlDocument::from_html(html, DocumentConfig { viewport: Some(Viewport::new(..)), ..Default::default() })`.
-- Custom DOM construction: start with `blitz_dom::BaseDocument::new(DocumentConfig { ..Default::default() })`, then
-  mutate it through `BaseDocument::mutate()` (returns `DocumentMutator`) to build nodes.
-- Dioxus app: use `dioxus_native_dom::DioxusDocument::new(...)` if you want Blitz driven by a Dioxus `VirtualDom`.
-- To (re)layout after mutations or resizes: call `BaseDocument::set_viewport(...)` (or `viewport_mut()`) then
-  `BaseDocument::resolve(now_seconds_f64)` to run style + layout.
-- To paint: implement `anyrender::PaintScene` for your terminal backend and call
-  `blitz_paint::paint_scene(&mut scene, &doc, scale, width_px, height_px)`.
-- To feed input: call `Document::handle_ui_event(event)` on your document implementation when you receive keyboard/mouse
-  events from the terminal.
-- To progress async fetches (images/stylesheets): call `Document::poll(task_context)` in your event loop and re-resolve
-  when it returns `true`.
-
-## Architecture for a terminal renderer
-
-1. **DOM + Style (Blitz)**: use `BaseDocument` or `HtmlDocument` for parsing, style resolution, and layout (`resolve`).
-2. **Display list (Blitz Paint)**: `blitz_paint::paint_scene` traverses the laid-out tree and emits AnyRender paint
-   commands.
-3. **Terminal adapter (yours)**: implement `anyrender::PaintScene` that:
-    - Accumulates text runs into a cell buffer (respect wide chars/emoji widths).
-    - Captures image draws into pixel buffers; emit Inline Images Protocol escape sequences at the target cell position
-      with the requested pixel size.
-    - Applies fills/borders/box shadows as best-effort ANSI or braille/block fallbacks when possible.
-4. **Compositor**: diff cell buffers + inline images per frame to minimize redraws. Redraw on resize or when
-   `Document::poll`/events require it.
-
-## Inline Images specifics
-
-- The painter will call your `PaintScene::draw_image` (and related) with an RGBA buffer and target rectangle. Encode
-  that buffer (e.g., PNG + base64) and emit Inline Images Protocol escapes at the corresponding row/column.
-- Keep a mapping from pixel coords to terminal cells to position the image correctly. Use your terminal font metrics (
-  cell width/height) to convert `width_px/height_px` to a cell anchor.
-- Provide a fallback when the terminal lacks inline image support: downsample to ANSI blocks/braille or skip images.
-
-## Event handling in a TUI
-
-- Map terminal events to `UiEvent` variants and pass them to `Document::handle_ui_event` (clicks, scroll, key input).
-  You can synthesize positions by translating cell coords to CSS px via your cell size and current viewport scroll.
-- Keep track of hover/focus nodes if you need to show debug overlays; `BaseDocument::get_hover_node_id` helps when
-  highlighting.
-
-## Resizing and scrolling
-
-- On every terminal resize, call `BaseDocument::set_viewport` (or mutate via `viewport_mut`) before the next `resolve`.
-- Scroll by mutating `BaseDocument::scroll_viewport_by(dx, dy)` (then re-paint). Clamp/quantize to cells if you want
-  whole-line scrolling in the terminal.
-
-## What you need to implement
-
-- A terminal `PaintScene` backend that turns AnyRender commands into: (a) a text cell buffer; (b) inline image
-  escapes; (c) optional ANSI styling for borders/backgrounds.
-- A small compositor that diffs buffers to minimize terminal writes.
-- Capability detection (truecolor? inline images? fallback palette) to decide how to map colors and images.
-
-## Future design considerations
-
-- Stabilize a shared TUI scene abstraction so Dioxus/Blitz integrations can swap backends without changing app code.
-- Explore richer fallback strategies for terminals without inline images (ANSI dithering, braille downsampling) to keep
-  layouts consistent.
-- Standardize capability negotiation (truecolor, italics, image support) to guide paint decisions and avoid noisy
-  redraws.
-- Provide a higher-level ergonomic API for Dioxus apps that hides viewport management and event wiring while keeping
-  escape hatches for advanced control.
-
-This separation keeps Blitz responsible for DOM, style, layout, and paint ordering, while your TUI backend only
-translates paint commands into terminal-friendly output and cursor movement.
+For deeper details, see `docs/Design.md`.

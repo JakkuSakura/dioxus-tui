@@ -14,7 +14,7 @@ fn Button(color_offset: u32, layer: u16) -> Element {
     let hue = color_offset % 255;
     let saturation = if toggle() { 50 } else { 25 } + if hovered() { 50 } else { 25 };
     let brightness = saturation / 2;
-    let color = format!("hsl({hue}, {saturation}, {brightness})");
+    let color = format!("hsl({hue}, {saturation}%, {brightness}%)");
 
     rsx! {
         div{

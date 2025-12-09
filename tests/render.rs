@@ -4,7 +4,7 @@ use dioxus_core::VirtualDom;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use dioxus_tui::layout::resolve_document;
 use dioxus_tui::render::render_tree;
-use dioxus_tui::{CellMetrics, Rect, Surface, TerminalScene};
+use dioxus_tui::{CellMetrics, ColorMode, Rect, Surface, TerminalScene};
 use std::collections::VecDeque;
 use termwiz::color::{ColorAttribute, SrgbaTuple};
 
@@ -76,7 +76,8 @@ fn render_app_with_paint(app: fn() -> Element, width: u16, height: u16) -> Surfa
         cell_h_px: 1.0,
     };
     {
-        let mut scene = TerminalScene::new(&mut surface, &mut images, metrics);
+        let mut scene =
+            TerminalScene::new(&mut surface, &mut images, metrics, ColorMode::Rgb, true);
         blitz::paint::paint_scene(
             &mut scene,
             &doc.inner,
@@ -87,6 +88,38 @@ fn render_app_with_paint(app: fn() -> Element, width: u16, height: u16) -> Surfa
     }
 
     surface
+}
+
+fn color_to_string(c: Option<ColorAttribute>) -> String {
+    match c {
+        None => "None".to_string(),
+        Some(ColorAttribute::Default) => "Default".to_string(),
+        Some(ColorAttribute::PaletteIndex(idx)) => format!("Palette({idx})"),
+        Some(ColorAttribute::TrueColorWithPaletteFallback(srgb, idx)) => {
+            format!("TrueColor({:?})/Palette({idx})", srgb)
+        }
+        Some(ColorAttribute::TrueColorWithDefaultFallback(srgb)) => {
+            format!("TrueColor({:?})", srgb)
+        }
+    }
+}
+
+fn print_colors(surface: &Surface) {
+    let width = surface.width() as usize;
+    for (row_idx, row) in surface.content.chunks(width).enumerate() {
+        let fg = row
+            .iter()
+            .map(|c| color_to_string(c.fg))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let bg = row
+            .iter()
+            .map(|c| color_to_string(c.bg))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("row {row_idx} fg: {fg}");
+        println!("row {row_idx} bg: {bg}");
+    }
 }
 
 #[test]
@@ -162,7 +195,10 @@ fn paints_background_color() {
     let row0 = &surface.content[0..surface.width() as usize];
     assert_eq!(row0[0].bg, expected_bg);
     assert_eq!(row0[1].bg, expected_bg);
-    assert_eq!(row0[2].bg, Some(ColorAttribute::Default));
+    assert_eq!(row0[2].bg, None);
+
+    // Print fg/bg for manual inspection when running with -- --nocapture
+    print_colors(&surface);
 }
 
 #[test]
