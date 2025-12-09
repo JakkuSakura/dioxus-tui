@@ -1,4 +1,4 @@
-use std::{any::Any, pin::Pin, rc::Rc, time::Duration};
+use std::{any::Any, pin::Pin, rc::Rc};
 
 use anyhow::Result;
 use blitz_dom::Document;

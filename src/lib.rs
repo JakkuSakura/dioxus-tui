@@ -12,7 +12,6 @@ pub mod layout;
 pub mod render;
 pub mod scene;
 mod snapshot;
-mod styles;
 pub mod surface;
 
 pub use capabilities::TerminalCapabilities;
