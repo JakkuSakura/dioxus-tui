@@ -98,20 +98,20 @@ button:focus, input:focus, select:focus, textarea:focus {
 
 ## TODOs (canonical design, migrate code to match)
 
-- [ ] Servo display list contract (`element.rs`): define coordinate space (logical vs px), rounding rules to cells, and
+- [x] Servo display list contract (`element.rs`): define coordinate space (logical vs px), rounding rules to cells, and
   invalidation/diff signals; adapt current extraction to that contract.
 - [x] Deterministic clock (config/hooks): add a time provider hook for animations/time-based effects and thread it
   through render; use in tests/examples.
 - [x] Single render path (scene/render/layout): remove parallel/manual rendering paths and route painting solely through
   Servo display list → primitives → cell layout → `render.rs` → `surface.rs`.
-- [ ] Capability profiles (`config.rs`/`capabilities.rs`): bake 16/256/truecolor palette role maps and expose them to
+- [x] Capability profiles (`config.rs`/`capabilities.rs`): bake 16/256/truecolor palette role maps and expose them to
   styles/tests/examples; normalize color mapping accordingly.
-- [ ] Snapshot harness (`tests/fixtures`, `FakeTerminal`): finalize snapshot format + normalization; add fixtures for
+- [x] Snapshot harness (`tests/fixtures`, `FakeTerminal`): finalize snapshot format + normalization; add fixtures for
   layout/styles/inheritance, links/lists/forms, overflow/wrapping, wide/combining/RTL text, malformed inputs, and event
   normalization.
-- [ ] Event model (`hooks.rs`/`scene.rs`): specify terminal event normalization (keyboard/mouse/focus) and ensure
+- [x] Event model (`hooks.rs`/`scene.rs`): specify terminal event normalization (keyboard/mouse/focus) and ensure
   deterministic dispatch into Servo.
-- [ ] Image/media policy (`image.rs`): codify block/degrade/omit rules and fallbacks for terminals without image
+- [x] Image/media policy (`image.rs`): codify block/degrade/omit rules and fallbacks for terminals without image
   support; verify via tests/examples.
 
 For deeper details, see `docs/Design.md`.

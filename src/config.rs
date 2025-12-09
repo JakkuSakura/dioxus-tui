@@ -9,6 +9,10 @@ pub struct Config {
     pub(crate) ctrl_c_quit: bool,
     /// Tick interval used when polling the terminal for input. Can be set to zero for deterministic tests.
     pub(crate) tick_rate: std::time::Duration,
+    /// Palette role mapping by capability (16/256/truecolor) for deterministic color selection.
+    pub(crate) palette_roles: PaletteRoles,
+    /// Policy for handling images/media in terminals without inline image support.
+    pub(crate) image_policy: ImagePolicy,
 }
 
 impl Config {
@@ -37,6 +41,20 @@ impl Config {
     pub fn with_tick_rate(self, tick_rate: std::time::Duration) -> Self {
         Self { tick_rate, ..self }
     }
+
+    pub fn with_palette_roles(self, palette_roles: PaletteRoles) -> Self {
+        Self {
+            palette_roles,
+            ..self
+        }
+    }
+
+    pub fn with_image_policy(self, image_policy: ImagePolicy) -> Self {
+        Self {
+            image_policy,
+            ..self
+        }
+    }
 }
 
 impl Default for Config {
@@ -46,6 +64,8 @@ impl Default for Config {
             color_mode: ColorMode::Rgb,
             ctrl_c_quit: true,
             tick_rate: std::time::Duration::from_millis(10),
+            palette_roles: PaletteRoles::default(),
+            image_policy: ImagePolicy::Degrade,
         }
     }
 }
@@ -80,4 +100,43 @@ impl Default for ColorMode {
     fn default() -> Self {
         ColorMode::Rgb
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PaletteRoles {
+    pub bg_primary: PaletteEntry,
+    pub bg_muted: PaletteEntry,
+    pub bg_focus: PaletteEntry,
+    pub fg_primary: PaletteEntry,
+    pub accent: PaletteEntry,
+}
+
+impl Default for PaletteRoles {
+    fn default() -> Self {
+        Self {
+            bg_primary: PaletteEntry::Rgb(0, 0, 0),
+            bg_muted: PaletteEntry::Rgb(17, 17, 17),
+            bg_focus: PaletteEntry::Rgb(0, 43, 54),
+            fg_primary: PaletteEntry::Rgb(224, 224, 224),
+            accent: PaletteEntry::Rgb(0, 188, 212),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum PaletteEntry {
+    /// Use a 0-15 palette index
+    Ansi(u8),
+    /// Use a 0-255 palette index
+    Palette256(u8),
+    /// Truecolor RGB
+    Rgb(u8, u8, u8),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ImagePolicy {
+    /// Downsample or approximate images in-place using block characters.
+    Degrade,
+    /// Omit images entirely when unsupported.
+    Omit,
 }

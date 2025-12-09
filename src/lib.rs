@@ -11,16 +11,18 @@ pub mod image;
 pub mod layout;
 pub mod render;
 pub mod scene;
+mod snapshot;
 mod styles;
 pub mod surface;
 
 pub use capabilities::TerminalCapabilities;
-pub use config::{ColorMode, Config, RenderingMode};
+pub use config::{ColorMode, Config, ImagePolicy, PaletteEntry, PaletteRoles, RenderingMode};
 pub use geometry::{Alignment, Rect};
 pub use hooks::EventData;
 pub use render::TuiContext;
 pub use scene::{CellMetrics, InlineImage, TerminalScene};
 pub use surface::Surface;
+pub use snapshot::{CellSnapshot, Snapshot};
 
 use std::any::Any;
 

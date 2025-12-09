@@ -219,6 +219,7 @@ pub(crate) async fn run_renderer(
         inline_images: false,
     });
     let mut last_surface: Option<Surface> = None;
+    let mut last_area: Option<Rect> = None;
 
     renderer.update();
 
@@ -248,7 +249,10 @@ pub(crate) async fn run_renderer(
                         break;
                     }
                     if let Some(root) = renderer.root_id() {
-                        for (target, name, data, bubbles) in event_from_crossterm(term_evt, root) {
+                        let viewport = last_area.unwrap_or_else(|| Rect::new(0, 0, 0, 0));
+                        for (target, name, data, bubbles) in
+                            event_from_crossterm(term_evt, root, viewport)
+                        {
                             let runtime_event = data.into_platform_event(bubbles);
                             renderer.handle_event(target, name, runtime_event, bubbles);
                         }
@@ -262,6 +266,7 @@ pub(crate) async fn run_renderer(
         if let Some(term) = &mut terminal {
             let (area, metrics) = terminal_size(term)?;
             let mut surface = Surface::new(area.width, area.height);
+            last_area = Some(area);
             let mut images = std::collections::VecDeque::new();
             if let Some(root) = renderer.layout_root(area) {
                 let mut scene = TerminalScene::new(
@@ -280,7 +285,14 @@ pub(crate) async fn run_renderer(
                 );
             }
             if !capabilities.inline_images && !images.is_empty() {
-                paint_image_fallback(&mut surface, &images, metrics);
+                match cfg.image_policy {
+                    crate::config::ImagePolicy::Degrade => {
+                        paint_image_fallback(&mut surface, &images, metrics);
+                    }
+                    crate::config::ImagePolicy::Omit => {
+                        // omit images entirely when unsupported
+                    }
+                }
             }
             flush_surface(
                 term,

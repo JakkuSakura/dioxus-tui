@@ -5,6 +5,7 @@ use crossterm::event::{
 };
 use dioxus_core::ElementId;
 use dioxus_html::geometry::{ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint};
+use crate::geometry::Rect;
 use dioxus_html::input_data::keyboard_types::{Code, Key, Location, Modifiers};
 use dioxus_html::input_data::{MouseButton, MouseButtonSet};
 use dioxus_html::point_interaction::SerializedPointInteraction;
@@ -65,6 +66,7 @@ fn to_button_set(btn: Option<MouseButton>) -> MouseButtonSet {
 pub fn event_from_crossterm(
     evt: TermEvent,
     target: ElementId,
+    viewport: Rect,
 ) -> Vec<(ElementId, &'static str, EventData, bool)> {
     match evt {
         TermEvent::Key(key) => {
@@ -81,10 +83,12 @@ pub fn event_from_crossterm(
             modifiers,
         }) => {
             let modifiers = map_modifiers(modifiers);
-            let screen = ScreenPoint::new(column.into(), row.into());
-            let client = ClientPoint::new(column.into(), row.into());
-            let element = ElementPoint::new(column.into(), row.into());
-            let page = PagePoint::new(column.into(), row.into());
+            let clamped_x = column.min(viewport.width.saturating_sub(1)).max(0) as i32;
+            let clamped_y = row.min(viewport.height.saturating_sub(1)).max(0) as i32;
+            let screen = ScreenPoint::new(clamped_x, clamped_y);
+            let client = ClientPoint::new(clamped_x, clamped_y);
+            let element = ElementPoint::new(clamped_x, clamped_y);
+            let page = PagePoint::new(clamped_x, clamped_y);
             let coords = Coordinates::new(screen, client, element, page);
 
             match kind {

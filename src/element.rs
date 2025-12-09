@@ -351,3 +351,40 @@ impl WriteMutations for DomWriter<'_> {
         self.dom.ensure_entity(id);
     }
 }
+
+/// Coordinate space of incoming display list items.
+#[derive(Debug, Clone, Copy)]
+pub enum DisplaySpace {
+    /// Logical pixels (CSS px) from Servo.
+    LogicalPx,
+}
+
+/// Rounding behavior when mapping display list coordinates to cells.
+#[derive(Debug, Clone, Copy)]
+pub enum Rounding {
+    /// Floor to the nearest cell boundary.
+    Floor,
+    /// Round to the nearest cell boundary.
+    Nearest,
+    /// Ceil to the nearest cell boundary.
+    Ceil,
+}
+
+/// Contract describing how to interpret Servo display items for terminal rendering.
+#[derive(Debug, Clone, Copy)]
+pub struct DisplayListContract {
+    pub space: DisplaySpace,
+    pub rounding: Rounding,
+    /// Whether the display list provides invalidation regions for diffing.
+    pub has_invalidation_regions: bool,
+}
+
+impl Default for DisplayListContract {
+    fn default() -> Self {
+        Self {
+            space: DisplaySpace::LogicalPx,
+            rounding: Rounding::Nearest,
+            has_invalidation_regions: false,
+        }
+    }
+}
