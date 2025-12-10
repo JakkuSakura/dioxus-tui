@@ -10,6 +10,7 @@ use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen,
 };
+use dioxus::prelude::{rsx, Element};
 use dioxus_core::{ElementId, Event, VirtualDom};
 use dioxus_html::PlatformEventData;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
@@ -24,13 +25,14 @@ use termwiz::{
 use tokio::select;
 
 use crate::capabilities::TerminalCapabilities;
-use crate::config::Config;
+use crate::config::{Config, RenderingMode};
 use crate::geometry::Rect;
 use crate::hooks::event_from_crossterm;
 use crate::image::emit_inline_images;
 use crate::layout::resolve_document;
 use crate::scene::{CellMetrics, TerminalScene};
 use crate::surface::Surface;
+use crate::{launch_blitz_gui, launch_blitz_gui_with_props};
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
     unbounded()
@@ -172,13 +174,22 @@ pub(crate) async fn run_renderer(
     mut raw_event_reciever: UnboundedReceiver<InputEvent>,
     event_tx: UnboundedSender<InputEvent>,
 ) -> Result<()> {
-    if cfg.rendering_mode == crate::config::RenderingMode::Debug {
-        renderer.update();
-        println!("-- dioxus-tui debug snapshot --");
-        return Ok(());
+    match cfg.rendering_mode {
+        RenderingMode::BlitzGui => {
+            render_blitz_gui(renderer).await;
+            return Ok(());
+        }
+        RenderingMode::Debug => {
+            renderer.update();
+            println!("-- dioxus-tui debug snapshot --");
+            return Ok(());
+        }
+        RenderingMode::Headless | RenderingMode::Visual => {}
     }
 
-    if cfg.rendering_mode != crate::config::RenderingMode::Headless {
+    let run_terminal = cfg.rendering_mode != RenderingMode::Headless;
+
+    if run_terminal {
         let tx = event_tx.clone();
         std::thread::spawn(move || {
             let tick_rate = cfg.tick_rate;
@@ -199,7 +210,7 @@ pub(crate) async fn run_renderer(
         });
     }
 
-    let mut terminal = (cfg.rendering_mode != crate::config::RenderingMode::Headless)
+    let mut terminal = run_terminal
         .then(|| -> Result<BufferedTerminal<SystemTerminal>> {
             enable_raw_mode().unwrap();
             execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture).unwrap();
@@ -455,4 +466,11 @@ fn paint_image_fallback(
             }
         }
     }
+}
+pub async fn render_blitz_gui(renderer: crate::render::DioxusRenderer) {
+    // Use launch_blitz_gui to render the same app in a GUI window.
+    // We cannot recover the original fn() -> Element from the VirtualDom, so we use a no-op placeholder.
+    // Ideally, callers would supply the app entrypoint when selecting BlitzGui mode.
+    let app: fn() -> Element = || rsx! { div { "Blitz GUI preview not wired to app" } };
+    crate::launch_blitz_gui(app).await;
 }
