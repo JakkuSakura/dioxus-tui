@@ -5,7 +5,7 @@
 pub mod capabilities;
 mod config;
 pub mod element;
-pub mod debug_png;
+pub mod gui;
 pub mod geometry;
 mod hooks;
 pub mod image;
@@ -13,10 +13,12 @@ pub mod layout;
 pub mod render;
 pub mod scene;
 pub mod surface;
+pub mod styles;
 
 pub use capabilities::TerminalCapabilities;
 pub use config::{ColorMode, Config, ImagePolicy, PaletteEntry, PaletteRoles, RenderingMode};
 pub use geometry::{Alignment, Rect};
+pub use gui::{launch_blitz_gui, launch_blitz_gui_with_props};
 pub use hooks::EventData;
 pub use render::TuiContext;
 pub use scene::{CellMetrics, InlineImage, TerminalScene};

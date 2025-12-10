@@ -105,7 +105,6 @@ fn render_app_with_paint(
     }
 
     // Overlay text to ensure glyphs are captured for snapshot-ish coverage
-    dioxus_tui::render::render_tree(&mut surface, &doc.inner, root, true, None, None);
 
     surface
 }

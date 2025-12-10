@@ -304,7 +304,7 @@ impl<'a> PaintScene for TerminalScene<'a> {
     fn draw_glyphs<'b, 's: 'b>(
         &'s mut self,
         _font: &'b FontData,
-        font_size: f32,
+        _font_size: f32,
         _hint: bool,
         _normalized_coords: &'b [anyrender::types::NormalizedCoord],
         _style: impl Into<StyleRef<'b>>,
