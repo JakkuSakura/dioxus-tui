@@ -5,7 +5,6 @@ use dioxus_tui::TuiContext;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::runtime::Builder;
 
 /// The tui renderer will look for any event that has occured or any future that has resolved in a loop.
 /// It will resolve at most one event per loop.
@@ -30,13 +29,7 @@ impl Future for PollN {
 }
 
 fn run_launch(app: fn() -> Element, cfg: dioxus_tui::Config) {
-    Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(async move {
-            dioxus_tui::launch_cfg(app, cfg).await;
-        });
+    let _ = dioxus_tui::launch_cfg(app, cfg);
 }
 
 #[test]

@@ -2,9 +2,8 @@ use dioxus::prelude::*;
 
 const TABS: [&str; 3] = ["Status", "Logs", "Settings"];
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-    dioxus_tui::launch(app).await;
+fn main() {
+    dioxus_tui::launch(app).unwrap();
 }
 
 fn app() -> Element {

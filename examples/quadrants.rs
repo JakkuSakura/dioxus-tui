@@ -1,8 +1,7 @@
 use dioxus::prelude::*;
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-    dioxus_tui::launch_cfg(app, Default::default()).await;
+fn main() {
+    dioxus_tui::launch_cfg(app, Default::default()).unwrap();
 }
 
 #[component]

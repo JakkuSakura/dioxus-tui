@@ -10,12 +10,12 @@ use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use dioxus::prelude::{rsx, Element};
-use dioxus_core::{ElementId, Event, VirtualDom};
+use dioxus_core::{ComponentFunction, ElementId, Event, VirtualDom};
 use dioxus_html::PlatformEventData;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use futures::{pin_mut, StreamExt};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use unicode_width::UnicodeWidthChar;
 use termwiz::{
     caps::Capabilities,
     color::ColorAttribute,
@@ -29,10 +29,10 @@ use crate::config::{Config, RenderingMode};
 use crate::geometry::Rect;
 use crate::hooks::event_from_crossterm;
 use crate::image::emit_inline_images;
-use crate::layout::resolve_document;
+use crate::layout::{node_rect, resolve_document};
 use crate::scene::{CellMetrics, TerminalScene};
 use crate::surface::Surface;
-use crate::{launch_blitz_gui, launch_blitz_gui_with_props};
+use crate::RawVirtualDom;
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
     unbounded()
@@ -168,25 +168,30 @@ impl DioxusRenderer {
     }
 }
 
-pub(crate) async fn run_renderer(
+pub(crate) async fn run_renderer<P, F>(cfg: Config, raw: RawVirtualDom<P, F>) -> Result<()>
+where
+    P: Clone + 'static,
+    F: ComponentFunction<P, ()> + 'static,
+{
+    let vdom = raw.into_virtual_dom();
+    let (renderer, event_tx, event_rx) = DioxusRenderer::new(vdom);
+
+    if cfg.rendering_mode == RenderingMode::Debug {
+        let mut renderer = renderer;
+        renderer.update();
+        println!("-- dioxus-tui debug snapshot --");
+        return Ok(());
+    }
+
+    run_tui_renderer(cfg, renderer, event_rx, event_tx).await
+}
+
+async fn run_tui_renderer(
     cfg: Config,
     mut renderer: DioxusRenderer,
     mut raw_event_reciever: UnboundedReceiver<InputEvent>,
     event_tx: UnboundedSender<InputEvent>,
 ) -> Result<()> {
-    match cfg.rendering_mode {
-        RenderingMode::BlitzGui => {
-            render_blitz_gui(renderer).await;
-            return Ok(());
-        }
-        RenderingMode::Debug => {
-            renderer.update();
-            println!("-- dioxus-tui debug snapshot --");
-            return Ok(());
-        }
-        RenderingMode::Headless | RenderingMode::Visual => {}
-    }
-
     let run_terminal = cfg.rendering_mode != RenderingMode::Headless;
 
     if run_terminal {
@@ -256,6 +261,7 @@ pub(crate) async fn run_renderer(
                     }
                     if let Some(root) = renderer.root_id() {
                         let viewport = last_area.unwrap_or_else(|| Rect::new(0, 0, 0, 0));
+
                         for (target, name, data, bubbles) in
                             event_from_crossterm(term_evt, root, viewport)
                         {
@@ -300,6 +306,7 @@ pub(crate) async fn run_renderer(
                     }
                 }
             }
+            overlay_text_nodes(&renderer.doc, area, &mut surface, metrics);
             flush_surface(
                 term,
                 &surface,
@@ -439,6 +446,60 @@ fn flush_surface(
     Ok(())
 }
 
+pub fn overlay_text_nodes(
+    doc: &DioxusDocument,
+    area: Rect,
+    surface: &mut Surface,
+    metrics: CellMetrics,
+) {
+    use blitz_dom::node::NodeData;
+
+    let mut stack = vec![doc.inner.root_node().id];
+    while let Some(id) = stack.pop() {
+        if let Some(node) = doc.inner.get_node(id) {
+            if let NodeData::Text(text) = &node.data {
+                let rect = node_rect(node, area);
+                write_text(surface, rect.x, rect.y, &text.content, metrics);
+            }
+
+            if let Some(children) = node.paint_children.borrow().as_ref() {
+                stack.extend(children.iter().rev());
+            } else {
+                stack.extend(node.children.iter().rev());
+            }
+        }
+    }
+}
+
+fn write_text(surface: &mut Surface, x: u16, y: u16, text: &str, _metrics: CellMetrics) {
+    let width = surface.width() as usize;
+    let height = surface.height() as usize;
+    if y as usize >= height {
+        return;
+    }
+    let mut col = x as usize;
+    for ch in text.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1).max(1);
+        if col >= width {
+            break;
+        }
+        let idx = y as usize * width + col;
+        if let Some(slot) = surface.content.get_mut(idx) {
+            slot.ch = ch;
+        }
+        for extra in 1..ch_width {
+            if col + extra >= width {
+                break;
+            }
+            let idx = y as usize * width + col + extra;
+            if let Some(slot) = surface.content.get_mut(idx) {
+                slot.ch = ' ';
+            }
+        }
+        col = col.saturating_add(ch_width);
+    }
+}
+
 fn paint_image_fallback(
     surface: &mut Surface,
     images: &std::collections::VecDeque<crate::scene::InlineImage>,
@@ -466,11 +527,4 @@ fn paint_image_fallback(
             }
         }
     }
-}
-pub async fn render_blitz_gui(renderer: crate::render::DioxusRenderer) {
-    // Use launch_blitz_gui to render the same app in a GUI window.
-    // We cannot recover the original fn() -> Element from the VirtualDom, so we use a no-op placeholder.
-    // Ideally, callers would supply the app entrypoint when selecting BlitzGui mode.
-    let app: fn() -> Element = || rsx! { div { "Blitz GUI preview not wired to app" } };
-    crate::launch_blitz_gui(app).await;
 }

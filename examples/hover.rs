@@ -4,9 +4,8 @@ use std::convert::TryInto;
 use std::fmt::Write;
 use std::rc::Rc;
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-    dioxus_tui::launch(app).await;
+fn main() {
+    dioxus_tui::launch(app).unwrap();
 }
 
 fn app() -> Element {

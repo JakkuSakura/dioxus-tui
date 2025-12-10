@@ -1,17 +1,16 @@
+use std::any::Any;
+
 use dioxus::prelude::*;
-use dioxus_tui::{Config, TuiContext};
+use dioxus_tui::{launch, Config, RenderingMode, TuiContext};
 
 /// This benchmarks the cache performance of the TUI for small edits by changing one box at a time.
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
+fn main() {
     for size in 1..=20usize {
         for _ in 0..10 {
-            let dom = VirtualDom::new(app).with_root_context(size);
-            dioxus_tui::launch_vdom_cfg(
-                dom,
-                Config::default().with_rendering_mode(dioxus_tui::RenderingMode::Headless),
-            )
-            .await;
+            let cfg = Config::default().with_rendering_mode(RenderingMode::Headless);
+            let contexts: Vec<Box<dyn Fn() -> Box<dyn Any> + Send + Sync>> =
+                vec![Box::new(move || Box::new(size) as Box<dyn Any>)];
+            launch::launch(app, contexts, cfg).unwrap();
         }
     }
 }

@@ -10,6 +10,11 @@ html, body, main, div, p, h1, h2, h3, h4, h5, h6, ul, ol, li {
     padding: 0;
 }
 
+html, body {
+    width: 100%;
+    height: 100%;
+}
+
 body, html, main, div, p, li {
     display: block;
 }
@@ -28,6 +33,8 @@ pub fn resolve_document(doc: &mut DioxusDocument, area: UiRect) -> Option<usize>
     // Ensure UA stylesheet is present for consistent defaults.
     doc.inner.add_user_agent_stylesheet(TUI_UA_CSS);
 
+    let root_id = doc.inner.root_node().id;
+
     let viewport = Viewport::new(
         area.width.into(),
         area.height.into(),
@@ -37,7 +44,15 @@ pub fn resolve_document(doc: &mut DioxusDocument, area: UiRect) -> Option<usize>
     doc.inner.set_viewport(viewport);
     doc.inner.resolve(0.0);
 
-    let root_id = doc.inner.root_node().id;
+    if let Some(root) = doc.inner.get_node_mut(root_id) {
+        let layout = &mut root.final_layout;
+        if layout.size.width <= 1.0 {
+            layout.size.width = area.width as f32;
+        }
+        if layout.size.height <= 1.0 {
+            layout.size.height = area.height as f32;
+        }
+    }
     doc.inner.get_node(root_id).map(|_| root_id)
 }
 

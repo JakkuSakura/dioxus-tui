@@ -1,14 +1,13 @@
 use dioxus::prelude::*;
 use dioxus_tui::{Config, RenderingMode};
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
+fn main() {
     // Debug mode prints the computed layout to stdout (no terminal UI required).
     dioxus_tui::launch_cfg(
         app,
         Config::default().with_rendering_mode(RenderingMode::BlitzGui),
     )
-    .await;
+    .unwrap();
 }
 
 fn app() -> Element {

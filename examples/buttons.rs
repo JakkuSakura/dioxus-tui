@@ -1,9 +1,8 @@
 use dioxus::prelude::*;
 use dioxus_html::input_data::keyboard_types::Code;
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-    dioxus_tui::launch(app).await;
+fn main() {
+    dioxus_tui::launch(app).unwrap();
 }
 
 #[component]
