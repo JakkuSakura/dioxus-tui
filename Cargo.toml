@@ -38,6 +38,7 @@ kurbo = "0.12"
 ttf-parser = "0.19"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "ansi"] }
+thiserror = "1"
 
 [dev-dependencies]
 dioxus = { version = "0.7.1" }

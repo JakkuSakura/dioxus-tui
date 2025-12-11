@@ -1,6 +1,6 @@
 use std::{any::Any, pin::Pin, rc::Rc};
 
-use anyhow::Result;
+use crate::error::{Error, Result};
 use blitz_dom::Document;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use crossterm::event::{
@@ -347,11 +347,10 @@ fn terminal_size(term: &mut BufferedTerminal<SystemTerminal>) -> Result<(Rect, C
         xpixel,
         ypixel,
     } = term.terminal().get_screen_size()?;
-    let (cell_w_px, cell_h_px) = if xpixel > 0 && ypixel > 0 {
-        (xpixel as f32 / cols as f32, ypixel as f32 / rows as f32)
-    } else {
-        (1.0, 1.0)
-    };
+    if xpixel == 0 || ypixel == 0 {
+        return Err(Error::TerminalPixelsUnavailable { xpixel, ypixel });
+    }
+    let (cell_w_px, cell_h_px) = (xpixel as f32 / cols as f32, ypixel as f32 / rows as f32);
     Ok((
         Rect::new(0, 0, cols as u16, rows as u16),
         CellMetrics {

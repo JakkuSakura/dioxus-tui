@@ -402,12 +402,12 @@ impl<'a> PaintScene for TerminalScene<'a> {
         let glyphs_vec: Vec<anyrender::types::Glyph> = glyphs.collect();
         for glyph in glyphs_vec.iter() {
             let p = transform * Point::new(glyph.x as f64, glyph.y as f64);
-            let chars = glyph_id_to_chars(_font, glyph.id);
-            for (idx, ch) in chars.into_iter().enumerate() {
-                let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1).max(1) as u16;
-                let cell_x = ((p.x / self.metrics.cell_w_px as f64).round() as i32)
-                    .saturating_add(idx as i32);
-                let cell_y = (p.y / self.metrics.cell_h_px as f64).round() as i32;
+                let chars = glyph_id_to_chars(_font, glyph.id);
+                for (idx, ch) in chars.into_iter().enumerate() {
+                    let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1).max(1) as u16;
+                    let cell_x = ((p.x / self.metrics.cell_w_px as f64).floor() as i32)
+                        .saturating_add(idx as i32);
+                    let cell_y = (p.y / self.metrics.cell_h_px as f64).floor() as i32;
                 info!(
                     "draw_glyph id={} ch='{}' px=({:.2},{:.2}) cell=({}, {}) fg={:?}",
                     glyph.id,

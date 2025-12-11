@@ -5,18 +5,20 @@
 pub mod capabilities;
 mod config;
 pub mod element;
+pub mod error;
 pub mod geometry;
 mod hooks;
 pub mod image;
 pub mod layout;
+pub mod log;
 pub mod render;
 pub mod scene;
 pub mod styles;
 pub mod surface;
-pub mod log;
 
 pub use capabilities::TerminalCapabilities;
 pub use config::{ColorMode, Config, ImagePolicy, PaletteEntry, PaletteRoles, RenderingMode};
+pub use error::Error;
 pub use geometry::{Alignment, Rect};
 pub use hooks::EventData;
 pub use render::TuiContext;
@@ -26,8 +28,8 @@ pub use surface::Surface;
 use std::any::Any;
 
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
-use tokio::runtime::Builder as RuntimeBuilder;
 use render::run_renderer;
+use tokio::runtime::Builder as RuntimeBuilder;
 
 pub mod launch {
     use super::*;
@@ -62,7 +64,10 @@ pub fn launch_cfg_with_props<P: Clone + Send + Sync + 'static>(
     launch_raw(raw, cfg)
 }
 
-pub fn launch_raw<P: Clone + 'static, F>(raw: RawVirtualDom<P, F>, cfg: Config) -> anyhow::Result<()>
+pub fn launch_raw<P: Clone + 'static, F>(
+    raw: RawVirtualDom<P, F>,
+    cfg: Config,
+) -> anyhow::Result<()>
 where
     F: ComponentFunction<P, ()> + 'static,
 {
@@ -70,9 +75,7 @@ where
         return launch_blitz_gui_with_props(raw);
     }
 
-    let rt = RuntimeBuilder::new_current_thread()
-        .enable_all()
-        .build()?;
+    let rt = RuntimeBuilder::new_current_thread().enable_all().build()?;
     rt.block_on(run_renderer(cfg, raw))?;
     Ok(())
 }

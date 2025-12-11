@@ -1,5 +1,4 @@
 use std::fs::OpenOptions;
-use std::sync::OnceLock;
 
 use tracing_subscriber::fmt::writer::MakeWriterExt;
 
