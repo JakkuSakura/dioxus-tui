@@ -6,7 +6,6 @@ use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use termwiz::color::ColorAttribute;
 
 use dioxus_tui::layout::resolve_document;
-use dioxus_tui::render::overlay_text_nodes;
 use dioxus_tui::{CellMetrics, ColorMode, Rect, Surface, TerminalScene};
 
 fn render_component(root: fn() -> Element, width: u16, height: u16) -> Surface {
@@ -47,8 +46,6 @@ fn render_component(root: fn() -> Element, width: u16, height: u16) -> Surface {
             doc.inner.viewport().window_size.1,
         );
     }
-
-    overlay_text_nodes(&doc, area, &mut surface, metrics);
 
     surface
 }

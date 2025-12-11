@@ -15,7 +15,6 @@ use dioxus_html::PlatformEventData;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use futures::{pin_mut, StreamExt};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use unicode_width::UnicodeWidthChar;
 use termwiz::{
     caps::Capabilities,
     color::ColorAttribute,
@@ -29,7 +28,7 @@ use crate::config::{Config, RenderingMode};
 use crate::geometry::Rect;
 use crate::hooks::event_from_crossterm;
 use crate::image::emit_inline_images;
-use crate::layout::{node_rect, resolve_document};
+use crate::layout::resolve_document;
 use crate::scene::{CellMetrics, TerminalScene};
 use crate::surface::Surface;
 use crate::RawVirtualDom;
@@ -306,7 +305,6 @@ async fn run_tui_renderer(
                     }
                 }
             }
-            overlay_text_nodes(&renderer.doc, area, &mut surface, metrics);
             flush_surface(
                 term,
                 &surface,
@@ -444,60 +442,6 @@ fn flush_surface(
     }
     term.flush()?;
     Ok(())
-}
-
-pub fn overlay_text_nodes(
-    doc: &DioxusDocument,
-    area: Rect,
-    surface: &mut Surface,
-    metrics: CellMetrics,
-) {
-    use blitz_dom::node::NodeData;
-
-    let mut stack = vec![doc.inner.root_node().id];
-    while let Some(id) = stack.pop() {
-        if let Some(node) = doc.inner.get_node(id) {
-            if let NodeData::Text(text) = &node.data {
-                let rect = node_rect(node, area);
-                write_text(surface, rect.x, rect.y, &text.content, metrics);
-            }
-
-            if let Some(children) = node.paint_children.borrow().as_ref() {
-                stack.extend(children.iter().rev());
-            } else {
-                stack.extend(node.children.iter().rev());
-            }
-        }
-    }
-}
-
-fn write_text(surface: &mut Surface, x: u16, y: u16, text: &str, _metrics: CellMetrics) {
-    let width = surface.width() as usize;
-    let height = surface.height() as usize;
-    if y as usize >= height {
-        return;
-    }
-    let mut col = x as usize;
-    for ch in text.chars() {
-        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1).max(1);
-        if col >= width {
-            break;
-        }
-        let idx = y as usize * width + col;
-        if let Some(slot) = surface.content.get_mut(idx) {
-            slot.ch = ch;
-        }
-        for extra in 1..ch_width {
-            if col + extra >= width {
-                break;
-            }
-            let idx = y as usize * width + col + extra;
-            if let Some(slot) = surface.content.get_mut(idx) {
-                slot.ch = ' ';
-            }
-        }
-        col = col.saturating_add(ch_width);
-    }
 }
 
 fn paint_image_fallback(

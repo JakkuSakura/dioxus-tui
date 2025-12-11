@@ -5,7 +5,7 @@ fn main() {
     // Debug mode prints the computed layout to stdout (no terminal UI required).
     dioxus_tui::launch_cfg(
         app,
-        Config::default().with_rendering_mode(RenderingMode::BlitzGui),
+        Config::default().with_rendering_mode(RenderingMode::Visual),
     )
     .unwrap();
 }
