@@ -32,6 +32,7 @@ use crate::layout::resolve_document;
 use crate::scene::{CellMetrics, TerminalScene};
 use crate::surface::Surface;
 use crate::RawVirtualDom;
+use tracing::debug;
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
     unbounded()
@@ -294,6 +295,17 @@ async fn run_tui_renderer(
                     renderer.doc.inner.viewport().window_size.0,
                     renderer.doc.inner.viewport().window_size.1,
                 );
+            }
+            // Debug: dump first few lines of the surface for tracing.
+            if cfg!(debug_assertions) {
+                let width = surface.width() as usize;
+                let dump: Vec<String> = surface
+                    .content
+                    .chunks(width)
+                    .take(5)
+                    .map(|row| row.iter().map(|c| c.ch).collect())
+                    .collect();
+                debug!(?dump, "surface_dump");
             }
             if !capabilities.inline_images && !images.is_empty() {
                 match cfg.image_policy {

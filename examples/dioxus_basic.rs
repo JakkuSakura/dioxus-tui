@@ -1,7 +1,9 @@
 use dioxus::prelude::*;
+use dioxus_tui::log::log_to_file;
 use dioxus_tui::{Config, RenderingMode};
 
 fn main() {
+    log_to_file();
     // Debug mode prints the computed layout to stdout (no terminal UI required).
     dioxus_tui::launch_cfg(
         app,

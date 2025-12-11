@@ -13,6 +13,7 @@ pub mod render;
 pub mod scene;
 pub mod styles;
 pub mod surface;
+pub mod log;
 
 pub use capabilities::TerminalCapabilities;
 pub use config::{ColorMode, Config, ImagePolicy, PaletteEntry, PaletteRoles, RenderingMode};

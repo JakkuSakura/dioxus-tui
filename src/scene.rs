@@ -5,13 +5,12 @@ use kurbo::{Affine, Point, Rect as KRect, Shape, Stroke};
 use peniko::{color::Rgba8, BlendMode, Color, Fill, FontData, ImageBrushRef, StyleRef};
 use unicode_width::UnicodeWidthChar;
 use ttf_parser::{Face, GlyphId};
+use tracing::info;
 
 use crate::config::ColorMode;
 use crate::geometry::Rect;
 use crate::surface::Surface;
 use termwiz::color::{ColorAttribute, SrgbaTuple};
-use std::fs::OpenOptions;
-use std::io::Write;
 
 #[derive(Debug, Clone, Copy)]
 pub struct CellMetrics {
@@ -196,16 +195,6 @@ impl<'a> TerminalScene<'a> {
         )
     }
 
-    fn log_debug(op: &str) {
-        if let Ok(mut f) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("debug.log")
-        {
-            let _ = writeln!(f, "{op}");
-        }
-    }
-
     fn transform_bbox(shape: &impl Shape, transform: Affine) -> Rect {
         let bbox = shape.bounding_box();
         let corners = [
@@ -334,10 +323,7 @@ impl<'a> PaintScene for TerminalScene<'a> {
             return;
         }
         // Paint borders as colored background to avoid glyph fallback issues.
-        Self::log_debug(&format!(
-            "stroke bbox=({},{}) size=({},{})",
-            bbox.x, bbox.y, bbox.width, bbox.height
-        ));
+        info!("stroke bbox=({},{}) size=({},{})", bbox.x, bbox.y, bbox.width, bbox.height);
         self.paint_rect(' ', x0, y0, w, self.metrics.cell_h_px, None, fg);
         if h > 0.0 {
             self.paint_rect(' ', x0, y0 + h, w, self.metrics.cell_h_px, None, fg);
@@ -392,10 +378,7 @@ impl<'a> PaintScene for TerminalScene<'a> {
             PaintRef::Image(img) => self.push_image(img, x_px, y_px),
             PaintRef::Custom(_) => {}
         }
-        Self::log_debug(&format!(
-            "fill bbox=({},{}) size=({},{}) bg={:?}",
-            bbox.x, bbox.y, bbox.width, bbox.height, logged_bg
-        ));
+        info!("fill bbox=({},{}) size=({},{}) bg={:?}", bbox.x, bbox.y, bbox.width, bbox.height, logged_bg);
     }
 
     fn draw_glyphs<'b, 's: 'b>(
@@ -417,8 +400,6 @@ impl<'a> PaintScene for TerminalScene<'a> {
         };
 
         let glyphs_vec: Vec<anyrender::types::Glyph> = glyphs.collect();
-        let mut glyph_logs = Vec::with_capacity(glyphs_vec.len());
-
         for glyph in glyphs_vec.iter() {
             let p = transform * Point::new(glyph.x as f64, glyph.y as f64);
             let chars = glyph_id_to_chars(_font, glyph.id);
@@ -427,10 +408,16 @@ impl<'a> PaintScene for TerminalScene<'a> {
                 let cell_x = ((p.x / self.metrics.cell_w_px as f64).round() as i32)
                     .saturating_add(idx as i32);
                 let cell_y = (p.y / self.metrics.cell_h_px as f64).round() as i32;
-                glyph_logs.push(format!(
-                    "id={} ch='{}' px=({:.2},{:.2}) cell=({}, {})",
-                    glyph.id, ch, p.x, p.y, cell_x, cell_y
-                ));
+                info!(
+                    "draw_glyph id={} ch='{}' px=({:.2},{:.2}) cell=({}, {}) fg={:?}",
+                    glyph.id,
+                    ch,
+                    p.x,
+                    p.y,
+                    cell_x,
+                    cell_y,
+                    fg
+                );
                 if cell_x < 0 || cell_y < 0 {
                     continue;
                 }
@@ -451,13 +438,6 @@ impl<'a> PaintScene for TerminalScene<'a> {
                 }
             }
         }
-
-        Self::log_debug(&format!(
-            "draw_glyphs count={} fg={:?} details=[{}]",
-            glyph_logs.len(),
-            fg,
-            glyph_logs.join("; ")
-        ));
     }
 
     fn draw_box_shadow(
