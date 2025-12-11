@@ -185,6 +185,46 @@ impl<'a> TerminalScene<'a> {
             }
         })
     }
+
+    fn transform_bbox(shape: &impl Shape, transform: Affine) -> Rect {
+        let bbox = shape.bounding_box();
+        let corners = [
+            (bbox.x0, bbox.y0),
+            (bbox.x1, bbox.y0),
+            (bbox.x0, bbox.y1),
+            (bbox.x1, bbox.y1),
+        ];
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        for (x, y) in corners {
+            let p = transform * Point::new(x, y);
+            min_x = min_x.min(p.x);
+            min_y = min_y.min(p.y);
+            max_x = max_x.max(p.x);
+            max_y = max_y.max(p.y);
+        }
+        let x = min_x.max(0.0).floor() as u16;
+        let y = min_y.max(0.0).floor() as u16;
+        let w = (max_x - min_x).ceil().max(0.0) as u16;
+        let h = (max_y - min_y).ceil().max(0.0) as u16;
+        Rect::new(x, y, w, h)
+    }
+
+    fn color_from_paint(&self, paint: PaintRef<'_>) -> Option<ColorAttribute> {
+        let color = match paint {
+            PaintRef::Solid(c) => Some(c),
+            PaintRef::Gradient(g) => g
+                .stops
+                .0
+                .first()
+                .map(|stop| stop.color.to_alpha_color::<peniko::color::Srgb>()),
+            PaintRef::Image(_) => None,
+            PaintRef::Custom(_) => None,
+        }?;
+        self.to_color_attr(color)
+    }
 }
 
 fn glyph_id_to_char(font: &FontData, glyph_id: u32) -> Option<char> {
@@ -240,15 +280,16 @@ impl<'a> PaintScene for TerminalScene<'a> {
         &mut self,
         _blend: impl Into<BlendMode>,
         _alpha: f32,
-        _transform: Affine,
+        transform: Affine,
         clip: &impl Shape,
     ) {
-        let bbox = clip.bounding_box();
-        let x = bbox.x0.max(0.0) as u16;
-        let y = bbox.y0.max(0.0) as u16;
-        let w = bbox.width().ceil().max(0.0) as u16;
-        let h = bbox.height().ceil().max(0.0) as u16;
-        self.clip_stack.push(Rect::new(x, y, w, h));
+        let rect = Self::transform_bbox(clip, transform);
+        self.clip_stack.push(rect);
+    }
+
+    fn push_clip_layer(&mut self, transform: Affine, clip: &impl Shape) {
+        let rect = Self::transform_bbox(clip, transform);
+        self.clip_stack.push(rect);
     }
 
     fn pop_layer(&mut self) {
@@ -258,20 +299,23 @@ impl<'a> PaintScene for TerminalScene<'a> {
     fn stroke<'b>(
         &mut self,
         _style: &Stroke,
-        _transform: Affine,
-        _brush: impl Into<PaintRef<'b>>,
+        transform: Affine,
+        brush: impl Into<PaintRef<'b>>,
         _brush_transform: Option<Affine>,
-        _shape: &impl Shape,
+        shape: &impl Shape,
     ) {
-        let bbox = _shape.bounding_box();
-        let x0 = bbox.x0 as f32;
-        let y0 = bbox.y0 as f32;
-        let w = bbox.width() as f32;
-        let h = bbox.height() as f32;
-        self.paint_rect('▓', x0, y0, w, self.metrics.cell_h_px, None, None);
-        self.paint_rect('▓', x0, y0 + h, w, self.metrics.cell_h_px, None, None);
-        self.paint_rect('▓', x0, y0, self.metrics.cell_w_px, h, None, None);
-        self.paint_rect('▓', x0 + w, y0, self.metrics.cell_w_px, h, None, None);
+        let bbox = Self::transform_bbox(shape, transform);
+        let fg = self.color_from_paint(brush.into());
+        let x0 = bbox.x as f32;
+        let y0 = bbox.y as f32;
+        let w = bbox.width as f32;
+        let h = bbox.height as f32;
+        self.paint_rect('▓', x0, y0, w, self.metrics.cell_h_px, fg, None);
+        if h > 0.0 {
+            self.paint_rect('▓', x0, y0 + h, w, self.metrics.cell_h_px, fg, None);
+        }
+        self.paint_rect('▓', x0, y0, self.metrics.cell_w_px, h + self.metrics.cell_h_px, fg, None);
+        self.paint_rect('▓', x0 + w, y0, self.metrics.cell_w_px, h + self.metrics.cell_h_px, fg, None);
     }
 
     fn fill<'b>(
@@ -282,22 +326,32 @@ impl<'a> PaintScene for TerminalScene<'a> {
         _brush_transform: Option<Affine>,
         shape: &impl Shape,
     ) {
-        let bbox = shape.bounding_box();
-        let (x_px, y_px) = {
-            let p = transform * Point::new(bbox.x0, bbox.y0);
-            (p.x as f32, p.y as f32)
-        };
+        let bbox = Self::transform_bbox(shape, transform);
+        let x_px = bbox.x as f32;
+        let y_px = bbox.y as f32;
+        let w_px = bbox.width as f32;
+        let h_px = bbox.height as f32;
         match brush.into() {
             PaintRef::Solid(c) => {
                 let bg = self.to_color_attr(c);
-                let w_px = bbox.width() as f32;
-                let h_px = bbox.height() as f32;
                 if w_px > 0.0 && h_px > 0.0 {
                     self.paint_rect(' ', x_px, y_px, w_px, h_px, None, bg);
                 }
             }
+            PaintRef::Gradient(g) => {
+                if let Some(bg) = g
+                    .stops
+                    .0
+                    .first()
+                    .and_then(|stop| self.to_color_attr(stop.color.to_alpha_color()))
+                {
+                    if w_px > 0.0 && h_px > 0.0 {
+                        self.paint_rect(' ', x_px, y_px, w_px, h_px, None, Some(bg));
+                    }
+                }
+            }
             PaintRef::Image(img) => self.push_image(img, x_px, y_px),
-            _ => {}
+            PaintRef::Custom(_) => {}
         }
     }
 
