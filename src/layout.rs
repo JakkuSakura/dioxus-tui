@@ -1,37 +1,12 @@
 use crate::geometry::{Alignment, Rect as UiRect};
+use crate::styles::DEFAULT_TUI_CSS;
 use blitz_dom::{BaseDocument, Node};
 use blitz_traits::shell::Viewport;
 use dioxus_native_dom::DioxusDocument;
 
-// Minimal UA overrides for TUI rendering (aligns with Design.md default CSS roles).
-const TUI_UA_CSS: &str = r#"
-html, body, main, div, p, h1, h2, h3, h4, h5, h6, ul, ol, li {
-    margin: 0;
-    padding: 0;
-}
-
-html, body {
-    width: 100%;
-    height: 100%;
-}
-
-body, html, main, div, p, li {
-    display: block;
-}
-
-h1, h2, h3, h4, h5, h6 {
-    font-size: 1em;
-    font-weight: bold;
-}
-
-ul { list-style-type: disc; padding-left: 1ch; }
-ol { list-style-type: decimal; padding-left: 2ch; }
-li { list-style-position: outside; }
-"#;
-
 pub fn resolve_document(doc: &mut DioxusDocument, area: UiRect) -> Option<usize> {
     // Ensure UA stylesheet is present for consistent defaults.
-    doc.inner.add_user_agent_stylesheet(TUI_UA_CSS);
+    doc.inner.add_user_agent_stylesheet(DEFAULT_TUI_CSS);
 
     let root_id = doc.inner.root_node().id;
 
