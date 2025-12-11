@@ -14,14 +14,12 @@ fn main() {
 
 fn app() -> Element {
     rsx! {
-        div { direction: "column",
-            h1 { "Termwiz demo" }
-            p { "This is a simple termwiz layout without Dioxus." }
-            ul {
-                li { "List item one" }
-                li { "List item two" }
-            }
-            p { "Press Ctrl+C to exit." }
+        div {
+            h1 { "Dioxus demo" }
+            div { "This is a simple Dioxus demo." }
+            div { "List item one" }
+            div { "List item two" }
+            div { "Press Ctrl+C to exit." }
         }
     }
 }

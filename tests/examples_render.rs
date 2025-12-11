@@ -4,7 +4,7 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus::prelude::*;
 use dioxus_core::VirtualDom;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
-use dioxus_tui::{CellMetrics, ColorMode, Rect, Surface, TerminalScene};
+use dioxus_tui::{layout, CellMetrics, ColorMode, Rect, Surface, TerminalScene};
 
 macro_rules! import_example {
     ($mod_name:ident, $path:literal) => {
@@ -157,6 +157,64 @@ fn all_examples_render_non_empty() {
         assert!(
             has_bg || has_fg || has_text,
             "example `{name}` rendered empty"
+        );
+    }
+}
+
+#[test]
+fn dioxus_basic_renders_all_text() {
+    let app = dioxus_basic_example::make_app;
+    let width = 80;
+    let height = 40;
+
+    let vdom = VirtualDom::new(app);
+    let viewport = Viewport::new(width.into(), height.into(), 1.0, ColorScheme::Light);
+    let mut doc = DioxusDocument::new(
+        vdom,
+        DocumentConfig {
+            viewport: Some(viewport),
+            ..Default::default()
+        },
+    );
+    doc.initial_build();
+    let root = layout::resolve_document(&mut doc, Rect::new(0, 0, width, height))
+        .expect("main root should exist after layout");
+
+    // Debug: layout tree dump
+    layout::print_layout(&doc.inner, root, 0, Rect::new(0, 0, width, height));
+
+    let mut surface = Surface::new(width, height);
+    let mut images = VecDeque::new();
+    let metrics = CellMetrics {
+        cell_w_px: 1.0,
+        cell_h_px: 1.0,
+    };
+
+    {
+        let mut scene = TerminalScene::new(&mut surface, &mut images, metrics, ColorMode::Rgb, true);
+        blitz::paint::paint_scene(
+            &mut scene,
+            &doc.inner,
+            doc.inner.viewport().scale_f64(),
+            doc.inner.viewport().window_size.0,
+            doc.inner.viewport().window_size.1,
+        );
+    }
+
+    let text: String = surface.content.iter().map(|c| c.ch).collect();
+
+    println!("preview: {} chars\n{}", text.len(), text.chars().take(400).collect::<String>());
+
+    for expected in [
+        "Termwiz demo",
+        "This is a simple termwiz layout without Dioxus.",
+        "List item one",
+        "List item two",
+        "Press Ctrl+C to exit.",
+    ] {
+        assert!(
+            text.contains(expected),
+            "dioxus_basic missing expected text: {expected}"
         );
     }
 }
