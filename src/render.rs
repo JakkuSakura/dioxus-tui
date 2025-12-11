@@ -3,13 +3,6 @@ use std::{any::Any, pin::Pin, rc::Rc};
 use crate::error::{Error, Result};
 use blitz_dom::Document;
 use blitz_traits::shell::{ColorScheme, Viewport};
-use crossterm::event::{
-    DisableMouseCapture, EnableMouseCapture, Event as TermEvent, KeyCode, KeyModifiers,
-};
-use crossterm::execute;
-use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen,
-};
 use dioxus_core::{ComponentFunction, ElementId, Event, VirtualDom};
 use dioxus_html::PlatformEventData;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
@@ -19,14 +12,16 @@ use termwiz::{
     caps::Capabilities,
     color::ColorAttribute,
     surface::{Change, Position},
-    terminal::{buffered::BufferedTerminal, ScreenSize, SystemTerminal, Terminal},
+    terminal::{buffered::BufferedTerminal, ScreenSize, Terminal},
 };
 use tokio::select;
+use termwiz::input::{InputEvent as TzInputEvent, KeyCode, Modifiers as TzModifiers};
+use termwiz::terminal::new_terminal;
 
 use crate::capabilities::TerminalCapabilities;
 use crate::config::{Config, RenderingMode};
 use crate::geometry::Rect;
-use crate::hooks::event_from_crossterm;
+use crate::hooks::event_from_termwiz;
 use crate::image::emit_inline_images;
 use crate::layout::resolve_document;
 use crate::scene::{CellMetrics, TerminalScene};
@@ -52,14 +47,14 @@ impl TuiContext {
         let _ = self.tx.unbounded_send(InputEvent::Close);
     }
 
-    pub fn inject_event(&self, event: crossterm::event::Event) {
+    pub fn inject_event(&self, event: termwiz::input::InputEvent) {
         let _ = self.tx.unbounded_send(InputEvent::UserInput(event));
     }
 }
 
 #[derive(Debug)]
 pub enum InputEvent {
-    UserInput(TermEvent),
+    UserInput(termwiz::input::InputEvent),
     Close,
 }
 
@@ -82,7 +77,7 @@ impl DioxusRenderer {
         let vdom = vdom.with_root_context(ctx);
 
         let viewport = {
-            let (w, h) = size().unwrap_or((80, 24));
+            let (w, h) = initial_viewport_size().unwrap_or((80, 24));
             Viewport::new(w.into(), h.into(), 1.0, ColorScheme::Light)
         };
         let mut doc = DioxusDocument::new(
@@ -196,34 +191,43 @@ async fn run_tui_renderer(
 
     if run_terminal {
         let tx = event_tx.clone();
+        let tick_rate = cfg.tick_rate;
         std::thread::spawn(move || {
-            let tick_rate = cfg.tick_rate;
-            loop {
-                match crossterm::event::poll(tick_rate) {
-                    Ok(true) => match crossterm::event::read() {
-                        Ok(evt) => {
+            let res: Result<()> = (|| {
+                let caps = Capabilities::new_from_env()?;
+                let mut term = new_terminal(caps)?;
+                term.set_raw_mode()?;
+
+                loop {
+                    match term.poll_input(Some(tick_rate))? {
+                        Some(evt) => {
                             if tx.unbounded_send(InputEvent::UserInput(evt)).is_err() {
                                 break;
                             }
                         }
-                        Err(_) => break,
-                    },
-                    Ok(false) => {}
-                    Err(_) => break,
+                        None => {}
+                    }
                 }
+
+                term.set_cooked_mode()?;
+                Ok(())
+            })();
+
+            if let Err(err) = res {
+                tracing::warn!("input thread terminated early: {err}");
             }
         });
     }
 
-    let mut terminal = run_terminal
-        .then(|| -> Result<BufferedTerminal<SystemTerminal>> {
-            enable_raw_mode().unwrap();
-            execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture).unwrap();
-            let buffered =
-                BufferedTerminal::new(SystemTerminal::new(Capabilities::new_from_env()?)?)?;
-            Ok(buffered)
-        })
-        .transpose()?;
+    let mut terminal = if run_terminal {
+        let caps = Capabilities::new_from_env()?;
+        let mut term = new_terminal(caps)?;
+        term.set_raw_mode()?;
+        term.enter_alternate_screen()?;
+        Some(BufferedTerminal::new(term)?)
+    } else {
+        None
+    };
 
     let capabilities = TerminalCapabilities::detect().unwrap_or(TerminalCapabilities {
         truecolor: false,
@@ -255,15 +259,15 @@ async fn run_tui_renderer(
             match evt {
                 InputEvent::Close => break,
                 InputEvent::UserInput(term_evt) => {
-                    if matches!(term_evt, TermEvent::Key(key) if matches!(key.code, KeyCode::Char('c' | 'C')) && key.modifiers.contains(KeyModifiers::CONTROL) && cfg.ctrl_c_quit)
-                    {
+                    let ctrl_c = matches!(&term_evt, TzInputEvent::Key(key) if matches!(key.key, KeyCode::Char('c' | 'C')) && key.modifiers.contains(TzModifiers::CTRL) && cfg.ctrl_c_quit);
+                    if ctrl_c {
                         break;
                     }
                     if let Some(root) = renderer.root_id() {
                         let viewport = last_area.unwrap_or_else(|| Rect::new(0, 0, 0, 0));
 
                         for (target, name, data, bubbles) in
-                            event_from_crossterm(term_evt, root, viewport)
+                            event_from_termwiz(term_evt, root, viewport)
                         {
                             let runtime_event = data.into_platform_event(bubbles);
                             renderer.handle_event(target, name, runtime_event, bubbles);
@@ -329,18 +333,16 @@ async fn run_tui_renderer(
         }
     }
 
-    if cfg.rendering_mode != crate::config::RenderingMode::Headless {
-        disable_raw_mode().unwrap();
-        execute!(std::io::stdout(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
-        if let Some(term) = &mut terminal {
-            term.terminal().flush()?;
-        }
+    if let Some(term) = &mut terminal {
+        term.terminal().exit_alternate_screen()?;
+        term.terminal().set_cooked_mode()?;
+        term.flush()?;
     }
 
     Ok(())
 }
 
-fn terminal_size(term: &mut BufferedTerminal<SystemTerminal>) -> Result<(Rect, CellMetrics)> {
+fn terminal_size<T: Terminal>(term: &mut BufferedTerminal<T>) -> Result<(Rect, CellMetrics)> {
     let ScreenSize {
         cols,
         rows,
@@ -360,8 +362,16 @@ fn terminal_size(term: &mut BufferedTerminal<SystemTerminal>) -> Result<(Rect, C
     ))
 }
 
-fn flush_surface(
-    term: &mut BufferedTerminal<SystemTerminal>,
+fn initial_viewport_size() -> Option<(u16, u16)> {
+    let caps = Capabilities::new_from_env().ok()?;
+    let mut term = new_terminal(caps).ok()?;
+    term.get_screen_size()
+        .ok()
+        .map(|s| (s.cols as u16, s.rows as u16))
+}
+
+fn flush_surface<T: Terminal>(
+    term: &mut BufferedTerminal<T>,
     surface: &Surface,
     prev: Option<&Surface>,
     caps: &TerminalCapabilities,

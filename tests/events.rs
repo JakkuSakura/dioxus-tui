@@ -1,4 +1,4 @@
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent};
+use termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers, MouseButtons, MouseEvent};
 use dioxus::prelude::*;
 use dioxus_html::input_data::keyboard_types::Code;
 use dioxus_tui::TuiContext;
@@ -53,17 +53,13 @@ fn key_down() {
             panic!("Event was not received");
         }
         // focus the element
-        tui_ctx.inject_event(Event::Key(KeyEvent {
-            code: KeyCode::Tab,
-            modifiers: KeyModifiers::NONE,
-            kind: crossterm::event::KeyEventKind::Press,
-            state: crossterm::event::KeyEventState::NONE,
+        tui_ctx.inject_event(InputEvent::Key(KeyEvent {
+            key: KeyCode::Tab,
+            modifiers: Modifiers::NONE,
         }));
-        tui_ctx.inject_event(Event::Key(KeyEvent {
-            code: KeyCode::Char('a'),
-            modifiers: KeyModifiers::NONE,
-            kind: crossterm::event::KeyEventKind::Press,
-            state: crossterm::event::KeyEventState::NONE,
+        tui_ctx.inject_event(InputEvent::Key(KeyEvent {
+            key: KeyCode::Char('a'),
+            modifiers: Modifiers::NONE,
         }));
         rsx! {
             div {
@@ -98,11 +94,11 @@ fn mouse_down() {
         if render_count() > 2 {
             panic!("Event was not received");
         }
-        tui_ctx.inject_event(Event::Mouse(MouseEvent {
-            column: 0,
-            row: 0,
-            kind: crossterm::event::MouseEventKind::Down(MouseButton::Left),
-            modifiers: KeyModifiers::NONE,
+        tui_ctx.inject_event(InputEvent::Mouse(MouseEvent {
+            x: 0,
+            y: 0,
+            mouse_buttons: MouseButtons::LEFT,
+            modifiers: Modifiers::NONE,
         }));
         rsx! {
             div {
@@ -138,17 +134,17 @@ fn mouse_up() {
         if render_count() > 2 {
             panic!("Event was not received");
         }
-        tui_ctx.inject_event(Event::Mouse(MouseEvent {
-            column: 0,
-            row: 0,
-            kind: crossterm::event::MouseEventKind::Down(MouseButton::Left),
-            modifiers: KeyModifiers::NONE,
+        tui_ctx.inject_event(InputEvent::Mouse(MouseEvent {
+            x: 0,
+            y: 0,
+            mouse_buttons: MouseButtons::LEFT,
+            modifiers: Modifiers::NONE,
         }));
-        tui_ctx.inject_event(Event::Mouse(MouseEvent {
-            column: 0,
-            row: 0,
-            kind: crossterm::event::MouseEventKind::Up(MouseButton::Left),
-            modifiers: KeyModifiers::NONE,
+        tui_ctx.inject_event(InputEvent::Mouse(MouseEvent {
+            x: 0,
+            y: 0,
+            mouse_buttons: MouseButtons::NONE,
+            modifiers: Modifiers::NONE,
         }));
         rsx! {
             div {
@@ -181,17 +177,17 @@ fn mouse_enter() {
         if render_count() > 2 {
             panic!("Event was not received");
         }
-        tui_ctx.inject_event(Event::Mouse(MouseEvent {
-            column: 100,
-            row: 100,
-            kind: crossterm::event::MouseEventKind::Moved,
-            modifiers: KeyModifiers::NONE,
+        tui_ctx.inject_event(InputEvent::Mouse(MouseEvent {
+            x: 100,
+            y: 100,
+            mouse_buttons: MouseButtons::NONE,
+            modifiers: Modifiers::NONE,
         }));
-        tui_ctx.inject_event(Event::Mouse(MouseEvent {
-            column: 0,
-            row: 0,
-            kind: crossterm::event::MouseEventKind::Moved,
-            modifiers: KeyModifiers::NONE,
+        tui_ctx.inject_event(InputEvent::Mouse(MouseEvent {
+            x: 0,
+            y: 0,
+            mouse_buttons: MouseButtons::NONE,
+            modifiers: Modifiers::NONE,
         }));
         rsx! {
             div {
