@@ -10,6 +10,8 @@ use crate::config::ColorMode;
 use crate::geometry::Rect;
 use crate::surface::Surface;
 use termwiz::color::{ColorAttribute, SrgbaTuple};
+use std::fs::OpenOptions;
+use std::io::Write;
 
 #[derive(Debug, Clone, Copy)]
 pub struct CellMetrics {
@@ -186,6 +188,24 @@ impl<'a> TerminalScene<'a> {
         })
     }
 
+    fn is_default_black(attr: &ColorAttribute) -> bool {
+        matches!(
+            attr,
+            ColorAttribute::TrueColorWithPaletteFallback(SrgbaTuple(0.0, 0.0, 0.0, 1.0), 16)
+                | ColorAttribute::TrueColorWithDefaultFallback(SrgbaTuple(0.0, 0.0, 0.0, 1.0))
+        )
+    }
+
+    fn log_debug(op: &str) {
+        if let Ok(mut f) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("debug.log")
+        {
+            let _ = writeln!(f, "{op}");
+        }
+    }
+
     fn transform_bbox(shape: &impl Shape, transform: Affine) -> Rect {
         let bbox = shape.bounding_box();
         let corners = [
@@ -310,12 +330,20 @@ impl<'a> PaintScene for TerminalScene<'a> {
         let y0 = bbox.y as f32;
         let w = bbox.width as f32;
         let h = bbox.height as f32;
-        self.paint_rect('▓', x0, y0, w, self.metrics.cell_h_px, fg, None);
-        if h > 0.0 {
-            self.paint_rect('▓', x0, y0 + h, w, self.metrics.cell_h_px, fg, None);
+        if fg.as_ref().is_some_and(Self::is_default_black) {
+            return;
         }
-        self.paint_rect('▓', x0, y0, self.metrics.cell_w_px, h + self.metrics.cell_h_px, fg, None);
-        self.paint_rect('▓', x0 + w, y0, self.metrics.cell_w_px, h + self.metrics.cell_h_px, fg, None);
+        // Paint borders as colored background to avoid glyph fallback issues.
+        Self::log_debug(&format!(
+            "stroke bbox=({},{}) size=({},{})",
+            bbox.x, bbox.y, bbox.width, bbox.height
+        ));
+        self.paint_rect(' ', x0, y0, w, self.metrics.cell_h_px, None, fg);
+        if h > 0.0 {
+            self.paint_rect(' ', x0, y0 + h, w, self.metrics.cell_h_px, None, fg);
+        }
+        self.paint_rect(' ', x0, y0, self.metrics.cell_w_px, h + self.metrics.cell_h_px, None, fg);
+        self.paint_rect(' ', x0 + w, y0, self.metrics.cell_w_px, h + self.metrics.cell_h_px, None, fg);
     }
 
     fn fill<'b>(
@@ -331,11 +359,17 @@ impl<'a> PaintScene for TerminalScene<'a> {
         let y_px = bbox.y as f32;
         let w_px = bbox.width as f32;
         let h_px = bbox.height as f32;
+        let mut logged_bg: Option<ColorAttribute> = None;
         match brush.into() {
             PaintRef::Solid(c) => {
                 let bg = self.to_color_attr(c);
-                if w_px > 0.0 && h_px > 0.0 {
-                    self.paint_rect(' ', x_px, y_px, w_px, h_px, None, bg);
+                if bg.as_ref().is_some_and(Self::is_default_black) {
+                    logged_bg = bg;
+                } else {
+                    logged_bg = bg;
+                    if w_px > 0.0 && h_px > 0.0 {
+                        self.paint_rect(' ', x_px, y_px, w_px, h_px, None, bg);
+                    }
                 }
             }
             PaintRef::Gradient(g) => {
@@ -345,14 +379,23 @@ impl<'a> PaintScene for TerminalScene<'a> {
                     .first()
                     .and_then(|stop| self.to_color_attr(stop.color.to_alpha_color()))
                 {
-                    if w_px > 0.0 && h_px > 0.0 {
-                        self.paint_rect(' ', x_px, y_px, w_px, h_px, None, Some(bg));
+                    if Self::is_default_black(&bg) {
+                        logged_bg = Some(bg);
+                    } else {
+                        logged_bg = Some(bg);
+                        if w_px > 0.0 && h_px > 0.0 {
+                            self.paint_rect(' ', x_px, y_px, w_px, h_px, None, Some(bg));
+                        }
                     }
                 }
             }
             PaintRef::Image(img) => self.push_image(img, x_px, y_px),
             PaintRef::Custom(_) => {}
         }
+        Self::log_debug(&format!(
+            "fill bbox=({},{}) size=({},{}) bg={:?}",
+            bbox.x, bbox.y, bbox.width, bbox.height, logged_bg
+        ));
     }
 
     fn draw_glyphs<'b, 's: 'b>(
@@ -372,7 +415,11 @@ impl<'a> PaintScene for TerminalScene<'a> {
             PaintRef::Solid(c) => self.to_color_attr(c),
             _ => None,
         };
-        for glyph in glyphs {
+
+        let glyphs_vec: Vec<anyrender::types::Glyph> = glyphs.collect();
+        let mut glyph_logs = Vec::with_capacity(glyphs_vec.len());
+
+        for glyph in glyphs_vec.iter() {
             let p = transform * Point::new(glyph.x as f64, glyph.y as f64);
             let chars = glyph_id_to_chars(_font, glyph.id);
             for (idx, ch) in chars.into_iter().enumerate() {
@@ -380,6 +427,10 @@ impl<'a> PaintScene for TerminalScene<'a> {
                 let cell_x = ((p.x / self.metrics.cell_w_px as f64).round() as i32)
                     .saturating_add(idx as i32);
                 let cell_y = (p.y / self.metrics.cell_h_px as f64).round() as i32;
+                glyph_logs.push(format!(
+                    "id={} ch='{}' px=({:.2},{:.2}) cell=({}, {})",
+                    glyph.id, ch, p.x, p.y, cell_x, cell_y
+                ));
                 if cell_x < 0 || cell_y < 0 {
                     continue;
                 }
@@ -400,6 +451,13 @@ impl<'a> PaintScene for TerminalScene<'a> {
                 }
             }
         }
+
+        Self::log_debug(&format!(
+            "draw_glyphs count={} fg={:?} details=[{}]",
+            glyph_logs.len(),
+            fg,
+            glyph_logs.join("; ")
+        ));
     }
 
     fn draw_box_shadow(

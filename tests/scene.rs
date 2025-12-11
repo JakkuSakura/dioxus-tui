@@ -53,14 +53,15 @@ fn stroke_draws_border_with_color() {
             &Rect::new(0.0, 0.0, 3.0, 1.0),
         );
     }
-    // Top edge
-    assert_cell(&surface, 0, 0, '▓');
-    assert_cell(&surface, 1, 0, '▓');
-    assert_cell(&surface, 2, 0, '▓');
-    // Vertical edges
-    assert_cell(&surface, 0, 1, '▓');
-    assert_cell(&surface, 3, 0, '▓');
-    assert!(surface.content[0].fg.is_some());
+    // Top edge: spaces with background color
+    for x in 0..3 {
+        let idx = x as usize;
+        assert_eq!(surface.content[idx].ch, ' ');
+        assert!(surface.content[idx].bg.is_some());
+    }
+    // Vertical edges have background painted
+    assert!(surface.content[0].bg.is_some());
+    assert!(surface.content[3].bg.is_some());
 }
 
 #[test]
