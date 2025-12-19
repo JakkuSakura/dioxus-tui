@@ -1,6 +1,7 @@
 use blitz_dom::{local_name, BaseDocument, Node};
 use termwiz::color::{ColorAttribute, SrgbaTuple};
 
+use crate::config::{PaletteEntry, PaletteRoles};
 use crate::config::ColorMode;
 use crate::geometry::Rect;
 use crate::layout::node_rect;
@@ -14,17 +15,29 @@ pub fn paint_surface(
     doc: &BaseDocument,
     area: Rect,
     metrics: CellMetrics,
+    palette_roles: PaletteRoles,
     color_mode: ColorMode,
     truecolor: bool,
 ) {
     surface.clear();
+
+    let fallback_fg = palette_entry_to_attr(palette_roles.fg_primary, color_mode, truecolor);
 
     let root = doc.root_element();
     if let Some(bg) = root_background(doc, root, color_mode, truecolor) {
         fill_rect(surface, surface.area(), None, Some(bg));
     }
 
-    paint_node(surface, doc, root, area, metrics, color_mode, truecolor);
+    paint_node(
+        surface,
+        doc,
+        root,
+        area,
+        metrics,
+        color_mode,
+        truecolor,
+        fallback_fg,
+    );
 }
 
 fn paint_node(
@@ -35,6 +48,7 @@ fn paint_node(
     metrics: CellMetrics,
     color_mode: ColorMode,
     truecolor: bool,
+    fallback_fg: ColorAttribute,
 ) {
     match &node.data {
         blitz_dom::node::NodeData::Element(_) | blitz_dom::node::NodeData::AnonymousBlock(_) => {
@@ -47,15 +61,37 @@ fn paint_node(
 
             // Render inline text content within this node's box.
             if rect.width > 0 && rect.height > 0 {
-                let fg = node_color(node, color_mode, truecolor);
-                let text_bounds = Rect::new(rect.x, rect.y, rect.width, area.height.saturating_sub(rect.y));
+                let fg = Some(node_color(node, color_mode, truecolor).unwrap_or(fallback_fg));
+                let text_width = if is_blockish(node) {
+                    area.width.saturating_sub(rect.x)
+                } else {
+                    rect.width
+                };
+                let text_bounds = Rect::new(
+                    rect.x,
+                    rect.y,
+                    text_width,
+                    area.height.saturating_sub(rect.y),
+                );
 
                 if node.data.is_element_with_tag_name(&local_name!("input")) {
                     if let Some(value) = node.attr(local_name!("value")) {
                         let _ = write_wrapped(surface, text_bounds, (rect.x, rect.y), value, fg);
                     }
+                } else if node.data.is_element_with_tag_name(&local_name!("button")) {
+                    let label = node.text_content();
+                    let _ = write_wrapped(surface, text_bounds, (rect.x, rect.y), label.as_str(), fg);
                 } else {
-                    paint_inline_text(surface, doc, node, text_bounds, fg, color_mode, truecolor);
+                    paint_inline_text(
+                        surface,
+                        doc,
+                        node,
+                        text_bounds,
+                        fg,
+                        color_mode,
+                        truecolor,
+                        fallback_fg,
+                    );
                 }
             }
 
@@ -64,8 +100,17 @@ fn paint_node(
                 let Some(child) = doc.get_node(child_id) else {
                     continue;
                 };
-                if child.is_or_contains_block() {
-                    paint_node(surface, doc, child, area, metrics, color_mode, truecolor);
+                if is_blockish(child) {
+                    paint_node(
+                        surface,
+                        doc,
+                        child,
+                        area,
+                        metrics,
+                        color_mode,
+                        truecolor,
+                        fallback_fg,
+                    );
                 }
             }
         }
@@ -73,7 +118,16 @@ fn paint_node(
         blitz_dom::node::NodeData::Document | blitz_dom::node::NodeData::Comment => {
             for child_id in node.children.iter().copied() {
                 if let Some(child) = doc.get_node(child_id) {
-                    paint_node(surface, doc, child, area, metrics, color_mode, truecolor);
+                    paint_node(
+                        surface,
+                        doc,
+                        child,
+                        area,
+                        metrics,
+                        color_mode,
+                        truecolor,
+                        fallback_fg,
+                    );
                 }
             }
         }
@@ -88,6 +142,7 @@ fn paint_inline_text(
     fg: Option<ColorAttribute>,
     color_mode: ColorMode,
     truecolor: bool,
+    fallback_fg: ColorAttribute,
 ) {
     let mut cursor_x = bounds.x;
     let mut cursor_y = bounds.y;
@@ -111,7 +166,7 @@ fn paint_inline_text(
                 );
             }
             blitz_dom::node::NodeData::Element(_) | blitz_dom::node::NodeData::AnonymousBlock(_) => {
-                if !child.is_or_contains_block() {
+                if !is_blockish(child) {
                     if child.data.is_element_with_tag_name(&local_name!("input")) {
                         if let Some(value) = child.attr(local_name!("value")) {
                             (cursor_x, cursor_y) =
@@ -120,7 +175,11 @@ fn paint_inline_text(
                         continue;
                     }
 
-                    let child_fg = node_color(child, color_mode, truecolor).or(fg);
+                    let child_fg = Some(
+                        node_color(child, color_mode, truecolor)
+                            .or(fg)
+                            .unwrap_or(fallback_fg),
+                    );
                     (cursor_x, cursor_y) = paint_inline_children(
                         surface,
                         doc,
@@ -130,6 +189,7 @@ fn paint_inline_text(
                         child_fg,
                         color_mode,
                         truecolor,
+                        fallback_fg,
                     );
                 }
             }
@@ -147,6 +207,7 @@ fn paint_inline_children(
     fg: Option<ColorAttribute>,
     color_mode: ColorMode,
     truecolor: bool,
+    fallback_fg: ColorAttribute,
 ) -> (u16, u16) {
     let mut cursor = cursor;
     for child_id in node.children.iter().copied() {
@@ -158,7 +219,7 @@ fn paint_inline_children(
                 cursor = write_wrapped(surface, bounds, cursor, text.content.as_str(), fg);
             }
             blitz_dom::node::NodeData::Element(_) | blitz_dom::node::NodeData::AnonymousBlock(_) => {
-                if !child.is_or_contains_block() {
+                if !is_blockish(child) {
                     if child.data.is_element_with_tag_name(&local_name!("input")) {
                         if let Some(value) = child.attr(local_name!("value")) {
                             cursor = write_wrapped(surface, bounds, cursor, value, fg);
@@ -166,7 +227,11 @@ fn paint_inline_children(
                         continue;
                     }
 
-                    let child_fg = node_color(child, color_mode, truecolor).or(fg);
+                    let child_fg = Some(
+                        node_color(child, color_mode, truecolor)
+                            .or(fg)
+                            .unwrap_or(fallback_fg),
+                    );
                     cursor = paint_inline_children(
                         surface,
                         doc,
@@ -176,6 +241,7 @@ fn paint_inline_children(
                         child_fg,
                         color_mode,
                         truecolor,
+                        fallback_fg,
                     );
                 }
             }
@@ -183,6 +249,56 @@ fn paint_inline_children(
         }
     }
     cursor
+}
+
+fn is_blockish(node: &Node) -> bool {
+    if node.is_or_contains_block() {
+        return true;
+    }
+
+    let Some(el) = node.element_data() else {
+        return false;
+    };
+
+    // Fallback classification when computed styles are unavailable.
+    // This keeps basic HTML working even if stylo doesn't attach primary styles
+    // to a node for any reason.
+    matches!(
+        el.name.local.as_ref(),
+        "html"
+            | "body"
+            | "main"
+            | "div"
+            | "p"
+            | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "ul"
+            | "ol"
+            | "li"
+            | "pre"
+            | "button"
+            | "input"
+            | "textarea"
+            | "select"
+            | "form"
+            | "section"
+            | "header"
+            | "footer"
+            | "article"
+            | "nav"
+            | "table"
+            | "tr"
+            | "td"
+            | "th"
+            | "thead"
+            | "tbody"
+            | "tfoot"
+            | "hr"
+    )
 }
 
 fn write_wrapped(
@@ -307,6 +423,31 @@ fn fill_rect(
                 slot.ch = ' ';
                 slot.fg = fg;
                 slot.bg = bg;
+            }
+        }
+    }
+}
+
+fn palette_entry_to_attr(entry: PaletteEntry, color_mode: ColorMode, truecolor: bool) -> ColorAttribute {
+    match entry {
+        PaletteEntry::Ansi(idx) | PaletteEntry::Palette256(idx) => ColorAttribute::PaletteIndex(idx),
+        PaletteEntry::Rgb(r, g, b) => {
+            let srgb = SrgbaTuple::from((r, g, b));
+            let palette_idx_256 =
+                16 + 36 * (r as u16 / 51) as u8 + 6 * (g as u16 / 51) as u8 + (b as u16 / 51) as u8;
+            let base_idx = (if r >= 128 { 1 } else { 0 })
+                | (if g >= 128 { 2 } else { 0 })
+                | (if b >= 128 { 4 } else { 0 });
+            match color_mode {
+                ColorMode::BaseColors => ColorAttribute::PaletteIndex(base_idx),
+                ColorMode::Ansi => ColorAttribute::TrueColorWithPaletteFallback(srgb, palette_idx_256),
+                ColorMode::Rgb => {
+                    if truecolor {
+                        ColorAttribute::TrueColorWithDefaultFallback(srgb)
+                    } else {
+                        ColorAttribute::TrueColorWithPaletteFallback(srgb, palette_idx_256)
+                    }
+                }
             }
         }
     }

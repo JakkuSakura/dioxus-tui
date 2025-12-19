@@ -215,6 +215,7 @@ where
         renderer.doc.inner.as_ref(),
         area,
         metrics,
+        cfg.palette_roles,
         cfg.color_mode,
         true,
     );
@@ -347,6 +348,7 @@ async fn run_tui_renderer(
                     renderer.doc.inner.as_ref(),
                     area,
                     metrics,
+                    cfg.palette_roles,
                     cfg.color_mode,
                     capabilities.truecolor,
                 );
