@@ -3,6 +3,7 @@
 #![doc(html_favicon_url = "https://avatars.githubusercontent.com/u/79236386")]
 
 pub mod capabilities;
+mod cell_render;
 mod config;
 pub mod element;
 pub mod error;
@@ -62,6 +63,39 @@ pub fn launch_cfg_with_props<P: Clone + Send + Sync + 'static>(
 ) -> anyhow::Result<()> {
     let raw = RawVirtualDom::with_props(app, props);
     launch_raw(raw, cfg)
+}
+
+pub fn render(app: fn() -> Element, width: u16, height: u16) -> anyhow::Result<Surface> {
+    render_cfg(app, Config::default(), width, height)
+}
+
+pub fn render_cfg(app: fn() -> Element, cfg: Config, width: u16, height: u16) -> anyhow::Result<Surface> {
+    let raw = RawVirtualDom::new(app);
+    render_raw(raw, cfg, Rect::new(0, 0, width, height))
+}
+
+pub fn render_cfg_with_props<P: Clone + Send + Sync + 'static>(
+    app: fn(P) -> Element,
+    props: P,
+    cfg: Config,
+    width: u16,
+    height: u16,
+) -> anyhow::Result<Surface> {
+    let raw = RawVirtualDom::with_props(app, props);
+    render_raw(raw, cfg, Rect::new(0, 0, width, height))
+}
+
+pub fn render_raw<P: Clone + 'static, F>(
+    raw: RawVirtualDom<P, F>,
+    cfg: Config,
+    area: Rect,
+) -> anyhow::Result<Surface>
+where
+    F: ComponentFunction<P, ()> + 'static,
+{
+    let rt = RuntimeBuilder::new_current_thread().enable_all().build()?;
+    let surface = rt.block_on(async move { render::render_once(cfg, raw, area) })?;
+    Ok(surface)
 }
 
 pub fn launch_raw<P: Clone + 'static, F>(

@@ -1,7 +1,7 @@
 use std::{any::Any, pin::Pin, rc::Rc};
 
-use crate::error::{Error, Result};
-use blitz_dom::Document;
+use crate::error::Result;
+use blitz_dom::Document as _;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus_core::{ComponentFunction, ElementId, Event, VirtualDom};
 use dioxus_html::PlatformEventData;
@@ -22,11 +22,11 @@ use crate::capabilities::TerminalCapabilities;
 use crate::config::{Config, RenderingMode};
 use crate::geometry::Rect;
 use crate::hooks::event_from_termwiz;
-use crate::image::emit_inline_images;
 use crate::layout::resolve_document;
-use crate::scene::{CellMetrics, TerminalScene};
+use crate::scene::CellMetrics;
 use crate::surface::Surface;
 use crate::RawVirtualDom;
+use crate::cell_render::paint_surface;
 use tracing::debug;
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
@@ -72,21 +72,41 @@ impl DioxusRenderer {
         UnboundedSender<InputEvent>,
         UnboundedReceiver<InputEvent>,
     ) {
+        let viewport = initial_viewport_size().map(|(w_cells, h_cells)| {
+            Viewport::new(
+                (w_cells as f32 * 8.0).ceil().max(1.0) as u32,
+                (h_cells as f32 * 16.0).ceil().max(1.0) as u32,
+                1.0,
+                ColorScheme::Light,
+            )
+        });
+        Self::new_inner(vdom, viewport)
+    }
+
+    pub fn new_with_viewport(
+        vdom: VirtualDom,
+        viewport: Viewport,
+    ) -> (
+        Self,
+        UnboundedSender<InputEvent>,
+        UnboundedReceiver<InputEvent>,
+    ) {
+        Self::new_inner(vdom, Some(viewport))
+    }
+
+    fn new_inner(
+        vdom: VirtualDom,
+        viewport: Option<Viewport>,
+    ) -> (
+        Self,
+        UnboundedSender<InputEvent>,
+        UnboundedReceiver<InputEvent>,
+    ) {
         let (event_tx, event_rx) = channel();
         let ctx = TuiContext::new(event_tx.clone());
         let vdom = vdom.with_root_context(ctx);
 
-        let viewport = {
-            let (w, h) = initial_viewport_size().unwrap_or((80, 24));
-            Viewport::new(w.into(), h.into(), 1.0, ColorScheme::Light)
-        };
-        let mut doc = DioxusDocument::new(
-            vdom,
-            DocumentConfig {
-                viewport: Some(viewport),
-                ..Default::default()
-            },
-        );
+        let mut doc = Self::build_document(vdom, viewport);
         doc.initial_build();
 
         (
@@ -104,6 +124,16 @@ impl DioxusRenderer {
             },
             event_tx,
             event_rx,
+        )
+    }
+
+    fn build_document(vdom: VirtualDom, viewport: Option<Viewport>) -> DioxusDocument {
+        DioxusDocument::new(
+            vdom,
+            DocumentConfig {
+                viewport,
+                ..Default::default()
+            },
         )
     }
 
@@ -158,9 +188,37 @@ impl DioxusRenderer {
         Some(ElementId(0))
     }
 
-    fn layout_root(&mut self, area: Rect) -> Option<usize> {
-        resolve_document(&mut self.doc, area)
+    fn layout_root(&mut self, area: Rect, metrics: CellMetrics) -> Option<usize> {
+        resolve_document(&mut self.doc, area, metrics)
     }
+}
+
+pub fn render_once<P, F>(cfg: Config, raw: RawVirtualDom<P, F>, area: Rect) -> Result<Surface>
+where
+    P: Clone + 'static,
+    F: ComponentFunction<P, ()> + 'static,
+{
+    let metrics = CellMetrics {
+        cell_w_px: 8.0,
+        cell_h_px: 16.0,
+    };
+    let vdom = raw.into_virtual_dom();
+
+    let viewport = Viewport::new(area.width.into(), area.height.into(), 1.0, ColorScheme::Light);
+    let (mut renderer, _event_tx, _event_rx) = DioxusRenderer::new_with_viewport(vdom, viewport);
+
+    renderer.update();
+    let mut surface = Surface::new(area.width, area.height);
+    let _ = renderer.layout_root(area, metrics);
+    paint_surface(
+        &mut surface,
+        renderer.doc.inner.as_ref(),
+        area,
+        metrics,
+        cfg.color_mode,
+        true,
+    );
+    Ok(surface)
 }
 
 pub(crate) async fn run_renderer<P, F>(cfg: Config, raw: RawVirtualDom<P, F>) -> Result<()>
@@ -283,21 +341,14 @@ async fn run_tui_renderer(
             let (area, metrics) = terminal_size(term)?;
             let mut surface = Surface::new(area.width, area.height);
             last_area = Some(area);
-            let mut images = std::collections::VecDeque::new();
-            if let Some(_root) = renderer.layout_root(area) {
-                let mut scene = TerminalScene::new(
+            if let Some(_root) = renderer.layout_root(area, metrics) {
+                paint_surface(
                     &mut surface,
-                    &mut images,
+                    renderer.doc.inner.as_ref(),
+                    area,
                     metrics,
                     cfg.color_mode,
                     capabilities.truecolor,
-                );
-                blitz::paint::paint_scene(
-                    &mut scene,
-                    &renderer.doc.inner,
-                    renderer.doc.inner.viewport().scale_f64(),
-                    renderer.doc.inner.viewport().window_size.0,
-                    renderer.doc.inner.viewport().window_size.1,
                 );
             }
             // Debug: dump first few lines of the surface for tracing.
@@ -311,16 +362,7 @@ async fn run_tui_renderer(
                     .collect();
                 debug!(?dump, "surface_dump");
             }
-            if !capabilities.inline_images && !images.is_empty() {
-                match cfg.image_policy {
-                    crate::config::ImagePolicy::Degrade => {
-                        paint_image_fallback(&mut surface, &images, metrics);
-                    }
-                    crate::config::ImagePolicy::Omit => {
-                        // omit images entirely when unsupported
-                    }
-                }
-            }
+            let images = std::collections::VecDeque::new();
             flush_surface(
                 term,
                 &surface,
@@ -346,13 +388,11 @@ fn terminal_size<T: Terminal>(term: &mut BufferedTerminal<T>) -> Result<(Rect, C
     let ScreenSize {
         cols,
         rows,
-        xpixel,
-        ypixel,
+        ..
     } = term.terminal().get_screen_size()?;
-    if xpixel == 0 || ypixel == 0 {
-        return Err(Error::TerminalPixelsUnavailable { xpixel, ypixel });
-    }
-    let (cell_w_px, cell_h_px) = (xpixel as f32 / cols as f32, ypixel as f32 / rows as f32);
+    // `xpixel/ypixel` is unreliable or unavailable on some terminals, and we don't
+    // strictly need it for cell-native rendering.
+    let (cell_w_px, cell_h_px) = (8.0, 16.0);
     Ok((
         Rect::new(0, 0, cols as u16, rows as u16),
         CellMetrics {
@@ -455,41 +495,7 @@ fn flush_surface<T: Terminal>(
             ));
         }
     }
-    // Emit inline images after text to preserve ordering
-    if caps.inline_images && !images.is_empty() {
-        let mut buf = Vec::new();
-        emit_inline_images(images, &mut buf, metrics.cell_w_px, metrics.cell_h_px)?;
-        term.add_change(Change::Text(String::from_utf8_lossy(&buf).into_owned()));
-    }
+    let _ = (caps, images, metrics);
     term.flush()?;
     Ok(())
-}
-
-fn paint_image_fallback(
-    surface: &mut Surface,
-    images: &std::collections::VecDeque<crate::scene::InlineImage>,
-    metrics: CellMetrics,
-) {
-    for img in images {
-        let x_px = img.x_px;
-        let y_px = img.y_px;
-        let w_px = img.width_px as f32;
-        let h_px = img.height_px as f32;
-        let x0 = (x_px / metrics.cell_w_px).floor().max(0.0) as u16;
-        let y0 = (y_px / metrics.cell_h_px).floor().max(0.0) as u16;
-        let x1 = ((x_px + w_px) / metrics.cell_w_px).ceil().max(0.0) as u16;
-        let y1 = ((y_px + h_px) / metrics.cell_h_px).ceil().max(0.0) as u16;
-        for y in y0..y1.min(surface.height()) {
-            for x in x0..x1.min(surface.width()) {
-                let idx = y as usize * surface.width() as usize + x as usize;
-                if let Some(slot) = surface.content.get_mut(idx) {
-                    *slot = crate::surface::Cell {
-                        ch: '░',
-                        fg: None,
-                        bg: None,
-                    };
-                }
-            }
-        }
-    }
 }

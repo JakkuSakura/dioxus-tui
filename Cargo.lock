@@ -728,23 +728,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "blitz"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca678df8e6c3a559669e96cb481257ecdeda14aa4ec225bd1b7067687a5e9b5d"
-dependencies = [
- "anyrender_vello",
- "blitz-dom",
- "blitz-html",
- "blitz-net",
- "blitz-paint",
- "blitz-shell",
- "blitz-traits",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "blitz-dom"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2078,7 +2061,6 @@ dependencies = [
  "anyrender",
  "base64 0.22.1",
  "bevy_ecs",
- "blitz",
  "blitz-dom",
  "blitz-traits",
  "criterion",
@@ -2095,6 +2077,7 @@ dependencies = [
  "kurbo 0.12.0",
  "peniko",
  "png",
+ "stylo",
  "termwiz",
  "thiserror 1.0.69",
  "tokio",

@@ -1,48 +1,56 @@
 use crate::geometry::{Alignment, Rect as UiRect};
+use crate::scene::CellMetrics;
 use crate::styles::DEFAULT_TUI_CSS;
 use blitz_dom::{BaseDocument, Node};
 use blitz_traits::shell::Viewport;
 use dioxus_native_dom::DioxusDocument;
 
-pub fn resolve_document(doc: &mut DioxusDocument, area: UiRect) -> Option<usize> {
+pub fn resolve_document(doc: &mut DioxusDocument, area: UiRect, metrics: CellMetrics) -> Option<usize> {
     // Ensure UA stylesheet is present for consistent defaults.
     doc.inner.add_user_agent_stylesheet(DEFAULT_TUI_CSS);
 
     let root_id = doc.inner.root_node().id;
 
-    let viewport = Viewport::new(
-        area.width.into(),
-        area.height.into(),
-        1.0,
-        doc.inner.viewport().color_scheme,
-    );
+    let width_px = (area.width as f32 * metrics.cell_w_px).ceil().max(1.0) as u32;
+    let height_px = (area.height as f32 * metrics.cell_h_px).ceil().max(1.0) as u32;
+    let viewport = Viewport::new(width_px, height_px, 1.0, doc.inner.viewport().color_scheme);
     doc.inner.set_viewport(viewport);
     doc.inner.resolve(0.0);
 
     if let Some(root) = doc.inner.get_node_mut(root_id) {
         let layout = &mut root.final_layout;
         if layout.size.width <= 1.0 {
-            layout.size.width = area.width as f32;
+            layout.size.width = width_px as f32;
         }
         if layout.size.height <= 1.0 {
-            layout.size.height = area.height as f32;
+            layout.size.height = height_px as f32;
         }
     }
     doc.inner.get_node(root_id).map(|_| root_id)
 }
 
-pub fn node_rect(node: &Node, area: UiRect) -> UiRect {
+pub fn node_rect(doc: &BaseDocument, node: &Node, area: UiRect, metrics: CellMetrics) -> UiRect {
     let mut rect = {
         let layout = node.final_layout;
-        let x = layout.location.x.max(0.0).round() as u16;
-        let y = layout.location.y.max(0.0).round() as u16;
-        let mut w = layout.size.width.max(0.0).ceil() as u16;
-        let mut h = layout.size.height.max(0.0).ceil() as u16;
-        if w == 0 {
-            w = 1;
+        let (abs_x, abs_y) = absolute_location_px(doc, node);
+        let x0 = (abs_x / metrics.cell_w_px).floor().max(0.0) as i64;
+        let y0 = (abs_y / metrics.cell_h_px).floor().max(0.0) as i64;
+        let x1 = ((abs_x + layout.size.width) / metrics.cell_w_px)
+            .ceil()
+            .max(0.0) as i64;
+        let y1 = ((abs_y + layout.size.height) / metrics.cell_h_px)
+            .ceil()
+            .max(0.0) as i64;
+
+        let x = (x0 as u16).min(area.width.saturating_sub(1));
+        let y = (y0 as u16).min(area.height.saturating_sub(1));
+        let mut w = x1.saturating_sub(x0).max(1) as u16;
+        let mut h = y1.saturating_sub(y0).max(1) as u16;
+        if x + w > area.width {
+            w = area.width.saturating_sub(x);
         }
-        if h == 0 {
-            h = 1;
+        if y + h > area.height {
+            h = area.height.saturating_sub(y);
         }
         UiRect::new(x, y, w, h)
     };
@@ -65,6 +73,21 @@ pub fn node_rect(node: &Node, area: UiRect) -> UiRect {
     rect
 }
 
+fn absolute_location_px(doc: &BaseDocument, node: &Node) -> (f32, f32) {
+    let mut x = 0.0f32;
+    let mut y = 0.0f32;
+    let mut current = Some(node.id);
+    while let Some(id) = current {
+        let Some(n) = doc.get_node(id) else {
+            break;
+        };
+        x += n.final_layout.location.x;
+        y += n.final_layout.location.y;
+        current = n.layout_parent.get().or(n.parent);
+    }
+    (x, y)
+}
+
 pub fn node_alignment(node: &Node) -> Alignment {
     node.element_data()
         .and_then(|el| {
@@ -85,7 +108,7 @@ pub fn node_alignment(node: &Node) -> Alignment {
         .unwrap_or(Alignment::Left)
 }
 
-pub fn print_layout(doc: &BaseDocument, node_id: usize, depth: usize, area: UiRect) {
+pub fn print_layout(doc: &BaseDocument, node_id: usize, depth: usize, area: UiRect, metrics: CellMetrics) {
     let Some(node) = doc.get_node(node_id) else {
         return;
     };
@@ -98,12 +121,12 @@ pub fn print_layout(doc: &BaseDocument, node_id: usize, depth: usize, area: UiRe
         .text_data()
         .map(|t| t.content.clone())
         .unwrap_or_default();
-    let rect = node_rect(node, area);
+    let rect = node_rect(doc, node, area, metrics);
     println!(
         "{indent}- {tag} id={} area=({}, {}) {}x{} text=\"{}\"",
         node_id, rect.x, rect.y, rect.width, rect.height, text
     );
     for child in node.children.iter() {
-        print_layout(doc, *child, depth + 1, area);
+        print_layout(doc, *child, depth + 1, area, metrics);
     }
 }

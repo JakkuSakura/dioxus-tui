@@ -29,7 +29,6 @@ blitz-dom = { version = "0.2.2", default-features = false, features = ["system_f
 blitz-traits = { version = "0.2.0" }
 dioxus-native-dom = "0.7.1"
 anyrender = "0.6"
-blitz = { version = "0.2" }
 png = "0.17"
 base64 = "0.22"
 peniko = "0.5"
@@ -38,6 +37,7 @@ ttf-parser = "0.19"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "ansi"] }
 thiserror = "1"
+style = { version = "0.8", package = "stylo" }
 
 [dev-dependencies]
 dioxus = { version = "0.7.1" }

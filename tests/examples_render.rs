@@ -1,10 +1,6 @@
-use std::collections::VecDeque;
-
-use blitz_traits::shell::{ColorScheme, Viewport};
+use std::any::Any;
 use dioxus::prelude::*;
-use dioxus_core::VirtualDom;
-use dioxus_native_dom::{DioxusDocument, DocumentConfig};
-use dioxus_tui::{layout, CellMetrics, ColorMode, Rect, Surface, TerminalScene};
+use dioxus_tui::{ColorMode, Config, RawVirtualDom, Rect, Surface};
 
 macro_rules! import_example {
     ($mod_name:ident, $path:literal) => {
@@ -64,49 +60,18 @@ mod many_small_edit_stress_example {
     }
 }
 
-fn render_app_with_paint(
-    app: fn() -> Element,
-    width: u16,
-    height: u16,
-    ctx: Option<usize>,
-) -> Surface {
-    let vdom = match ctx {
-        Some(c) => VirtualDom::new(app).with_root_context(c),
-        None => VirtualDom::new(app),
+fn render_app(app: fn() -> Element, width: u16, height: u16, ctx: Option<usize>) -> Surface {
+    let cfg = Config::default().with_color_mode(ColorMode::Rgb);
+    let area = Rect::new(0, 0, width, height);
+
+    let contexts: Vec<Box<dyn Fn() -> Box<dyn Any> + Send + Sync>> = if let Some(c) = ctx {
+        vec![Box::new(move || Box::new(c) as Box<dyn Any>)]
+    } else {
+        Vec::new()
     };
-    let viewport = Viewport::new(width.into(), height.into(), 1.0, ColorScheme::Light);
-    let mut doc = DioxusDocument::new(
-        vdom,
-        DocumentConfig {
-            viewport: Some(viewport),
-            ..Default::default()
-        },
-    );
-    doc.initial_build();
-    let _root = dioxus_tui::layout::resolve_document(&mut doc, Rect::new(0, 0, width, height))
-        .expect("main root should exist after layout");
+    let raw = RawVirtualDom::with_contexts(move |_| app(), (), contexts);
 
-    let mut surface = Surface::new(width, height);
-    let mut images = VecDeque::new();
-    let metrics = CellMetrics {
-        cell_w_px: 1.0,
-        cell_h_px: 1.0,
-    };
-    {
-        let mut scene =
-            TerminalScene::new(&mut surface, &mut images, metrics, ColorMode::Rgb, true);
-        blitz::paint::paint_scene(
-            &mut scene,
-            &doc.inner,
-            doc.inner.viewport().scale_f64(),
-            doc.inner.viewport().window_size.0,
-            doc.inner.viewport().window_size.1,
-        );
-    }
-
-    // Overlay text to ensure glyphs are captured for snapshot-ish coverage
-
-    surface
+    dioxus_tui::render_raw(raw, cfg, area).expect("render")
 }
 
 #[test]
@@ -143,7 +108,7 @@ fn all_examples_render_non_empty() {
     ];
 
     for (name, app, ctx) in examples {
-        let surface = render_app_with_paint(*app, 80, 40, *ctx);
+        let surface = render_app(*app, 80, 40, *ctx);
         let has_bg = surface.content.iter().any(|c| c.bg.is_some());
         let has_fg = surface.content.iter().any(|c| c.fg.is_some());
         let has_text = surface
@@ -151,7 +116,7 @@ fn all_examples_render_non_empty() {
             .iter()
             .any(|c| !c.ch.is_whitespace() && c.ch != '\0');
         if *name == "color_test" && !(has_bg || has_fg || has_text) {
-            // TODO: color_test scene renders empty with current blitz paint; investigate.
+            // TODO: color_test can render empty depending on terminal/capability assumptions.
             continue;
         }
         assert!(
@@ -167,47 +132,12 @@ fn dioxus_basic_renders_all_text() {
     let width = 80;
     let height = 40;
 
-    let vdom = VirtualDom::new(app);
-    let viewport = Viewport::new(width.into(), height.into(), 1.0, ColorScheme::Light);
-    let mut doc = DioxusDocument::new(
-        vdom,
-        DocumentConfig {
-            viewport: Some(viewport),
-            ..Default::default()
-        },
-    );
-    doc.initial_build();
-    let root = layout::resolve_document(&mut doc, Rect::new(0, 0, width, height))
-        .expect("main root should exist after layout");
-
-    // Debug: layout tree dump
-    layout::print_layout(&doc.inner, root, 0, Rect::new(0, 0, width, height));
-
-    let mut surface = Surface::new(width, height);
-    let mut images = VecDeque::new();
-    let metrics = CellMetrics {
-        cell_w_px: 1.0,
-        cell_h_px: 1.0,
-    };
-
-    {
-        let mut scene = TerminalScene::new(&mut surface, &mut images, metrics, ColorMode::Rgb, true);
-        blitz::paint::paint_scene(
-            &mut scene,
-            &doc.inner,
-            doc.inner.viewport().scale_f64(),
-            doc.inner.viewport().window_size.0,
-            doc.inner.viewport().window_size.1,
-        );
-    }
-
+    let surface = render_app(app, width, height, None);
     let text: String = surface.content.iter().map(|c| c.ch).collect();
 
-    println!("preview: {} chars\n{}", text.len(), text.chars().take(400).collect::<String>());
-
     for expected in [
-        "Termwiz demo",
-        "This is a simple termwiz layout without Dioxus.",
+        "Dioxus demo",
+        "This is a simple Dioxus demo.",
         "List item one",
         "List item two",
         "Press Ctrl+C to exit.",

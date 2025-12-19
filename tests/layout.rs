@@ -3,11 +3,21 @@ use dioxus::prelude::*;
 use dioxus_core::VirtualDom;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use dioxus_tui::layout::{node_rect, resolve_document};
-use dioxus_tui::Rect as UiRect;
+use dioxus_tui::{CellMetrics, Rect as UiRect};
+
+const TEST_METRICS: CellMetrics = CellMetrics {
+    cell_w_px: 8.0,
+    cell_h_px: 16.0,
+};
 
 fn build_doc_with_layout(app: fn() -> Element, width: u16, height: u16) -> (DioxusDocument, usize) {
     let vdom = VirtualDom::new(app);
-    let viewport = Viewport::new(width.into(), height.into(), 1.0, ColorScheme::Light);
+    let viewport = Viewport::new(
+        (width as f32 * TEST_METRICS.cell_w_px).ceil().max(1.0) as u32,
+        (height as f32 * TEST_METRICS.cell_h_px).ceil().max(1.0) as u32,
+        1.0,
+        ColorScheme::Light,
+    );
     let mut doc = DioxusDocument::new(
         vdom,
         DocumentConfig {
@@ -16,7 +26,7 @@ fn build_doc_with_layout(app: fn() -> Element, width: u16, height: u16) -> (Diox
         },
     );
     doc.initial_build();
-    let root = resolve_document(&mut doc, UiRect::new(0, 0, width, height))
+    let root = resolve_document(&mut doc, UiRect::new(0, 0, width, height), TEST_METRICS)
         .expect("main root should exist after layout");
     (doc, root)
 }
@@ -48,7 +58,7 @@ fn layout_root_matches_viewport() {
     let (doc, root) = build_doc_with_layout(app, width, height);
 
     let root_node = doc.inner.get_node(root).unwrap();
-    let rect = node_rect(root_node, area);
+    let rect = node_rect(&doc.inner, root_node, area, TEST_METRICS);
     assert_eq!(rect.width, width);
     assert!(rect.height > 0 && rect.height <= height);
 
@@ -57,7 +67,7 @@ fn layout_root_matches_viewport() {
         .first()
         .and_then(|id| doc.inner.get_node(*id));
     assert!(first_child.is_some());
-    let child_rect = node_rect(first_child.unwrap(), area);
+    let child_rect = node_rect(&doc.inner, first_child.unwrap(), area, TEST_METRICS);
     assert!(child_rect.width > 0 && child_rect.height > 0);
 }
 
@@ -83,7 +93,7 @@ fn block_elements_stack_and_have_space() {
 
     let mut last_y = 0;
     for id in stack_nodes {
-        let rect = node_rect(doc.inner.get_node(id).unwrap(), area);
+        let rect = node_rect(&doc.inner, doc.inner.get_node(id).unwrap(), area, TEST_METRICS);
         assert!(rect.y >= last_y);
         last_y = rect.y;
     }
@@ -102,7 +112,7 @@ fn text_elements_have_nonzero_size() {
     find_by_tag(&doc.inner, root, "p", &mut paragraphs);
     assert_eq!(paragraphs.len(), 2);
     for id in paragraphs {
-        let rect = node_rect(doc.inner.get_node(id).unwrap(), area);
+        let rect = node_rect(&doc.inner, doc.inner.get_node(id).unwrap(), area, TEST_METRICS);
         assert!(rect.width > 0);
     }
 }
@@ -123,7 +133,9 @@ fn explicit_sizes_are_respected() {
     // Two divs: outer and inner
     assert!(divs.len() >= 2);
     let inner = *divs.last().unwrap();
-    let rect = node_rect(doc.inner.get_node(inner).unwrap(), area);
-    assert_eq!(rect.width, 10);
-    assert_eq!(rect.height, 2);
+    let rect = node_rect(&doc.inner, doc.inner.get_node(inner).unwrap(), area, TEST_METRICS);
+    let expected_w = (10.0 / TEST_METRICS.cell_w_px).ceil().max(1.0) as u16;
+    let expected_h = (2.0 / TEST_METRICS.cell_h_px).ceil().max(1.0) as u16;
+    assert_eq!(rect.width, expected_w);
+    assert_eq!(rect.height, expected_h);
 }
