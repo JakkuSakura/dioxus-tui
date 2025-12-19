@@ -499,7 +499,10 @@ pub(crate) fn surface_to_changes(surface: &Surface, prev: Option<&Surface>) -> V
     changes
 }
 
-pub(crate) fn surface_to_cropped_stream_changes(surface: &Surface) -> Vec<Change> {
+pub(crate) fn surface_to_cropped_stream_changes(
+    surface: &Surface,
+    transparent_background: bool,
+) -> Vec<Change> {
     let width = surface.width() as usize;
     let height = surface.height() as usize;
     if width == 0 || height == 0 {
@@ -508,7 +511,7 @@ pub(crate) fn surface_to_cropped_stream_changes(surface: &Surface) -> Vec<Change
 
     let Some(bottom_row) = (0..height)
         .rev()
-        .find(|&y| row_has_visible_content(&surface.content[y * width..(y + 1) * width]))
+        .find(|&y| row_has_glyph(&surface.content[y * width..(y + 1) * width]))
     else {
         return Vec::new();
     };
@@ -517,21 +520,40 @@ pub(crate) fn surface_to_cropped_stream_changes(surface: &Surface) -> Vec<Change
     for y in 0..=bottom_row {
         let row = &surface.content[y * width..(y + 1) * width];
 
+        let right_col = if transparent_background {
+            match (0..width).rev().find(|&x| row[x].has_glyph()) {
+                Some(col) => col,
+                None => {
+                    if y != bottom_row {
+                        changes.push(Change::CursorPosition {
+                            x: Position::Absolute(0),
+                            y: Position::Relative(1),
+                        });
+                    }
+                    continue;
+                }
+            }
+        } else {
+            width.saturating_sub(1)
+        };
+
         let mut current_fg = ColorAttribute::Default;
         let mut current_bg = ColorAttribute::Default;
         let mut buf = String::new();
 
-        // In streaming `render()` mode we avoid cursor addressing and emit regular lines.
-        // To preserve background blocks and other styling, keep the full row width.
-        for cell in row.iter() {
+        for cell in row.iter().take(right_col + 1) {
             let fg = cell.fg.unwrap_or(ColorAttribute::Default);
-            let bg = cell.bg.unwrap_or(ColorAttribute::Default);
+            let bg = if transparent_background {
+                ColorAttribute::Default
+            } else {
+                cell.bg.unwrap_or(ColorAttribute::Default)
+            };
 
             if fg != current_fg || bg != current_bg {
                 if !buf.is_empty() {
                     changes.push(Change::Text(std::mem::take(&mut buf)));
                 }
-                if bg != current_bg {
+                if !transparent_background && bg != current_bg {
                     changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(bg)));
                     current_bg = bg;
                 }
@@ -553,28 +575,25 @@ pub(crate) fn surface_to_cropped_stream_changes(surface: &Surface) -> Vec<Change
                 ColorAttribute::Default,
             )));
         }
-        if current_bg != ColorAttribute::Default {
+        if !transparent_background && current_bg != ColorAttribute::Default {
             changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(
                 ColorAttribute::Default,
             )));
         }
 
         if y != bottom_row {
-            changes.push(Change::Text("\n".to_string()));
+            changes.push(Change::CursorPosition {
+                x: Position::Absolute(0),
+                y: Position::Relative(1),
+            });
         }
     }
 
     changes
 }
 
-fn row_has_visible_content(row: &[crate::surface::Cell]) -> bool {
-    row.iter().any(cell_has_visible_content)
-}
-
-fn cell_has_visible_content(cell: &crate::surface::Cell) -> bool {
-    // For `render()` (one-shot output), treat background-only cells as non-content
-    // so we can trim trailing blank lines even when the UI paints a full-page background.
-    cell.ch != ' ' && cell.ch != '\0'
+fn row_has_glyph(row: &[crate::surface::Cell]) -> bool {
+    row.iter().any(crate::surface::Cell::has_glyph)
 }
 
 pub(crate) fn flush_surface<T: Terminal>(

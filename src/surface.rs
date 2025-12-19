@@ -9,6 +9,20 @@ pub struct Cell {
     pub bg: Option<ColorAttribute>,
 }
 
+impl Cell {
+    pub fn is_blank(&self) -> bool {
+        (self.ch == ' ' || self.ch == '\0') && self.fg.is_none() && self.bg.is_none()
+    }
+
+    pub fn has_glyph(&self) -> bool {
+        self.ch != ' ' && self.ch != '\0'
+    }
+
+    pub fn has_visible_content(&self) -> bool {
+        !self.is_blank()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Surface {
     width: u16,
