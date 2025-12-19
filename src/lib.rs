@@ -105,25 +105,8 @@ pub fn launch_raw<P: Clone + 'static, F>(
 where
     F: ComponentFunction<P, ()> + 'static,
 {
-    if cfg.rendering_mode == RenderingMode::BlitzGui {
-        return launch_blitz_gui_with_props(raw);
-    }
-
     let rt = RuntimeBuilder::new_current_thread().enable_all().build()?;
     rt.block_on(run_renderer(cfg, raw))?;
-    Ok(())
-}
-
-pub fn launch_blitz_gui(app: fn() -> Element) -> anyhow::Result<()> {
-    let raw = RawVirtualDom::new(app);
-    launch_blitz_gui_with_props(raw)
-}
-
-pub fn launch_blitz_gui_with_props<P: Clone + 'static, F: ComponentFunction<P, ()> + 'static>(
-    raw: RawVirtualDom<P, F>,
-) -> anyhow::Result<()> {
-    let (app, props, contexts) = raw.into_parts();
-    dioxus_native::launch_cfg_with_props(app, props, contexts, vec![]);
     Ok(())
 }
 

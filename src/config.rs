@@ -74,8 +74,6 @@ impl Default for Config {
 pub enum RenderingMode {
     /// Render normally
     Visual,
-    /// Render via Blitz GUI (Vello) using the same Dioxus app and default TUI CSS for preview
-    BlitzGui,
     /// Render debug info instead of UI
     Debug,
     /// Do not create a terminal or input thread (useful for tests)
