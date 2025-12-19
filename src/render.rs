@@ -566,6 +566,13 @@ pub(crate) fn surface_to_cropped_stream_changes(surface: &Surface) -> Vec<Change
     };
 
     let mut changes = Vec::new();
+    // `render()` streams to stdout and must not assume the current terminal state.
+    // Terminals are sticky: if the previous output set attributes, we must reset
+    // them up-front to get predictable output.
+    push_reset_attributes(&mut changes);
+    // Force termwiz to flush the reset immediately; it buffers attribute changes
+    // until it sees `Change::Text`.
+    changes.push(Change::Text(String::new()));
     for y in 0..=bottom_row {
         let row = &surface.content[y * width..(y + 1) * width];
 
@@ -573,28 +580,9 @@ pub(crate) fn surface_to_cropped_stream_changes(surface: &Surface) -> Vec<Change
             Some(col) => col,
             None => {
                 // Reset attributes so empty rows don't inherit styling.
-                changes.push(Change::Attribute(termwiz::cell::AttributeChange::Foreground(
-                    ColorAttribute::Default,
-                )));
-                changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(
-                    ColorAttribute::Default,
-                )));
-                changes.push(Change::Attribute(termwiz::cell::AttributeChange::Intensity(
-                    termwiz::cell::Intensity::Normal,
-                )));
-                changes.push(Change::Attribute(termwiz::cell::AttributeChange::Underline(
-                    termwiz::cell::Underline::None,
-                )));
-                changes.push(Change::Attribute(termwiz::cell::AttributeChange::Italic(false)));
-                changes.push(Change::Attribute(termwiz::cell::AttributeChange::Blink(
-                    termwiz::cell::Blink::None,
-                )));
-
+                push_reset_attributes(&mut changes);
                 // Always advance to a fresh line for stream output.
-                changes.push(Change::CursorPosition {
-                    x: Position::Absolute(0),
-                    y: Position::Relative(1),
-                });
+                changes.push(Change::Text("\r\n".to_string()));
                 continue;
             }
         };
@@ -692,13 +680,15 @@ pub(crate) fn surface_to_cropped_stream_changes(surface: &Surface) -> Vec<Change
         }
 
         // Ensure each row ends with default attributes and a newline.
-        changes.push(Change::CursorPosition {
-            x: Position::Absolute(0),
-            y: Position::Relative(1),
-        });
+        push_reset_attributes(&mut changes);
+        changes.push(Change::Text("\r\n".to_string()));
     }
 
     changes
+}
+
+fn push_reset_attributes(changes: &mut Vec<Change>) {
+    changes.push(Change::AllAttributes(termwiz::cell::CellAttributes::default()));
 }
 
 fn row_has_non_blank(row: &[crate::surface::Cell]) -> bool {
