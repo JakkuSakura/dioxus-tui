@@ -1,4 +1,5 @@
 use blitz_dom::{local_name, BaseDocument, Node};
+use termwiz::cell::{Blink, Intensity, Underline};
 use termwiz::color::{ColorAttribute, SrgbaTuple};
 
 use crate::config::{PaletteEntry, PaletteRoles};
@@ -37,7 +38,52 @@ pub fn paint_surface(
         color_mode,
         truecolor,
         fallback_fg,
+        TextStyle::default(),
     );
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TextStyle {
+    fg: Option<ColorAttribute>,
+    bg: Option<ColorAttribute>,
+    intensity: Intensity,
+    underline: Underline,
+    italic: bool,
+    blink: Blink,
+}
+
+impl Default for TextStyle {
+    fn default() -> Self {
+        Self {
+            fg: None,
+            bg: None,
+            intensity: Intensity::Normal,
+            underline: Underline::None,
+            italic: false,
+            blink: Blink::None,
+        }
+    }
+}
+
+impl TextStyle {
+    fn merged(self, other: TextStyle) -> TextStyle {
+        TextStyle {
+            fg: other.fg.or(self.fg),
+            bg: other.bg.or(self.bg),
+            intensity: if other.intensity != Intensity::Normal {
+                other.intensity
+            } else {
+                self.intensity
+            },
+            underline: if other.underline != Underline::None {
+                other.underline
+            } else {
+                self.underline
+            },
+            italic: self.italic || other.italic,
+            blink: if other.blink != Blink::None { other.blink } else { self.blink },
+        }
+    }
 }
 
 fn paint_node(
@@ -49,19 +95,28 @@ fn paint_node(
     color_mode: ColorMode,
     truecolor: bool,
     fallback_fg: ColorAttribute,
+    inherited: TextStyle,
 ) {
     match &node.data {
         blitz_dom::node::NodeData::Element(_) | blitz_dom::node::NodeData::AnonymousBlock(_) => {
+            let local_style = style_overrides(node, color_mode, truecolor);
+            let node_style = inherited.merged(local_style);
+
             let rect = node_rect(doc, node, area, metrics);
             if rect.width > 0 && rect.height > 0 {
-                if let Some(bg) = node_background(node, color_mode, truecolor) {
+                if let Some(bg) = node_background(node, color_mode, truecolor).or(node_style.bg) {
                     fill_rect(surface, rect, None, Some(bg));
                 }
             }
 
             // Render inline text content within this node's box.
             if rect.width > 0 && rect.height > 0 {
-                let fg = Some(node_color(node, color_mode, truecolor).unwrap_or(fallback_fg));
+                let fg = Some(
+                    node_color(node, color_mode, truecolor)
+                        .or(node_style.fg)
+                        .unwrap_or(fallback_fg),
+                );
+                let style = TextStyle { fg, ..node_style };
                 let text_width = if is_blockish(node) {
                     area.width.saturating_sub(rect.x)
                 } else {
@@ -76,18 +131,18 @@ fn paint_node(
 
                 if node.data.is_element_with_tag_name(&local_name!("input")) {
                     if let Some(value) = node.attr(local_name!("value")) {
-                        let _ = write_wrapped(surface, text_bounds, (rect.x, rect.y), value, fg);
+                        let _ = write_wrapped(surface, text_bounds, (rect.x, rect.y), value, style);
                     }
                 } else if node.data.is_element_with_tag_name(&local_name!("button")) {
                     let label = node.text_content();
-                    let _ = write_wrapped(surface, text_bounds, (rect.x, rect.y), label.as_str(), fg);
+                    let _ = write_wrapped(surface, text_bounds, (rect.x, rect.y), label.as_str(), style);
                 } else {
                     paint_inline_text(
                         surface,
                         doc,
                         node,
                         text_bounds,
-                        fg,
+                        style,
                         color_mode,
                         truecolor,
                         fallback_fg,
@@ -110,6 +165,7 @@ fn paint_node(
                         color_mode,
                         truecolor,
                         fallback_fg,
+                        node_style,
                     );
                 }
             }
@@ -127,6 +183,7 @@ fn paint_node(
                         color_mode,
                         truecolor,
                         fallback_fg,
+                        inherited,
                     );
                 }
             }
@@ -139,7 +196,7 @@ fn paint_inline_text(
     doc: &BaseDocument,
     node: &Node,
     bounds: Rect,
-    fg: Option<ColorAttribute>,
+    inherited: TextStyle,
     color_mode: ColorMode,
     truecolor: bool,
     fallback_fg: ColorAttribute,
@@ -162,7 +219,7 @@ fn paint_inline_text(
                     bounds,
                     (cursor_x, cursor_y),
                     text.content.as_str(),
-                    fg,
+                    inherited,
                 );
             }
             blitz_dom::node::NodeData::Element(_) | blitz_dom::node::NodeData::AnonymousBlock(_) => {
@@ -170,23 +227,26 @@ fn paint_inline_text(
                     if child.data.is_element_with_tag_name(&local_name!("input")) {
                         if let Some(value) = child.attr(local_name!("value")) {
                             (cursor_x, cursor_y) =
-                                write_wrapped(surface, bounds, (cursor_x, cursor_y), value, fg);
+                                write_wrapped(surface, bounds, (cursor_x, cursor_y), value, inherited);
                         }
                         continue;
                     }
 
+                    let local_style = style_overrides(child, color_mode, truecolor);
+                    let child_style = inherited.merged(local_style);
                     let child_fg = Some(
                         node_color(child, color_mode, truecolor)
-                            .or(fg)
+                            .or(child_style.fg)
                             .unwrap_or(fallback_fg),
                     );
+                    let child_style = TextStyle { fg: child_fg, ..child_style };
                     (cursor_x, cursor_y) = paint_inline_children(
                         surface,
                         doc,
                         child,
                         bounds,
                         (cursor_x, cursor_y),
-                        child_fg,
+                        child_style,
                         color_mode,
                         truecolor,
                         fallback_fg,
@@ -204,7 +264,7 @@ fn paint_inline_children(
     node: &Node,
     bounds: Rect,
     cursor: (u16, u16),
-    fg: Option<ColorAttribute>,
+    inherited: TextStyle,
     color_mode: ColorMode,
     truecolor: bool,
     fallback_fg: ColorAttribute,
@@ -216,29 +276,32 @@ fn paint_inline_children(
         };
         match &child.data {
             blitz_dom::node::NodeData::Text(text) => {
-                cursor = write_wrapped(surface, bounds, cursor, text.content.as_str(), fg);
+                cursor = write_wrapped(surface, bounds, cursor, text.content.as_str(), inherited);
             }
             blitz_dom::node::NodeData::Element(_) | blitz_dom::node::NodeData::AnonymousBlock(_) => {
                 if !is_blockish(child) {
                     if child.data.is_element_with_tag_name(&local_name!("input")) {
                         if let Some(value) = child.attr(local_name!("value")) {
-                            cursor = write_wrapped(surface, bounds, cursor, value, fg);
+                            cursor = write_wrapped(surface, bounds, cursor, value, inherited);
                         }
                         continue;
                     }
 
+                    let local_style = style_overrides(child, color_mode, truecolor);
+                    let child_style = inherited.merged(local_style);
                     let child_fg = Some(
                         node_color(child, color_mode, truecolor)
-                            .or(fg)
+                            .or(child_style.fg)
                             .unwrap_or(fallback_fg),
                     );
+                    let child_style = TextStyle { fg: child_fg, ..child_style };
                     cursor = paint_inline_children(
                         surface,
                         doc,
                         child,
                         bounds,
                         cursor,
-                        child_fg,
+                        child_style,
                         color_mode,
                         truecolor,
                         fallback_fg,
@@ -306,7 +369,7 @@ fn write_wrapped(
     bounds: Rect,
     cursor: (u16, u16),
     text: &str,
-    fg: Option<ColorAttribute>,
+    style: TextStyle,
 ) -> (u16, u16) {
     let (mut x, mut y) = cursor;
     let end_x = bounds.x.saturating_add(bounds.width);
@@ -330,11 +393,85 @@ fn write_wrapped(
             }
         }
         let line_width = end_x.saturating_sub(x) as usize;
-        surface.set_stringn_colored(x, y, ch.to_string(), line_width, fg, None);
+        surface.set_stringn_styled(
+            x,
+            y,
+            ch.to_string(),
+            line_width,
+            style.fg,
+            style.bg,
+            style.intensity,
+            style.underline,
+            style.italic,
+            style.blink,
+        );
         x = x.saturating_add(ch_width);
     }
 
     (x, y)
+}
+
+fn style_overrides(node: &Node, color_mode: ColorMode, truecolor: bool) -> TextStyle {
+    let mut out = TextStyle::default();
+
+    if let Some(idx) = attr_value(node, "data-fg-idx")
+        .or_else(|| attr_value(node, "data_fg_idx"))
+        .and_then(|s| s.parse::<u8>().ok())
+    {
+        out.fg = Some(ColorAttribute::PaletteIndex(idx));
+    }
+    if let Some(idx) = attr_value(node, "data-bg-idx")
+        .or_else(|| attr_value(node, "data_bg_idx"))
+        .and_then(|s| s.parse::<u8>().ok())
+    {
+        out.bg = Some(ColorAttribute::PaletteIndex(idx));
+    }
+
+    if let Some(attrs) = attr_value(node, "data-attrs").or_else(|| attr_value(node, "data_attrs")) {
+        for token in attrs.split(|c: char| c == ',' || c.is_whitespace()) {
+            match token.trim().to_ascii_lowercase().as_str() {
+                "bold" => out.intensity = Intensity::Bold,
+                "dim" => out.intensity = Intensity::Half,
+                "underline" | "underscore" => out.underline = Underline::Single,
+                "italic" => out.italic = true,
+                "blink" => out.blink = Blink::Slow,
+                _ => {}
+            }
+        }
+    }
+
+    if node.data.is_element_with_tag_name(&local_name!("a")) {
+        out.underline = Underline::Single;
+    }
+    if node.data.is_element_with_tag_name(&local_name!("b"))
+        || node.data.is_element_with_tag_name(&local_name!("strong"))
+    {
+        out.intensity = Intensity::Bold;
+    }
+    if node.data.is_element_with_tag_name(&local_name!("i"))
+        || node.data.is_element_with_tag_name(&local_name!("em"))
+    {
+        out.italic = true;
+    }
+    if node.data.is_element_with_tag_name(&local_name!("blink")) {
+        out.blink = Blink::Slow;
+    }
+
+    // If we don't have an explicit palette index override, allow CSS colors to set fg/bg.
+    if out.fg.is_none() {
+        out.fg = node_color(node, color_mode, truecolor);
+    }
+    if out.bg.is_none() {
+        out.bg = node_background(node, color_mode, truecolor);
+    }
+
+    out
+}
+
+fn attr_value<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
+    node.attrs()?.iter().find_map(|attr| {
+        (attr.name.local.as_ref() == name).then_some(attr.value.as_str())
+    })
 }
 
 fn root_background(
@@ -423,6 +560,10 @@ fn fill_rect(
                 slot.ch = ' ';
                 slot.fg = fg;
                 slot.bg = bg;
+                slot.intensity = Intensity::Normal;
+                slot.underline = Underline::None;
+                slot.italic = false;
+                slot.blink = Blink::None;
             }
         }
     }

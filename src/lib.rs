@@ -47,7 +47,6 @@ pub struct RenderRequest {
     cfg: Config,
     size: Option<(u16, u16)>,
     contexts: Vec<ContextFactory>,
-    transparent_background: bool,
 }
 
 impl RenderRequest {
@@ -57,7 +56,6 @@ impl RenderRequest {
             cfg: Config::default(),
             size: None,
             contexts: Vec::new(),
-            transparent_background: true,
         }
     }
 
@@ -76,10 +74,6 @@ impl RenderRequest {
         self
     }
 
-    pub fn with_transparent_background(mut self, enabled: bool) -> Self {
-        self.transparent_background = enabled;
-        self
-    }
 }
 
 impl From<fn() -> Element> for RenderRequest {
@@ -210,7 +204,7 @@ fn render_request(request: RenderRequest) -> anyhow::Result<()> {
     // We still use the same pipeline as `launch` up to `Surface`, and then we render the resulting
     // `Change` stream using termwiz's own `TerminfoRenderer`.
     let caps = Capabilities::new_from_env()?;
-    let changes = render::surface_to_cropped_stream_changes(&surface, request.transparent_background);
+    let changes = render::surface_to_cropped_stream_changes(&surface);
     let mut renderer = TerminfoRenderer::new(caps);
     let mut out = std::io::stdout().lock();
     let mut tty = StdoutRenderTty {

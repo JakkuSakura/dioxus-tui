@@ -448,6 +448,10 @@ pub(crate) fn surface_to_changes(surface: &Surface, prev: Option<&Surface>) -> V
 
         let mut current_fg = ColorAttribute::Default;
         let mut current_bg = ColorAttribute::Default;
+        let mut current_intensity = termwiz::cell::Intensity::Normal;
+        let mut current_underline = termwiz::cell::Underline::None;
+        let mut current_italic = false;
+        let mut current_blink = termwiz::cell::Blink::None;
         let mut buf = String::with_capacity(chunk.len());
 
         changes.push(Change::CursorPosition {
@@ -458,8 +462,18 @@ pub(crate) fn surface_to_changes(surface: &Surface, prev: Option<&Surface>) -> V
         for cell in chunk.iter() {
             let fg = cell.fg.unwrap_or(ColorAttribute::Default);
             let bg = cell.bg.unwrap_or(ColorAttribute::Default);
+            let intensity = cell.intensity;
+            let underline = cell.underline;
+            let italic = cell.italic;
+            let blink = cell.blink;
 
-            if fg != current_fg || bg != current_bg {
+            if fg != current_fg
+                || bg != current_bg
+                || intensity != current_intensity
+                || underline != current_underline
+                || italic != current_italic
+                || blink != current_blink
+            {
                 if !buf.is_empty() {
                     changes.push(Change::Text(std::mem::take(&mut buf)));
                 }
@@ -474,6 +488,26 @@ pub(crate) fn surface_to_changes(surface: &Surface, prev: Option<&Surface>) -> V
                         fg,
                     )));
                     current_fg = fg;
+                }
+                if intensity != current_intensity {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Intensity(
+                        intensity,
+                    )));
+                    current_intensity = intensity;
+                }
+                if underline != current_underline {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Underline(
+                        underline,
+                    )));
+                    current_underline = underline;
+                }
+                if italic != current_italic {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Italic(italic)));
+                    current_italic = italic;
+                }
+                if blink != current_blink {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Blink(blink)));
+                    current_blink = blink;
                 }
             }
 
@@ -494,15 +528,30 @@ pub(crate) fn surface_to_changes(surface: &Surface, prev: Option<&Surface>) -> V
                 ColorAttribute::Default,
             )));
         }
+        if current_intensity != termwiz::cell::Intensity::Normal {
+            changes.push(Change::Attribute(termwiz::cell::AttributeChange::Intensity(
+                termwiz::cell::Intensity::Normal,
+            )));
+        }
+        if current_underline != termwiz::cell::Underline::None {
+            changes.push(Change::Attribute(termwiz::cell::AttributeChange::Underline(
+                termwiz::cell::Underline::None,
+            )));
+        }
+        if current_italic {
+            changes.push(Change::Attribute(termwiz::cell::AttributeChange::Italic(false)));
+        }
+        if current_blink != termwiz::cell::Blink::None {
+            changes.push(Change::Attribute(termwiz::cell::AttributeChange::Blink(
+                termwiz::cell::Blink::None,
+            )));
+        }
     }
 
     changes
 }
 
-pub(crate) fn surface_to_cropped_stream_changes(
-    surface: &Surface,
-    transparent_background: bool,
-) -> Vec<Change> {
+pub(crate) fn surface_to_cropped_stream_changes(surface: &Surface) -> Vec<Change> {
     let width = surface.width() as usize;
     let height = surface.height() as usize;
     if width == 0 || height == 0 {
@@ -511,7 +560,7 @@ pub(crate) fn surface_to_cropped_stream_changes(
 
     let Some(bottom_row) = (0..height)
         .rev()
-        .find(|&y| row_has_glyph(&surface.content[y * width..(y + 1) * width]))
+        .find(|&y| row_has_non_blank(&surface.content[y * width..(y + 1) * width]))
     else {
         return Vec::new();
     };
@@ -520,46 +569,89 @@ pub(crate) fn surface_to_cropped_stream_changes(
     for y in 0..=bottom_row {
         let row = &surface.content[y * width..(y + 1) * width];
 
-        let right_col = if transparent_background {
-            match (0..width).rev().find(|&x| row[x].has_glyph()) {
-                Some(col) => col,
-                None => {
-                    if y != bottom_row {
-                        changes.push(Change::CursorPosition {
-                            x: Position::Absolute(0),
-                            y: Position::Relative(1),
-                        });
-                    }
-                    continue;
-                }
+        let right_col = match (0..width).rev().find(|&x| !row[x].is_blank()) {
+            Some(col) => col,
+            None => {
+                // Reset attributes so empty rows don't inherit styling.
+                changes.push(Change::Attribute(termwiz::cell::AttributeChange::Foreground(
+                    ColorAttribute::Default,
+                )));
+                changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(
+                    ColorAttribute::Default,
+                )));
+                changes.push(Change::Attribute(termwiz::cell::AttributeChange::Intensity(
+                    termwiz::cell::Intensity::Normal,
+                )));
+                changes.push(Change::Attribute(termwiz::cell::AttributeChange::Underline(
+                    termwiz::cell::Underline::None,
+                )));
+                changes.push(Change::Attribute(termwiz::cell::AttributeChange::Italic(false)));
+                changes.push(Change::Attribute(termwiz::cell::AttributeChange::Blink(
+                    termwiz::cell::Blink::None,
+                )));
+
+                // Always advance to a fresh line for stream output.
+                changes.push(Change::CursorPosition {
+                    x: Position::Absolute(0),
+                    y: Position::Relative(1),
+                });
+                continue;
             }
-        } else {
-            width.saturating_sub(1)
         };
 
         let mut current_fg = ColorAttribute::Default;
         let mut current_bg = ColorAttribute::Default;
+        let mut current_intensity = termwiz::cell::Intensity::Normal;
+        let mut current_underline = termwiz::cell::Underline::None;
+        let mut current_italic = false;
+        let mut current_blink = termwiz::cell::Blink::None;
         let mut buf = String::new();
 
         for cell in row.iter().take(right_col + 1) {
             let fg = cell.fg.unwrap_or(ColorAttribute::Default);
-            let bg = if transparent_background {
-                ColorAttribute::Default
-            } else {
-                cell.bg.unwrap_or(ColorAttribute::Default)
-            };
+            let bg = cell.bg.unwrap_or(ColorAttribute::Default);
+            let intensity = cell.intensity;
+            let underline = cell.underline;
+            let italic = cell.italic;
+            let blink = cell.blink;
 
-            if fg != current_fg || bg != current_bg {
+            if fg != current_fg
+                || bg != current_bg
+                || intensity != current_intensity
+                || underline != current_underline
+                || italic != current_italic
+                || blink != current_blink
+            {
                 if !buf.is_empty() {
                     changes.push(Change::Text(std::mem::take(&mut buf)));
                 }
-                if !transparent_background && bg != current_bg {
+                if bg != current_bg {
                     changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(bg)));
                     current_bg = bg;
                 }
                 if fg != current_fg {
                     changes.push(Change::Attribute(termwiz::cell::AttributeChange::Foreground(fg)));
                     current_fg = fg;
+                }
+                if intensity != current_intensity {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Intensity(
+                        intensity,
+                    )));
+                    current_intensity = intensity;
+                }
+                if underline != current_underline {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Underline(
+                        underline,
+                    )));
+                    current_underline = underline;
+                }
+                if italic != current_italic {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Italic(italic)));
+                    current_italic = italic;
+                }
+                if blink != current_blink {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Blink(blink)));
+                    current_blink = blink;
                 }
             }
 
@@ -575,25 +667,42 @@ pub(crate) fn surface_to_cropped_stream_changes(
                 ColorAttribute::Default,
             )));
         }
-        if !transparent_background && current_bg != ColorAttribute::Default {
+        if current_bg != ColorAttribute::Default {
             changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(
                 ColorAttribute::Default,
             )));
         }
-
-        if y != bottom_row {
-            changes.push(Change::CursorPosition {
-                x: Position::Absolute(0),
-                y: Position::Relative(1),
-            });
+        if current_intensity != termwiz::cell::Intensity::Normal {
+            changes.push(Change::Attribute(termwiz::cell::AttributeChange::Intensity(
+                termwiz::cell::Intensity::Normal,
+            )));
         }
+        if current_underline != termwiz::cell::Underline::None {
+            changes.push(Change::Attribute(termwiz::cell::AttributeChange::Underline(
+                termwiz::cell::Underline::None,
+            )));
+        }
+        if current_italic {
+            changes.push(Change::Attribute(termwiz::cell::AttributeChange::Italic(false)));
+        }
+        if current_blink != termwiz::cell::Blink::None {
+            changes.push(Change::Attribute(termwiz::cell::AttributeChange::Blink(
+                termwiz::cell::Blink::None,
+            )));
+        }
+
+        // Ensure each row ends with default attributes and a newline.
+        changes.push(Change::CursorPosition {
+            x: Position::Absolute(0),
+            y: Position::Relative(1),
+        });
     }
 
     changes
 }
 
-fn row_has_glyph(row: &[crate::surface::Cell]) -> bool {
-    row.iter().any(crate::surface::Cell::has_glyph)
+fn row_has_non_blank(row: &[crate::surface::Cell]) -> bool {
+    row.iter().any(crate::surface::Cell::has_visible_content)
 }
 
 pub(crate) fn flush_surface<T: Terminal>(

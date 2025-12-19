@@ -1,4 +1,5 @@
 use crate::geometry::Rect;
+use termwiz::cell::{Blink, Intensity, Underline};
 use termwiz::color::ColorAttribute;
 use unicode_width::UnicodeWidthChar;
 
@@ -7,11 +8,21 @@ pub struct Cell {
     pub ch: char,
     pub fg: Option<ColorAttribute>,
     pub bg: Option<ColorAttribute>,
+    pub intensity: Intensity,
+    pub underline: Underline,
+    pub italic: bool,
+    pub blink: Blink,
 }
 
 impl Cell {
     pub fn is_blank(&self) -> bool {
-        (self.ch == ' ' || self.ch == '\0') && self.fg.is_none() && self.bg.is_none()
+        (self.ch == ' ' || self.ch == '\0')
+            && self.fg.is_none()
+            && self.bg.is_none()
+            && self.intensity == Intensity::Normal
+            && self.underline == Underline::None
+            && !self.italic
+            && self.blink == Blink::None
     }
 
     pub fn has_glyph(&self) -> bool {
@@ -41,6 +52,10 @@ impl Surface {
                     ch: ' ',
                     fg: None,
                     bg: None,
+                    intensity: Intensity::Normal,
+                    underline: Underline::None,
+                    italic: false,
+                    blink: Blink::None,
                 };
                 len
             ],
@@ -52,6 +67,10 @@ impl Surface {
             cell.ch = ' ';
             cell.fg = None;
             cell.bg = None;
+            cell.intensity = Intensity::Normal;
+            cell.underline = Underline::None;
+            cell.italic = false;
+            cell.blink = Blink::None;
         }
     }
 
@@ -80,6 +99,33 @@ impl Surface {
         fg: Option<ColorAttribute>,
         bg: Option<ColorAttribute>,
     ) {
+        self.set_stringn_styled(
+            x,
+            y,
+            text,
+            width,
+            fg,
+            bg,
+            Intensity::Normal,
+            Underline::None,
+            false,
+            Blink::None,
+        );
+    }
+
+    pub fn set_stringn_styled(
+        &mut self,
+        x: u16,
+        y: u16,
+        text: impl AsRef<str>,
+        width: usize,
+        fg: Option<ColorAttribute>,
+        bg: Option<ColorAttribute>,
+        intensity: Intensity,
+        underline: Underline,
+        italic: bool,
+        blink: Blink,
+    ) {
         if y >= self.height {
             return;
         }
@@ -100,6 +146,10 @@ impl Surface {
                 if let Some(bg) = bg {
                     slot.bg = Some(bg);
                 }
+                slot.intensity = intensity;
+                slot.underline = underline;
+                slot.italic = italic;
+                slot.blink = blink;
             }
 
             if ch_width > 1 {
@@ -112,6 +162,10 @@ impl Surface {
                         if let Some(bg) = bg {
                             slot.bg = Some(bg);
                         }
+                        slot.intensity = intensity;
+                        slot.underline = underline;
+                        slot.italic = italic;
+                        slot.blink = blink;
                     }
                 }
             }
