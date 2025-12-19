@@ -40,6 +40,8 @@ Render HTML via Blitz/Servo into a terminal grid with a single, deterministic pi
   comparison.
 - Diagnostics: grid diffs (including attributes) on mismatch.
 
+If you want to render without entering the terminal alternate screen, see `examples/render_once_stdout.rs`.
+
 ## Default TUI CSS (roles)
 
 Use palette roles and cell-friendly units; map roles per capability profile:

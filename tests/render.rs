@@ -3,7 +3,7 @@ use termwiz::color::ColorAttribute;
 use dioxus_tui::{ColorMode, Config, Surface};
 
 fn render_component(root: fn() -> Element, width: u16, height: u16) -> Surface {
-    dioxus_tui::render_cfg(
+    dioxus_tui::render_surface_cfg(
         root,
         Config::default().with_color_mode(ColorMode::Rgb),
         width,

@@ -71,7 +71,7 @@ fn render_app(app: fn() -> Element, width: u16, height: u16, ctx: Option<usize>)
     };
     let raw = RawVirtualDom::with_contexts(move |_| app(), (), contexts);
 
-    dioxus_tui::render_raw(raw, cfg, area).expect("render")
+    dioxus_tui::render_surface_raw(raw, cfg, area).expect("render")
 }
 
 #[test]
