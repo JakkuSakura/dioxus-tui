@@ -198,6 +198,10 @@ where
     P: Clone + 'static,
     F: ComponentFunction<P, ()> + 'static,
 {
+    let capabilities = TerminalCapabilities::detect().unwrap_or(TerminalCapabilities {
+        truecolor: false,
+        inline_images: false,
+    });
     let metrics = CellMetrics {
         cell_w_px: 8.0,
         cell_h_px: 16.0,
@@ -217,7 +221,7 @@ where
         metrics,
         cfg.palette_roles,
         cfg.color_mode,
-        true,
+        capabilities.truecolor,
     );
     Ok(surface)
 }
@@ -512,38 +516,36 @@ pub(crate) fn surface_to_cropped_stream_changes(surface: &Surface) -> Vec<Change
     let mut changes = Vec::new();
     for y in 0..=bottom_row {
         let row = &surface.content[y * width..(y + 1) * width];
-        let right_col = (0..width).rev().find(|&x| cell_has_visible_content(&row[x]));
 
         let mut current_fg = ColorAttribute::Default;
         let mut current_bg = ColorAttribute::Default;
         let mut buf = String::new();
 
-        if let Some(right_col) = right_col {
-            for x in 0..=right_col {
-                let cell = &row[x];
-                let fg = cell.fg.unwrap_or(ColorAttribute::Default);
-                let bg = cell.bg.unwrap_or(ColorAttribute::Default);
+        // In streaming `render()` mode we avoid cursor addressing and emit regular lines.
+        // To preserve background blocks and other styling, keep the full row width.
+        for cell in row.iter() {
+            let fg = cell.fg.unwrap_or(ColorAttribute::Default);
+            let bg = cell.bg.unwrap_or(ColorAttribute::Default);
 
-                if fg != current_fg || bg != current_bg {
-                    if !buf.is_empty() {
-                        changes.push(Change::Text(std::mem::take(&mut buf)));
-                    }
-                    if bg != current_bg {
-                        changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(bg)));
-                        current_bg = bg;
-                    }
-                    if fg != current_fg {
-                        changes.push(Change::Attribute(termwiz::cell::AttributeChange::Foreground(fg)));
-                        current_fg = fg;
-                    }
+            if fg != current_fg || bg != current_bg {
+                if !buf.is_empty() {
+                    changes.push(Change::Text(std::mem::take(&mut buf)));
                 }
-
-                buf.push(cell.ch);
+                if bg != current_bg {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(bg)));
+                    current_bg = bg;
+                }
+                if fg != current_fg {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Foreground(fg)));
+                    current_fg = fg;
+                }
             }
 
-            if !buf.is_empty() {
-                changes.push(Change::Text(buf));
-            }
+            buf.push(cell.ch);
+        }
+
+        if !buf.is_empty() {
+            changes.push(Change::Text(buf));
         }
 
         if current_fg != ColorAttribute::Default {
