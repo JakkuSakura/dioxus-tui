@@ -19,7 +19,7 @@ fn Quadrant(color: String, text: String) -> Element {
     }
 }
 
-fn app() -> Element {
+pub fn app() -> Element {
     rsx! {
         div {
             width: "100%",

@@ -7,7 +7,7 @@ fn main() {
 
 const MAX_EVENTS: usize = 8;
 
-fn app() -> Element {
+pub fn app() -> Element {
     let mut events = use_signal(|| Vec::new() as Vec<Rc<dyn Debug>>);
 
     let mut log_event = move |event: Rc<dyn Debug>| events.write().push(event);

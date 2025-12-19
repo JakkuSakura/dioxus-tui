@@ -15,7 +15,7 @@ fn main() {
     }
 }
 
-fn app() -> Element {
+pub fn app() -> Element {
     let size = use_context::<usize>();
     rsx! {
         div { width: "100%", height: "100%", Grid { size } }

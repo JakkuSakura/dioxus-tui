@@ -8,7 +8,7 @@ fn main() {
     dioxus_tui::launch(app).unwrap();
 }
 
-fn app() -> Element {
+pub fn app() -> Element {
     fn to_str(c: &[i32; 3]) -> String {
         let mut result = String::new();
         result += "#";

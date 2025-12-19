@@ -12,7 +12,7 @@ fn main() {
     .unwrap();
 }
 
-fn app() -> Element {
+pub fn app() -> Element {
     rsx! {
         div {
             h1 { "Dioxus demo" }

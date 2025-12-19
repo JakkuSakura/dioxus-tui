@@ -412,18 +412,12 @@ fn initial_viewport_size() -> Option<(u16, u16)> {
         .map(|s| (s.cols as u16, s.rows as u16))
 }
 
-fn flush_surface<T: Terminal>(
-    term: &mut BufferedTerminal<T>,
-    surface: &Surface,
-    prev: Option<&Surface>,
-    caps: &TerminalCapabilities,
-    images: &std::collections::VecDeque<crate::scene::InlineImage>,
-    metrics: CellMetrics,
-) -> Result<()> {
+pub(crate) fn surface_to_changes(surface: &Surface, prev: Option<&Surface>) -> Vec<Change> {
     let full_redraw = prev.map(|p| p.dims() != surface.dims()).unwrap_or(true);
+    let mut changes = Vec::new();
 
     if full_redraw {
-        term.add_change(Change::ClearScreen(ColorAttribute::Default));
+        changes.push(Change::ClearScreen(ColorAttribute::Default));
     }
 
     // dirty lines: compare line-by-line, emit minimal cursor moves; future: extend to rect diff
@@ -452,7 +446,7 @@ fn flush_surface<T: Terminal>(
         let mut current_bg = ColorAttribute::Default;
         let mut buf = String::with_capacity(chunk.len());
 
-        term.add_change(Change::CursorPosition {
+        changes.push(Change::CursorPosition {
             x: Position::Absolute(0),
             y: Position::Absolute(y),
         });
@@ -463,18 +457,18 @@ fn flush_surface<T: Terminal>(
 
             if fg != current_fg || bg != current_bg {
                 if !buf.is_empty() {
-                    term.add_change(Change::Text(std::mem::take(&mut buf)));
+                    changes.push(Change::Text(std::mem::take(&mut buf)));
                 }
                 if bg != current_bg {
-                    term.add_change(Change::Attribute(
-                        termwiz::cell::AttributeChange::Background(bg),
-                    ));
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(
+                        bg,
+                    )));
                     current_bg = bg;
                 }
                 if fg != current_fg {
-                    term.add_change(Change::Attribute(
-                        termwiz::cell::AttributeChange::Foreground(fg),
-                    ));
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Foreground(
+                        fg,
+                    )));
                     current_fg = fg;
                 }
             }
@@ -483,19 +477,115 @@ fn flush_surface<T: Terminal>(
         }
 
         if !buf.is_empty() {
-            term.add_change(Change::Text(buf));
+            changes.push(Change::Text(buf));
         }
 
         if current_fg != ColorAttribute::Default {
-            term.add_change(Change::Attribute(
-                termwiz::cell::AttributeChange::Foreground(ColorAttribute::Default),
-            ));
+            changes.push(Change::Attribute(termwiz::cell::AttributeChange::Foreground(
+                ColorAttribute::Default,
+            )));
         }
         if current_bg != ColorAttribute::Default {
-            term.add_change(Change::Attribute(
-                termwiz::cell::AttributeChange::Background(ColorAttribute::Default),
-            ));
+            changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(
+                ColorAttribute::Default,
+            )));
         }
+    }
+
+    changes
+}
+
+pub(crate) fn surface_to_cropped_stream_changes(surface: &Surface) -> Vec<Change> {
+    let width = surface.width() as usize;
+    let height = surface.height() as usize;
+    if width == 0 || height == 0 {
+        return Vec::new();
+    }
+
+    let Some(bottom_row) = (0..height)
+        .rev()
+        .find(|&y| row_has_visible_content(&surface.content[y * width..(y + 1) * width]))
+    else {
+        return Vec::new();
+    };
+
+    let mut changes = Vec::new();
+    for y in 0..=bottom_row {
+        let row = &surface.content[y * width..(y + 1) * width];
+        let right_col = (0..width).rev().find(|&x| cell_has_visible_content(&row[x]));
+
+        let mut current_fg = ColorAttribute::Default;
+        let mut current_bg = ColorAttribute::Default;
+        let mut buf = String::new();
+
+        if let Some(right_col) = right_col {
+            for x in 0..=right_col {
+                let cell = &row[x];
+                let fg = cell.fg.unwrap_or(ColorAttribute::Default);
+                let bg = cell.bg.unwrap_or(ColorAttribute::Default);
+
+                if fg != current_fg || bg != current_bg {
+                    if !buf.is_empty() {
+                        changes.push(Change::Text(std::mem::take(&mut buf)));
+                    }
+                    if bg != current_bg {
+                        changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(bg)));
+                        current_bg = bg;
+                    }
+                    if fg != current_fg {
+                        changes.push(Change::Attribute(termwiz::cell::AttributeChange::Foreground(fg)));
+                        current_fg = fg;
+                    }
+                }
+
+                buf.push(cell.ch);
+            }
+
+            if !buf.is_empty() {
+                changes.push(Change::Text(buf));
+            }
+        }
+
+        if current_fg != ColorAttribute::Default {
+            changes.push(Change::Attribute(termwiz::cell::AttributeChange::Foreground(
+                ColorAttribute::Default,
+            )));
+        }
+        if current_bg != ColorAttribute::Default {
+            changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(
+                ColorAttribute::Default,
+            )));
+        }
+
+        if y != bottom_row {
+            changes.push(Change::Text("\n".to_string()));
+        }
+    }
+
+    changes
+}
+
+fn row_has_visible_content(row: &[crate::surface::Cell]) -> bool {
+    row.iter().any(cell_has_visible_content)
+}
+
+fn cell_has_visible_content(cell: &crate::surface::Cell) -> bool {
+    // For `render()` (one-shot output), treat background-only cells as non-content
+    // so we can trim trailing blank lines even when the UI paints a full-page background.
+    cell.ch != ' ' && cell.ch != '\0'
+}
+
+pub(crate) fn flush_surface<T: Terminal>(
+    term: &mut BufferedTerminal<T>,
+    surface: &Surface,
+    prev: Option<&Surface>,
+    caps: &TerminalCapabilities,
+    images: &std::collections::VecDeque<crate::scene::InlineImage>,
+    metrics: CellMetrics,
+) -> Result<()> {
+    let changes = surface_to_changes(surface, prev);
+    for change in changes {
+        term.add_change(change);
     }
     let _ = (caps, images, metrics);
     term.flush()?;

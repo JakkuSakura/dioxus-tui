@@ -5,7 +5,7 @@ fn main() {
     dioxus_tui::launch_cfg(app, Config::new()).unwrap();
 }
 
-fn app() -> Element {
+pub fn app() -> Element {
     let mut bg_green = use_signal(|| false);
     let color = if bg_green() { "green" } else { "red" };
 

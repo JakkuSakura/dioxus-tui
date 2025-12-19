@@ -8,7 +8,7 @@ fn main() {
     .unwrap();
 }
 
-fn app() -> Element {
+pub fn app() -> Element {
     let steps = 12;
     let cell_width_pct = 100.0 / (steps as f32 + 1.0);
     rsx! {

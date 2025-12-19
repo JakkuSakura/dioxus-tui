@@ -3,7 +3,6 @@
 #![doc(html_favicon_url = "https://avatars.githubusercontent.com/u/79236386")]
 
 pub mod capabilities;
-pub mod ansi;
 mod cell_render;
 mod config;
 pub mod element;
@@ -32,10 +31,55 @@ use std::any::Any;
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
 use render::run_renderer;
 use tokio::runtime::Builder as RuntimeBuilder;
+use std::io::Write;
+
 use termwiz::{
     caps::Capabilities,
-    terminal::{new_terminal, Terminal as _},
+    render::RenderTty,
+    terminal::{Terminal as _},
 };
+use termwiz::{render::terminfo::TerminfoRenderer, terminal::ScreenSize};
+
+pub type ContextFactory = Box<dyn Fn() -> Box<dyn Any> + Send + Sync>;
+
+pub struct RenderRequest {
+    root: fn() -> Element,
+    cfg: Config,
+    size: Option<(u16, u16)>,
+    contexts: Vec<ContextFactory>,
+}
+
+impl RenderRequest {
+    pub fn new(root: fn() -> Element) -> Self {
+        Self {
+            root,
+            cfg: Config::default(),
+            size: None,
+            contexts: Vec::new(),
+        }
+    }
+
+    pub fn with_config(mut self, cfg: Config) -> Self {
+        self.cfg = cfg;
+        self
+    }
+
+    pub fn with_size(mut self, width: u16, height: u16) -> Self {
+        self.size = Some((width, height));
+        self
+    }
+
+    pub fn with_contexts(mut self, contexts: Vec<ContextFactory>) -> Self {
+        self.contexts = contexts;
+        self
+    }
+}
+
+impl From<fn() -> Element> for RenderRequest {
+    fn from(root: fn() -> Element) -> Self {
+        Self::new(root)
+    }
+}
 
 pub mod launch {
     use super::*;
@@ -74,12 +118,7 @@ pub fn render_surface(app: fn() -> Element, width: u16, height: u16) -> anyhow::
     render_surface_cfg(app, Config::default(), width, height)
 }
 
-pub fn render_surface_cfg(
-    app: fn() -> Element,
-    cfg: Config,
-    width: u16,
-    height: u16,
-) -> anyhow::Result<Surface> {
+pub fn render_surface_cfg(app: fn() -> Element, cfg: Config, width: u16, height: u16) -> anyhow::Result<Surface> {
     let raw = RawVirtualDom::new(app);
     render_surface_raw(raw, cfg, Rect::new(0, 0, width, height))
 }
@@ -89,46 +128,21 @@ pub fn render_surface_cfg(
 /// This is a convenience for non-interactive output (no alternate screen, no input loop).
 /// The viewport size is detected from the current terminal when possible, with a reasonable
 /// fallback for non-TTY environments.
-pub fn render(app: fn() -> Element) -> anyhow::Result<()> {
-    render_cfg(app, Config::default())
+pub fn render(request: impl Into<RenderRequest>) -> anyhow::Result<()> {
+    let request = request.into();
+    render_request(request)
 }
 
 pub fn render_cfg(app: fn() -> Element, cfg: Config) -> anyhow::Result<()> {
-    let (width, height) = detect_output_size().unwrap_or((100, 40));
-    let surface = render_surface_cfg(app, cfg, width, height)?;
-
-    let mut out = std::io::stdout().lock();
-    match ansi::write_surface_ansi_cropped(&mut out, &surface) {
-        Ok(()) => {}
-        Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => {
-            // Common when piping to tools like `head`; treat as a clean early-exit.
-        }
-        Err(err) => return Err(err.into()),
-    }
-    Ok(())
+    render(RenderRequest::new(app).with_config(cfg))
 }
 
 pub fn render_with_size(app: fn() -> Element, width: u16, height: u16) -> anyhow::Result<()> {
-    render_cfg_with_size(app, Config::default(), width, height)
+    render(RenderRequest::new(app).with_size(width, height))
 }
 
-pub fn render_cfg_with_size(
-    app: fn() -> Element,
-    cfg: Config,
-    width: u16,
-    height: u16,
-) -> anyhow::Result<()> {
-    let surface = render_surface_cfg(app, cfg, width, height)?;
-
-    let mut out = std::io::stdout().lock();
-    match ansi::write_surface_ansi_cropped(&mut out, &surface) {
-        Ok(()) => {}
-        Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => {
-            // Common when piping to tools like `head`; treat as a clean early-exit.
-        }
-        Err(err) => return Err(err.into()),
-    }
-    Ok(())
+pub fn render_cfg_with_size(app: fn() -> Element, cfg: Config, width: u16, height: u16) -> anyhow::Result<()> {
+    render(RenderRequest::new(app).with_config(cfg).with_size(width, height))
 }
 
 pub fn render_surface_cfg_with_props<P: Clone + Send + Sync + 'static>(
@@ -166,11 +180,86 @@ fn detect_output_size() -> Option<(u16, u16)> {
     }
 
     // Best-effort: ask the current terminal.
+    // Prefer stdio here so `render()` can work in environments without `/dev/tty` access.
     let caps = Capabilities::new_from_env().ok()?;
-    let mut term = new_terminal(caps).ok()?;
+    let mut term = termwiz::terminal::new_terminal(caps).ok()?;
     term.get_screen_size()
         .ok()
         .map(|s| (s.cols as u16, s.rows as u16))
+}
+
+fn render_request(request: RenderRequest) -> anyhow::Result<()> {
+    let (width, height) = request
+        .size
+        .or_else(detect_output_size)
+        .unwrap_or((100, 40));
+
+    let raw = RawVirtualDom::with_contexts(move |_| (request.root)(), (), request.contexts);
+    let surface = render_surface_raw(raw, request.cfg, Rect::new(0, 0, width, height))?;
+
+    // `render()` is a one-shot, non-interactive API. It should behave like normal stdout output:
+    // no alternate screen and no cursor addressing that overwrites existing content.
+    //
+    // We still use the same pipeline as `launch` up to `Surface`, and then we render the resulting
+    // `Change` stream using termwiz's own `TerminfoRenderer`.
+    let caps = Capabilities::new_from_env()?;
+    let changes = render::surface_to_cropped_stream_changes(&surface);
+    let mut renderer = TerminfoRenderer::new(caps);
+    let mut out = std::io::stdout().lock();
+    let mut tty = StdoutRenderTty {
+        out: &mut out,
+        size: ScreenSize {
+            rows: height as usize,
+            cols: width as usize,
+            xpixel: 0,
+            ypixel: 0,
+        },
+        broken_pipe: false,
+    };
+    renderer.render_to(&changes, &mut tty)?;
+    if !tty.broken_pipe {
+        match out.flush() {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => {}
+            Err(err) => return Err(err.into()),
+        }
+    }
+    Ok(())
+}
+
+struct StdoutRenderTty<'a> {
+    out: &'a mut dyn Write,
+    size: ScreenSize,
+    broken_pipe: bool,
+}
+
+impl Write for StdoutRenderTty<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.broken_pipe {
+            return Ok(buf.len());
+        }
+        match self.out.write(buf) {
+            Ok(n) => Ok(n),
+            Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => {
+                self.broken_pipe = true;
+                Ok(buf.len())
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        if self.broken_pipe {
+            return Ok(());
+        }
+        self.out.flush()
+    }
+}
+
+impl RenderTty for StdoutRenderTty<'_> {
+    fn get_size_in_cells(&mut self) -> termwiz::Result<(usize, usize)> {
+        Ok((self.size.cols, self.size.rows))
+    }
 }
 
 pub fn launch_raw<P: Clone + 'static, F>(

@@ -14,33 +14,34 @@ macro_rules! import_example {
     };
 }
 
-import_example!(color_test_example, "/examples/color_test.rs");
-import_example!(buttons_example, "/examples/buttons.rs");
-import_example!(tabview_example, "/examples/tabview.rs");
-import_example!(task_example, "/examples/task.rs");
-import_example!(list_example, "/examples/list.rs");
-import_example!(flex_example, "/examples/flex.rs");
-import_example!(quadrants_example, "/examples/quadrants.rs");
+import_example!(color_test_example, "/examples/run_color_test.rs");
+import_example!(buttons_example, "/examples/run_buttons.rs");
+import_example!(tabview_example, "/examples/run_tabview.rs");
+import_example!(task_example, "/examples/run_task.rs");
+import_example!(list_example, "/examples/run_list.rs");
+import_example!(flex_example, "/examples/run_flex.rs");
+import_example!(quadrants_example, "/examples/run_quadrants.rs");
 import_example!(
     all_terminal_events_example,
-    "/examples/all_terminal_events.rs"
+    "/examples/run_all_terminal_events.rs"
 );
-import_example!(widgets_example, "/examples/widgets.rs");
-import_example!(dioxus_basic_example, "/examples/dioxus_basic.rs");
-import_example!(margin_example, "/examples/margin.rs");
-import_example!(hover_example, "/examples/hover.rs");
-import_example!(border_example, "/examples/border.rs");
+import_example!(widgets_example, "/examples/run_widgets.rs");
+import_example!(dioxus_basic_example, "/examples/run_dioxus_basic.rs");
+import_example!(margin_example, "/examples/run_margin.rs");
+import_example!(hover_example, "/examples/run_hover.rs");
+import_example!(border_example, "/examples/run_border.rs");
 import_example!(
     readme_hello_world_example,
-    "/examples/readme_hello_world.rs"
+    "/examples/run_readme_hello_world.rs"
 );
-import_example!(text_example, "/examples/text.rs");
+import_example!(text_example, "/examples/run_text.rs");
+import_example!(dashboard_example, "/examples/run_dashboard.rs");
 mod many_small_edit_stress_example {
     #![allow(dead_code)]
     use dioxus::prelude::*;
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/examples/many_small_edit_stress.rs"
+        "/examples/run_many_small_edit_stress.rs"
     ));
 
     pub fn make_app() -> Element {
@@ -94,6 +95,7 @@ fn all_examples_render_non_empty() {
         ("margin", margin_example::make_app, None),
         ("hover", hover_example::make_app, None),
         ("border", border_example::make_app, None),
+        ("dashboard", dashboard_example::make_app, None),
         (
             "readme_hello_world",
             readme_hello_world_example::make_app,

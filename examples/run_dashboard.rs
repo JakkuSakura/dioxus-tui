@@ -1,10 +1,10 @@
 use dioxus::prelude::*;
 
 fn main() {
-    dioxus_tui::render(app).unwrap();
+    dioxus_tui::launch(app).unwrap();
 }
 
-fn app() -> Element {
+pub fn app() -> Element {
     rsx! {
         // Avoid `height: 100%` so we can crop trailing blank rows in the output.
         div {

@@ -38,7 +38,7 @@ fn Button(color_offset: u32, layer: u16) -> Element {
     }
 }
 
-fn app() -> Element {
+pub fn app() -> Element {
     rsx! {
         div {
             display: "flex",

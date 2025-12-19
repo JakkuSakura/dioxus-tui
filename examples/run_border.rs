@@ -4,7 +4,7 @@ fn main() {
     dioxus_tui::launch(app).unwrap();
 }
 
-fn app() -> Element {
+pub fn app() -> Element {
     let mut radius = use_signal(|| 0);
 
     rsx! {

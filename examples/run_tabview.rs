@@ -6,7 +6,7 @@ fn main() {
     dioxus_tui::launch(app).unwrap();
 }
 
-fn app() -> Element {
+pub fn app() -> Element {
     rsx! { MinimalTabView {} }
 }
 
