@@ -8,6 +8,8 @@ use crate::geometry::Rect;
 use crate::layout::node_rect;
 use crate::scene::CellMetrics;
 use crate::surface::Surface;
+use crate::config::ImagePolicy;
+use crate::image::load_png_image;
 use style::color::AbsoluteColor;
 use unicode_width::UnicodeWidthChar;
 
@@ -19,6 +21,7 @@ pub fn paint_surface(
     palette_roles: PaletteRoles,
     color_mode: ColorMode,
     truecolor: bool,
+    image_policy: ImagePolicy,
 ) {
     surface.clear();
 
@@ -39,6 +42,7 @@ pub fn paint_surface(
         truecolor,
         fallback_fg,
         TextStyle::default(),
+        image_policy,
     );
 }
 
@@ -96,11 +100,18 @@ fn paint_node(
     truecolor: bool,
     fallback_fg: ColorAttribute,
     inherited: TextStyle,
+    image_policy: ImagePolicy,
 ) {
     match &node.data {
         blitz_dom::node::NodeData::Element(_) | blitz_dom::node::NodeData::AnonymousBlock(_) => {
             let local_style = style_overrides(node, color_mode, truecolor);
             let node_style = inherited.merged(local_style);
+
+            if node.data.is_element_with_tag_name(&local_name!("img")) {
+                let rect = node_rect(doc, node, area, metrics);
+                paint_img(surface, node, rect, color_mode, truecolor, image_policy);
+                return;
+            }
 
             let rect = node_rect(doc, node, area, metrics);
             if rect.width > 0 && rect.height > 0 {
@@ -166,6 +177,7 @@ fn paint_node(
                         truecolor,
                         fallback_fg,
                         node_style,
+                        image_policy,
                     );
                 }
             }
@@ -184,6 +196,7 @@ fn paint_node(
                         truecolor,
                         fallback_fg,
                         inherited,
+                        image_policy,
                     );
                 }
             }
@@ -361,7 +374,103 @@ fn is_blockish(node: &Node) -> bool {
             | "tbody"
             | "tfoot"
             | "hr"
+            | "img"
     )
+}
+
+fn paint_img(
+    surface: &mut Surface,
+    node: &Node,
+    rect: Rect,
+    color_mode: ColorMode,
+    truecolor: bool,
+    image_policy: ImagePolicy,
+) {
+    if rect.width == 0 || rect.height == 0 {
+        return;
+    }
+
+    if matches!(image_policy, ImagePolicy::Omit) {
+        return;
+    }
+
+    let Some(src) = node.attr(local_name!("src")) else {
+        return;
+    };
+    let Ok(img) = load_png_image(src) else {
+        return;
+    };
+
+    // Degrade: use half-block characters, encoding two vertical samples per cell.
+    let cell_w = rect.width as u32;
+    let cell_h = rect.height as u32;
+    let sample_w = cell_w.max(1);
+    let sample_h = (cell_h * 2).max(1);
+
+    for cy in 0..cell_h {
+        for cx in 0..cell_w {
+            let px0 = (cx * img.width / sample_w).min(img.width.saturating_sub(1));
+            let py_top = ((cy * 2) * img.height / sample_h).min(img.height.saturating_sub(1));
+            let py_bot = ((cy * 2 + 1) * img.height / sample_h).min(img.height.saturating_sub(1));
+
+            let (top_r, top_g, top_b, top_a) = pixel_rgba(&img.rgba, img.width, px0, py_top);
+            let (bot_r, bot_g, bot_b, bot_a) = pixel_rgba(&img.rgba, img.width, px0, py_bot);
+
+            // If both samples are effectively transparent, don't override.
+            if top_a < 16 && bot_a < 16 {
+                continue;
+            }
+
+            let fg = if top_a < 16 {
+                None
+            } else {
+                Some(rgb_to_attr(top_r, top_g, top_b, color_mode, truecolor))
+            };
+            let bg = if bot_a < 16 {
+                None
+            } else {
+                Some(rgb_to_attr(bot_r, bot_g, bot_b, color_mode, truecolor))
+            };
+
+            let x = rect.x.saturating_add(cx as u16);
+            let y = rect.y.saturating_add(cy as u16);
+            if x >= surface.width() || y >= surface.height() {
+                continue;
+            }
+            let idx = y as usize * surface.width() as usize + x as usize;
+            if let Some(slot) = surface.content.get_mut(idx) {
+                slot.ch = '▀';
+                slot.fg = fg;
+                slot.bg = bg;
+            }
+        }
+    }
+}
+
+fn pixel_rgba(buf: &[u8], width: u32, x: u32, y: u32) -> (u8, u8, u8, u8) {
+    let idx = ((y * width + x) * 4) as usize;
+    if idx + 3 >= buf.len() {
+        return (0, 0, 0, 0);
+    }
+    (buf[idx], buf[idx + 1], buf[idx + 2], buf[idx + 3])
+}
+
+fn rgb_to_attr(r: u8, g: u8, b: u8, color_mode: ColorMode, truecolor: bool) -> ColorAttribute {
+    let srgb = SrgbaTuple::from((r, g, b));
+    let palette_idx_256 = 16 + 36 * (r as u16 / 51) as u8 + 6 * (g as u16 / 51) as u8 + (b as u16 / 51) as u8;
+    let base_idx = (if r >= 128 { 1 } else { 0 }) | (if g >= 128 { 2 } else { 0 }) | (if b >= 128 { 4 } else { 0 });
+
+    match color_mode {
+        ColorMode::BaseColors => ColorAttribute::PaletteIndex(base_idx),
+        ColorMode::Ansi => ColorAttribute::TrueColorWithPaletteFallback(srgb, palette_idx_256),
+        ColorMode::Rgb => {
+            if truecolor {
+                ColorAttribute::TrueColorWithDefaultFallback(srgb)
+            } else {
+                ColorAttribute::TrueColorWithPaletteFallback(srgb, palette_idx_256)
+            }
+        }
+    }
 }
 
 fn write_wrapped(

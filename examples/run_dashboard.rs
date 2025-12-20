@@ -101,6 +101,7 @@ pub fn app() -> Element {
                         }
 
                         TextAttributesDemo {}
+                        ImageDemo {}
                         Palette16 {}
                         Palette256 {}
                     }
@@ -135,6 +136,27 @@ fn TextAttributesDemo() -> Element {
                 span { "data-attrs": "bold underline", "data-fg-idx": "16", "data-bg-idx": "220", "bold+underline bg" }
                 " "
                 span { "data-attrs": "blink underline", "data-fg-idx": "15", "data-bg-idx": "196", "blink+underline" }
+            }
+        }
+    }
+}
+
+#[component]
+fn ImageDemo() -> Element {
+    rsx! {
+        div {
+            padding_top: "1ch",
+            padding: "1ch",
+            background_color: "#16161e",
+            border_style: "solid",
+            border_width: "1px",
+            border_color: "#7aa2f7",
+
+            div { color: "#7aa2f7", "PNG (degraded to cells)" }
+            img {
+                src: "examples/example.png",
+                width: "60ch",
+                height: "16ch",
             }
         }
     }

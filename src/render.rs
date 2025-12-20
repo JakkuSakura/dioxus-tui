@@ -222,6 +222,7 @@ where
         cfg.palette_roles,
         cfg.color_mode,
         capabilities.truecolor,
+        cfg.image_policy,
     );
     Ok(surface)
 }
@@ -355,6 +356,7 @@ async fn run_tui_renderer(
                     cfg.palette_roles,
                     cfg.color_mode,
                     capabilities.truecolor,
+                    cfg.image_policy,
                 );
             }
             // Debug: dump first few lines of the surface for tracing.
