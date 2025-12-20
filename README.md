@@ -52,6 +52,8 @@ If you want to render without entering the terminal alternate screen, see `examp
 
 Note: the OSC 1337 image emission uses `preserveAspectRatio=0` so the requested cell width/height is honored (some terminals will otherwise shrink one dimension).
 
+Render mode note: the one-shot `render()` output stream avoids writing spaces over the image rectangle on subsequent rows (it skips those cells using cursor-forward sequences) so the image is not erased.
+
 ## Default TUI CSS (roles)
 
 Use palette roles and cell-friendly units; map roles per capability profile:

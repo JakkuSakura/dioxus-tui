@@ -3,6 +3,7 @@
 #![doc(html_favicon_url = "https://avatars.githubusercontent.com/u/79236386")]
 
 pub mod capabilities;
+mod blitz;
 mod cell_render;
 mod config;
 pub mod element;
@@ -16,6 +17,12 @@ pub mod render;
 pub mod scene;
 pub mod styles;
 pub mod surface;
+
+#[cfg(feature = "blitz-gui")]
+mod gui;
+
+#[cfg(feature = "blitz-terminal")]
+mod blitz_terminal;
 
 pub use capabilities::TerminalCapabilities;
 pub use config::{ColorMode, Config, ImageDowngrade, ImagePolicy, PaletteEntry, PaletteRoles, RenderingMode};
@@ -169,35 +176,99 @@ where
     Ok(surface)
 }
 
-fn detect_output_size() -> Option<(u16, u16)> {
-    // Respect the conventional env vars first (useful in CI and non-TTY contexts).
-    let width = std::env::var("COLUMNS").ok().and_then(|s| s.parse::<u16>().ok());
-    let height = std::env::var("LINES").ok().and_then(|s| s.parse::<u16>().ok());
-    if let (Some(width), Some(height)) = (width, height) {
-        if width > 0 && height > 0 {
-            return Some((width, height));
-        }
+fn detect_output_width() -> Option<u16> {
+    // Respect the conventional env var first (useful in CI and non-TTY contexts).
+    if let Some(width) = std::env::var("COLUMNS")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+        .filter(|w| *w > 0)
+    {
+        return Some(width);
     }
 
     // Best-effort: ask the current terminal.
     // Prefer stdio here so `render()` can work in environments without `/dev/tty` access.
-    let caps = capabilities::termwiz_capabilities().ok()?;
-    let mut term = termwiz::terminal::new_terminal(caps).ok()?;
-    term.get_screen_size()
+    let caps = capabilities::detect().ok()?;
+    let mut term = termwiz::terminal::new_terminal(caps.termwiz).ok()?;
+    term.get_screen_size().ok().map(|s| s.cols as u16)
+}
+
+#[cfg(feature = "blitz-terminal")]
+fn detect_output_size() -> Option<(u16, u16)> {
+    // Respect the conventional env vars first (useful in CI and non-TTY contexts).
+    let width = std::env::var("COLUMNS")
         .ok()
-        .map(|s| (s.cols as u16, s.rows as u16))
+        .and_then(|s| s.parse::<u16>().ok())
+        .filter(|w| *w > 0);
+    let height = std::env::var("LINES")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+        .filter(|h| *h > 0);
+
+    if let (Some(w), Some(h)) = (width, height) {
+        return Some((w, h));
+    }
+
+    // Best-effort: ask the current terminal.
+    let caps = capabilities::detect().ok()?;
+    let mut term = termwiz::terminal::new_terminal(caps.termwiz).ok()?;
+    let size = term.get_screen_size().ok()?;
+    let cols = width.unwrap_or(size.cols as u16);
+    let rows = height.unwrap_or(size.rows as u16);
+    Some((cols.max(1), rows.max(1)))
 }
 
 fn render_request(request: RenderRequest) -> anyhow::Result<()> {
-    let (width, height) = request
+    // In render-mode, height should behave like "infinite" output (scrollback-friendly).
+    // We render into a large virtual height and then trim trailing blank lines.
+    const DEFAULT_RENDER_HEIGHT: u16 = 2000;
+
+    let cfg = request.cfg;
+
+    if cfg.rendering_mode == RenderingMode::BlitzTerminal {
+        if let Ok(detected) = crate::capabilities::detect() {
+            if blitz::terminal_image_supported(detected.terminal) {
+                #[cfg(feature = "blitz-terminal")]
+                {
+                    let (width_cells, height_cells) = request
+                        .size
+                        .or_else(detect_output_size)
+                        .unwrap_or((100, 24));
+                    let raw = RawVirtualDom::with_contexts(
+                        move |_| (request.root)(),
+                        (),
+                        request.contexts,
+                    );
+                    let rendered = crate::blitz_terminal::render_blitz_terminal(
+                        cfg.rendering_mode,
+                        detected.terminal,
+                        raw,
+                        width_cells,
+                        height_cells,
+                    )?;
+                    if !rendered {
+                        anyhow::bail!("BlitzTerminal rendering was selected but produced no output");
+                    }
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    let width = request
         .size
-        .or_else(detect_output_size)
-        .unwrap_or((100, 40));
+        .map(|(w, _h)| w)
+        .or_else(detect_output_width)
+        .unwrap_or(100);
+    let height = request
+        .size
+        .map(|(_w, h)| h)
+        .unwrap_or(DEFAULT_RENDER_HEIGHT);
 
     let raw = RawVirtualDom::with_contexts(move |_| (request.root)(), (), request.contexts);
     let frame = {
         let rt = RuntimeBuilder::new_current_thread().enable_all().build()?;
-        rt.block_on(async move { render::render_once_frame(request.cfg, raw, Rect::new(0, 0, width, height)) })?
+        rt.block_on(async move { render::render_once_frame(cfg, raw, Rect::new(0, 0, width, height)) })?
     };
 
     // `render()` is a one-shot, non-interactive API. It should behave like normal stdout output:
@@ -205,17 +276,9 @@ fn render_request(request: RenderRequest) -> anyhow::Result<()> {
     //
     // We still use the same pipeline as `launch` up to `Surface`, and then we render the resulting
     // `Change` stream using termwiz's own `TerminfoRenderer`.
-    let caps = capabilities::termwiz_capabilities()?;
-    let term_caps = crate::capabilities::TerminalCapabilities::detect().unwrap_or(
-        crate::capabilities::TerminalCapabilities {
-            truecolor: false,
-            inline_images: false,
-            iterm2_images: false,
-            sixel_images: false,
-        },
-    );
-    let changes = render::frame_to_cropped_stream_changes(&frame, &term_caps);
-    let mut renderer = TerminfoRenderer::new(caps);
+    let caps = crate::capabilities::detect()?;
+    let changes = render::frame_to_cropped_stream_changes(&frame, &caps.terminal);
+    let mut renderer = TerminfoRenderer::new(caps.termwiz);
     let mut out = std::io::stdout().lock();
     let mut tty = StdoutRenderTty {
         out: &mut out,
@@ -280,6 +343,14 @@ pub fn launch_raw<P: Clone + 'static, F>(
 where
     F: ComponentFunction<P, ()> + 'static,
 {
+    if cfg.rendering_mode == RenderingMode::BlitzGui && blitz::gui_env_supported() {
+        #[cfg(feature = "blitz-gui")]
+        {
+            crate::gui::launch_blitz_gui(raw);
+            return Ok(());
+        }
+    }
+
     let rt = RuntimeBuilder::new_current_thread().enable_all().build()?;
     rt.block_on(run_renderer(cfg, raw))?;
     Ok(())

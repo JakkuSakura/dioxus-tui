@@ -2,10 +2,6 @@ use dioxus::prelude::*;
 
 const TABS: [&str; 3] = ["Status", "Logs", "Settings"];
 
-fn main() {
-    dioxus_tui::launch(app).unwrap();
-}
-
 pub fn app() -> Element {
     rsx! { MinimalTabView {} }
 }

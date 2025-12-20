@@ -1,9 +1,5 @@
 use dioxus::prelude::*;
 
-fn main() {
-    dioxus_tui::launch_cfg(app, Default::default()).unwrap();
-}
-
 #[component]
 fn Quadrant(color: String, text: String) -> Element {
     rsx! {

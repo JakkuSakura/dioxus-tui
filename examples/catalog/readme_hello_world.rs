@@ -1,9 +1,5 @@
 use dioxus::prelude::*;
 
-fn main() {
-    dioxus_tui::launch(app).unwrap();
-}
-
 pub fn app() -> Element {
     rsx! {
         div {

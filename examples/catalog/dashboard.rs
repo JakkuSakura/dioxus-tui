@@ -1,9 +1,4 @@
 use dioxus::prelude::*;
-use dioxus_tui::{Config, ImagePolicy};
-
-fn main() {
-    dioxus_tui::launch_cfg(app, Config::default().with_image_policy(ImagePolicy::Inline)).unwrap();
-}
 
 pub fn app() -> Element {
     rsx! {
@@ -101,12 +96,69 @@ pub fn app() -> Element {
                             }
                         }
 
+                        CapabilitiesPanel {}
+
                         TextAttributesDemo {}
                         ImageDemo {}
                         Palette16 {}
                         Palette256 {}
                     }
                 }
+            }
+        }
+    }
+}
+
+#[component]
+fn CapabilitiesPanel() -> Element {
+    let env = |k: &str| std::env::var(k).ok().unwrap_or_else(|| "<unset>".to_string());
+
+    let detected = dioxus_tui::capabilities::detect();
+    let (termwiz_iterm2, termwiz_sixel, termwiz_color_level) = match &detected {
+        Ok(c) => (
+            c.termwiz.iterm2_image(),
+            c.termwiz.sixel(),
+            format!("{:?}", c.termwiz.color_level()),
+        ),
+        Err(err) => (false, false, format!("<detect failed: {err}>",)),
+    };
+
+    let terminal_caps = match &detected {
+        Ok(c) => format!(
+            "truecolor={}; iterm2_images={}; sixel_images={}; inline_images={} ",
+            c.terminal.truecolor, c.terminal.iterm2_images, c.terminal.sixel_images, c.terminal.inline_images
+        ),
+        Err(err) => format!("<detect failed: {err}>"),
+    };
+
+    let details = format!(
+        "ENV\n  TERM={}\n  TERM_PROGRAM={}\n  COLORTERM={}\n  WEZTERM_PANE={}\n\ntermwiz::caps\n  iterm2_image={}\n  sixel={}\n  color_level={}\n\nDerived\n  {}\n\nConfig defaults\n  image_policy=Inline\n  image_downgrade=Sampling\n",
+        env("TERM"),
+        env("TERM_PROGRAM"),
+        env("COLORTERM"),
+        env("WEZTERM_PANE"),
+        termwiz_iterm2,
+        termwiz_sixel,
+        termwiz_color_level,
+        terminal_caps,
+    );
+
+    rsx! {
+        div {
+            padding_top: "1ch",
+            padding: "1ch",
+            background_color: "#16161e",
+            border_style: "solid",
+            border_width: "1px",
+            border_color: "#9ece6a",
+
+            div { color: "#9ece6a", "Capabilities" }
+            pre {
+                background_color: "#0f111a",
+                color: "#c0caf5",
+                padding: "1ch",
+                font_size: "0.9em",
+                "{details}"
             }
         }
     }
@@ -154,12 +206,14 @@ fn ImageDemo() -> Element {
             border_color: "#7aa2f7",
 
             div { color: "#7aa2f7", "PNG (inline if supported, else <img unsupported>)" }
-            img {
-                src: "examples/example.png",
-                // Use `px` here because Blitz/Taffy doesn't reliably size replaced
-                // elements (like `img`) with `ch` units.
-                width: "480px",
-                height: "256px",
+            // Blitz/Taffy replaced-element sizing is still unreliable for `img`.
+            // Use a sized block wrapper to reserve layout space, and then size the image within it.
+            div {
+                style: "display: block; width: 60ch; height: 16ch;",
+                img {
+                    src: "examples/example.png",
+                    style: "display: block; width: 100%; height: 100%;",
+                }
             }
         }
     }

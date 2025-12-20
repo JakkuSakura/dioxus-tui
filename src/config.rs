@@ -87,6 +87,13 @@ pub enum RenderingMode {
     Visual,
     /// Render debug info instead of UI
     Debug,
+    /// In `render()` mode: if the terminal supports image protocols, render the full document
+    /// via Blitz offscreen rasterization and emit it as a terminal image; otherwise, fall back
+    /// to ANSI text rendering.
+    BlitzTerminal,
+    /// In `launch()` mode: if the environment supports a GUI, launch via `dioxus-native`;
+    /// otherwise, fall back to the TUI renderer.
+    BlitzGui,
     /// Do not create a terminal or input thread (useful for tests)
     Headless,
 }

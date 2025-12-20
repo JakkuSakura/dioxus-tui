@@ -448,24 +448,92 @@ fn paint_img(
         s.parse::<u16>().ok()
     }
 
-    // Blitz/Taffy doesn't always size replaced elements (`img`) correctly.
-    // If layout produced a 1x1 placeholder, honor explicit width/height attrs.
-    let mut desired_w = rect.width;
-    let mut desired_h = rect.height;
-    if desired_w <= 1 {
-        if let Some(w) = node
-            .attr(local_name!("width"))
-            .and_then(|v| parse_dim_cells(v, metrics.cell_w_px))
-        {
-            desired_w = w;
+    fn parse_inline_style_dim<'a>(style: &'a str, key: &str) -> Option<&'a str> {
+        // Very small, permissive parser for `style="..."`.
+        // Looks for `key: value;` (case-insensitive on the key).
+        let key = key.trim().to_ascii_lowercase();
+        for decl in style.split(';') {
+            let decl = decl.trim();
+            if decl.is_empty() {
+                continue;
+            }
+            let mut parts = decl.splitn(2, ':');
+            let k = parts.next()?.trim().to_ascii_lowercase();
+            let v = parts.next()?.trim();
+            if k == key {
+                return Some(v);
+            }
         }
+        None
     }
-    if desired_h <= 1 {
-        if let Some(h) = node
-            .attr(local_name!("height"))
-            .and_then(|v| parse_dim_cells(v, metrics.cell_h_px))
-        {
-            desired_h = h;
+
+    // Blitz/Taffy doesn't reliably size replaced elements (`img`).
+    // Treat explicit `width`/`height` attributes as authoritative sizing hints
+    // for both inline and sampled render paths.
+    let style = node.attr(local_name!("style"));
+    let width_style_cells = style
+        .and_then(|s| parse_inline_style_dim(s, "width"))
+        .and_then(|v| parse_dim_cells(v, metrics.cell_w_px));
+    let height_style_cells = style
+        .and_then(|s| parse_inline_style_dim(s, "height"))
+        .and_then(|v| parse_dim_cells(v, metrics.cell_h_px));
+
+    // Dioxus treats `img.width`/`img.height` as HTML attributes, not CSS.
+    // Prefer CSS sizing via `style` when present.
+    let width_attr_cells = node
+        .attr(local_name!("width"))
+        .and_then(|v| parse_dim_cells(v, metrics.cell_w_px));
+    let height_attr_cells = node
+        .attr(local_name!("height"))
+        .and_then(|v| parse_dim_cells(v, metrics.cell_h_px));
+
+    let mut desired_w = width_style_cells
+        .or(width_attr_cells)
+        .unwrap_or(rect.width);
+    let mut desired_h = height_style_cells
+        .or(height_attr_cells)
+        .unwrap_or(rect.height);
+
+    // If sizing is still degenerate (common for replaced elements), try deriving a
+    // reasonable size from the intrinsic PNG dimensions.
+    if desired_w <= 1 || desired_h <= 1 {
+        if let Ok(decoded) = load_png_image(src) {
+            let intrinsic_w_cells = ((decoded.width as f32) / metrics.cell_w_px)
+                .ceil()
+                .max(1.0) as u16;
+            let intrinsic_h_cells = ((decoded.height as f32) / metrics.cell_h_px)
+                .ceil()
+                .max(1.0) as u16;
+
+            match (width_attr_cells, height_attr_cells) {
+                (Some(w), None) if desired_h <= 1 => {
+                    // Preserve aspect ratio in pixel space.
+                    let w_px = w as f32 * metrics.cell_w_px;
+                    let h_px = w_px * (decoded.height as f32 / decoded.width as f32);
+                    desired_h = (h_px / metrics.cell_h_px).ceil().max(1.0) as u16;
+                }
+                (None, Some(h)) if desired_w <= 1 => {
+                    let h_px = h as f32 * metrics.cell_h_px;
+                    let w_px = h_px * (decoded.width as f32 / decoded.height as f32);
+                    desired_w = (w_px / metrics.cell_w_px).ceil().max(1.0) as u16;
+                }
+                (None, None) => {
+                    if desired_w <= 1 {
+                        desired_w = intrinsic_w_cells;
+                    }
+                    if desired_h <= 1 {
+                        desired_h = intrinsic_h_cells;
+                    }
+                }
+                _ => {
+                    if desired_w <= 1 {
+                        desired_w = intrinsic_w_cells;
+                    }
+                    if desired_h <= 1 {
+                        desired_h = intrinsic_h_cells;
+                    }
+                }
+            }
         }
     }
 

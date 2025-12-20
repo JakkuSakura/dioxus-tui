@@ -1,10 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_html::input_data::keyboard_types::Code;
 
-fn main() {
-    dioxus_tui::launch(app).unwrap();
-}
-
 #[component]
 fn Button(color_offset: u32, layer: u16) -> Element {
     let mut toggle = use_signal(|| false);

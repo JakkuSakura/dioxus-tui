@@ -17,7 +17,8 @@ use tokio::select;
 use termwiz::input::{InputEvent as TzInputEvent, KeyCode, Modifiers as TzModifiers};
 use termwiz::terminal::new_terminal;
 
-use crate::capabilities::TerminalCapabilities;
+use crate::capabilities::{DetectedCapabilities, TerminalCapabilities};
+use crate::capabilities::detect as detect_capabilities;
 use crate::capabilities::termwiz_capabilities;
 use crate::config::{Config, RenderingMode};
 use crate::geometry::Rect;
@@ -143,7 +144,7 @@ impl DioxusRenderer {
         )
     }
 
-    fn update(&mut self) {
+    pub(crate) fn update(&mut self) {
         while self.doc.poll(None) {}
     }
 
@@ -194,7 +195,7 @@ impl DioxusRenderer {
         Some(ElementId(0))
     }
 
-    fn layout_root(&mut self, area: Rect, metrics: CellMetrics) -> Option<usize> {
+    pub(crate) fn layout_root(&mut self, area: Rect, metrics: CellMetrics) -> Option<usize> {
         resolve_document(&mut self.doc, area, metrics)
     }
 }
@@ -216,12 +217,18 @@ where
     P: Clone + 'static,
     F: ComponentFunction<P, ()> + 'static,
 {
-    let capabilities = TerminalCapabilities::detect().unwrap_or(TerminalCapabilities {
-        truecolor: false,
-        inline_images: false,
-        iterm2_images: false,
-        sixel_images: false,
-    });
+    let detected = match detect_capabilities() {
+        Ok(detected) => detected,
+        Err(_err) => DetectedCapabilities {
+            termwiz: termwiz_capabilities()?,
+            terminal: TerminalCapabilities {
+                truecolor: false,
+                inline_images: false,
+                iterm2_images: false,
+                sixel_images: false,
+            },
+        },
+    };
     let metrics = CellMetrics {
         cell_w_px: 8.0,
         cell_h_px: 16.0,
@@ -248,10 +255,10 @@ where
         metrics,
         cfg.palette_roles,
         cfg.color_mode,
-        capabilities.truecolor,
+        detected.terminal.truecolor,
         cfg.image_policy,
         cfg.image_downgrade,
-        capabilities.iterm2_images,
+        detected.terminal.iterm2_images,
     )?;
     Ok(RenderedFrame { surface, images })
 }
@@ -261,6 +268,19 @@ where
     P: Clone + 'static,
     F: ComponentFunction<P, ()> + 'static,
 {
+    let detected = match detect_capabilities() {
+        Ok(detected) => detected,
+        Err(_err) => DetectedCapabilities {
+            termwiz: termwiz_capabilities()?,
+            terminal: TerminalCapabilities {
+                truecolor: false,
+                inline_images: false,
+                iterm2_images: false,
+                sixel_images: false,
+            },
+        },
+    };
+
     let vdom = raw.into_virtual_dom();
     let (renderer, event_tx, event_rx) = DioxusRenderer::new(vdom);
 
@@ -271,11 +291,12 @@ where
         return Ok(());
     }
 
-    run_tui_renderer(cfg, renderer, event_rx, event_tx).await
+    run_tui_renderer(cfg, detected, renderer, event_rx, event_tx).await
 }
 
 async fn run_tui_renderer(
     cfg: Config,
+    detected: DetectedCapabilities,
     mut renderer: DioxusRenderer,
     mut raw_event_reciever: UnboundedReceiver<InputEvent>,
     event_tx: UnboundedSender<InputEvent>,
@@ -285,10 +306,10 @@ async fn run_tui_renderer(
     if run_terminal {
         let tx = event_tx.clone();
         let tick_rate = cfg.tick_rate;
+        let term_caps = detected.termwiz.clone();
         std::thread::spawn(move || {
             let res: Result<()> = (|| {
-                let caps = termwiz_capabilities()?;
-                let mut term = new_terminal(caps)?;
+                let mut term = new_terminal(term_caps)?;
                 term.set_raw_mode()?;
 
                 loop {
@@ -313,8 +334,7 @@ async fn run_tui_renderer(
     }
 
     let mut terminal = if run_terminal {
-        let caps = termwiz_capabilities()?;
-        let mut term = new_terminal(caps)?;
+        let mut term = new_terminal(detected.termwiz.clone())?;
         term.set_raw_mode()?;
         term.enter_alternate_screen()?;
         Some(BufferedTerminal::new(term)?)
@@ -322,12 +342,7 @@ async fn run_tui_renderer(
         None
     };
 
-    let capabilities = TerminalCapabilities::detect().unwrap_or(TerminalCapabilities {
-        truecolor: false,
-        inline_images: false,
-        iterm2_images: false,
-        sixel_images: false,
-    });
+    let capabilities = detected.terminal;
     let mut last_surface: Option<Surface> = None;
     let mut last_area: Option<Rect> = None;
     let mut last_images: Option<std::collections::VecDeque<PlacedImage>> = None;
@@ -457,8 +472,8 @@ fn terminal_size<T: Terminal>(term: &mut BufferedTerminal<T>) -> Result<(Rect, C
 }
 
 fn initial_viewport_size() -> Option<(u16, u16)> {
-    let caps = termwiz_capabilities().ok()?;
-    let mut term = new_terminal(caps).ok()?;
+    let caps = detect_capabilities().ok()?;
+    let mut term = new_terminal(caps.termwiz).ok()?;
     term.get_screen_size()
         .ok()
         .map(|s| (s.cols as u16, s.rows as u16))
@@ -840,14 +855,16 @@ pub(crate) fn frame_to_cropped_stream_changes(
         .max();
     let cropped_height = max_row.map(|r| r + 1).unwrap_or(0).min(height);
 
-    let mut images_by_row: Vec<Vec<&PlacedImage>> = vec![Vec::new(); cropped_height];
+    let image_masks = image_mask_intervals_by_row(&frame.images, width, height);
+
+    let mut images_starting_by_row: Vec<Vec<&PlacedImage>> = vec![Vec::new(); cropped_height];
     for img in &frame.images {
         let y = img.y_cell as usize;
         if y < cropped_height {
-            images_by_row[y].push(img);
+            images_starting_by_row[y].push(img);
         }
     }
-    for row in &mut images_by_row {
+    for row in &mut images_starting_by_row {
         row.sort_by_key(|img| img.x_cell);
     }
 
@@ -855,7 +872,11 @@ pub(crate) fn frame_to_cropped_stream_changes(
     for y in 0..cropped_height {
         let row = &frame.surface.content[y * width..(y + 1) * width];
 
-        let mut img_iter = images_by_row[y].iter().copied().peekable();
+        let mut img_iter = images_starting_by_row[y].iter().copied().peekable();
+        let intervals = image_masks
+            .get(y)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
 
         let mut current_fg = ColorAttribute::Default;
         let mut current_bg = ColorAttribute::Default;
@@ -866,92 +887,173 @@ pub(crate) fn frame_to_cropped_stream_changes(
         let mut buf = String::with_capacity(width);
 
         let mut x = 0usize;
+        let mut interval_idx = 0usize;
+
         while x < width {
-            if let Some(img) = img_iter.peek().copied() {
-                if img.x_cell as usize == x {
-                    if !buf.is_empty() {
-                        changes.push(Change::Text(std::mem::take(&mut buf)));
+            if let Some((start, end)) = intervals.get(interval_idx).copied() {
+                if x < start {
+                    // Render regular cells up to the masked region.
+                    for cell in &row[x..start] {
+                        let fg = cell.fg.unwrap_or(ColorAttribute::Default);
+                        let bg = cell.bg.unwrap_or(ColorAttribute::Default);
+                        let intensity = cell.intensity;
+                        let underline = cell.underline;
+                        let italic = cell.italic;
+                        let blink = cell.blink;
+
+                        if fg != current_fg
+                            || bg != current_bg
+                            || intensity != current_intensity
+                            || underline != current_underline
+                            || italic != current_italic
+                            || blink != current_blink
+                        {
+                            if !buf.is_empty() {
+                                changes.push(Change::Text(std::mem::take(&mut buf)));
+                            }
+
+                            if bg != current_bg {
+                                changes.push(Change::Attribute(
+                                    termwiz::cell::AttributeChange::Background(bg),
+                                ));
+                                current_bg = bg;
+                            }
+                            if fg != current_fg {
+                                changes.push(Change::Attribute(
+                                    termwiz::cell::AttributeChange::Foreground(fg),
+                                ));
+                                current_fg = fg;
+                            }
+                            if intensity != current_intensity {
+                                changes.push(Change::Attribute(
+                                    termwiz::cell::AttributeChange::Intensity(intensity),
+                                ));
+                                current_intensity = intensity;
+                            }
+                            if underline != current_underline {
+                                changes.push(Change::Attribute(
+                                    termwiz::cell::AttributeChange::Underline(underline),
+                                ));
+                                current_underline = underline;
+                            }
+                            if italic != current_italic {
+                                changes.push(Change::Attribute(
+                                    termwiz::cell::AttributeChange::Italic(italic),
+                                ));
+                                current_italic = italic;
+                            }
+                            if blink != current_blink {
+                                changes.push(Change::Attribute(
+                                    termwiz::cell::AttributeChange::Blink(blink),
+                                ));
+                                current_blink = blink;
+                            }
+                        }
+
+                        buf.push(cell.ch);
                     }
-
-                    // Ensure we don't accidentally carry styling into the terminal state
-                    // across the inline image.
-                    push_reset_attributes(&mut changes);
-                    current_fg = ColorAttribute::Default;
-                    current_bg = ColorAttribute::Default;
-                    current_intensity = termwiz::cell::Intensity::Normal;
-                    current_underline = termwiz::cell::Underline::None;
-                    current_italic = false;
-                    current_blink = termwiz::cell::Blink::None;
-
-                    if let Ok(osc) = crate::image::iterm2_osc_for_placed_image(
-                        img,
-                        true,
-                        false,
-                    ) {
-                        changes.push(Change::Text(osc));
-                    }
-
-                    x = x.saturating_add(img.width_cells as usize);
-                    let _ = img_iter.next();
+                    x = start;
                     continue;
                 }
-            }
 
-            let cell = &row[x];
-            let fg = cell.fg.unwrap_or(ColorAttribute::Default);
-            let bg = cell.bg.unwrap_or(ColorAttribute::Default);
-            let intensity = cell.intensity;
-            let underline = cell.underline;
-            let italic = cell.italic;
-            let blink = cell.blink;
-
-            if fg != current_fg
-                || bg != current_bg
-                || intensity != current_intensity
-                || underline != current_underline
-                || italic != current_italic
-                || blink != current_blink
-            {
+                // At the start of a masked region: flush text and then skip without overwriting.
                 if !buf.is_empty() {
                     changes.push(Change::Text(std::mem::take(&mut buf)));
                 }
 
-                if bg != current_bg {
-                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(
-                        bg,
-                    )));
-                    current_bg = bg;
+                // Ensure we don't accidentally carry styling into the terminal state
+                // across the inline image.
+                push_reset_attributes(&mut changes);
+                current_fg = ColorAttribute::Default;
+                current_bg = ColorAttribute::Default;
+                current_intensity = termwiz::cell::Intensity::Normal;
+                current_underline = termwiz::cell::Underline::None;
+                current_italic = false;
+                current_blink = termwiz::cell::Blink::None;
+
+                // Emit any images that start at this position.
+                while let Some(img) = img_iter.peek().copied() {
+                    if img.x_cell as usize != x {
+                        break;
+                    }
+                    if let Ok(osc) = crate::image::iterm2_osc_for_placed_image(img, true, false) {
+                        changes.push(Change::Text(osc));
+                    }
+                    let _ = img_iter.next();
                 }
-                if fg != current_fg {
-                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Foreground(
-                        fg,
-                    )));
-                    current_fg = fg;
+
+                let skip = end.saturating_sub(start);
+                if skip > 0 {
+                    // Move the cursor right without writing spaces (which would overwrite the image).
+                    changes.push(Change::Text(format!("\x1b[{}C", skip)));
                 }
-                if intensity != current_intensity {
-                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Intensity(
-                        intensity,
-                    )));
-                    current_intensity = intensity;
-                }
-                if underline != current_underline {
-                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Underline(
-                        underline,
-                    )));
-                    current_underline = underline;
-                }
-                if italic != current_italic {
-                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Italic(italic)));
-                    current_italic = italic;
-                }
-                if blink != current_blink {
-                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Blink(blink)));
-                    current_blink = blink;
-                }
+
+                x = end;
+                interval_idx += 1;
+                continue;
             }
 
-            buf.push(cell.ch);
-            x += 1;
+            // No more masked regions: render the remainder of the row.
+            for cell in &row[x..] {
+                let fg = cell.fg.unwrap_or(ColorAttribute::Default);
+                let bg = cell.bg.unwrap_or(ColorAttribute::Default);
+                let intensity = cell.intensity;
+                let underline = cell.underline;
+                let italic = cell.italic;
+                let blink = cell.blink;
+
+                if fg != current_fg
+                    || bg != current_bg
+                    || intensity != current_intensity
+                    || underline != current_underline
+                    || italic != current_italic
+                    || blink != current_blink
+                {
+                    if !buf.is_empty() {
+                        changes.push(Change::Text(std::mem::take(&mut buf)));
+                    }
+
+                    if bg != current_bg {
+                        changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(
+                            bg,
+                        )));
+                        current_bg = bg;
+                    }
+                    if fg != current_fg {
+                        changes.push(Change::Attribute(termwiz::cell::AttributeChange::Foreground(
+                            fg,
+                        )));
+                        current_fg = fg;
+                    }
+                    if intensity != current_intensity {
+                        changes.push(Change::Attribute(termwiz::cell::AttributeChange::Intensity(
+                            intensity,
+                        )));
+                        current_intensity = intensity;
+                    }
+                    if underline != current_underline {
+                        changes.push(Change::Attribute(termwiz::cell::AttributeChange::Underline(
+                            underline,
+                        )));
+                        current_underline = underline;
+                    }
+                    if italic != current_italic {
+                        changes.push(Change::Attribute(termwiz::cell::AttributeChange::Italic(
+                            italic,
+                        )));
+                        current_italic = italic;
+                    }
+                    if blink != current_blink {
+                        changes.push(Change::Attribute(termwiz::cell::AttributeChange::Blink(
+                            blink,
+                        )));
+                        current_blink = blink;
+                    }
+                }
+
+                buf.push(cell.ch);
+            }
+            break;
         }
 
         if !buf.is_empty() {

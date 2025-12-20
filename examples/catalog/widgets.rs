@@ -1,9 +1,4 @@
 use dioxus::prelude::*;
-use dioxus_tui::Config;
-
-fn main() {
-    dioxus_tui::launch_cfg(app, Config::new()).unwrap();
-}
 
 pub fn app() -> Element {
     let mut bg_green = use_signal(|| false);

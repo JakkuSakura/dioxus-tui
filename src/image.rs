@@ -29,7 +29,7 @@ pub struct DecodedImage {
     pub rgba: Vec<u8>,
 }
 
-fn rgba_to_png_bytes(data: &[u8], width: u32, height: u32) -> Result<Vec<u8>> {
+pub(crate) fn rgba_to_png_bytes(data: &[u8], width: u32, height: u32) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
     {
         let mut encoder = Encoder::new(&mut buf, width, height);

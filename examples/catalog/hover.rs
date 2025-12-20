@@ -4,10 +4,6 @@ use std::convert::TryInto;
 use std::fmt::Write;
 use std::rc::Rc;
 
-fn main() {
-    dioxus_tui::launch(app).unwrap();
-}
-
 pub fn app() -> Element {
     fn to_str(c: &[i32; 3]) -> String {
         let mut result = String::new();

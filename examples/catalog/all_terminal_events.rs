@@ -1,10 +1,6 @@
 use dioxus::prelude::*;
 use std::{fmt::Debug, rc::Rc};
 
-fn main() {
-    dioxus_tui::launch(app).unwrap();
-}
-
 const MAX_EVENTS: usize = 8;
 
 pub fn app() -> Element {

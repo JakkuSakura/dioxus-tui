@@ -1,13 +1,5 @@
 use dioxus::prelude::*;
 
-fn main() {
-    dioxus_tui::launch_cfg(
-        app,
-        dioxus_tui::Config::default().with_color_mode(dioxus_tui::ColorMode::Ansi),
-    )
-    .unwrap();
-}
-
 pub fn app() -> Element {
     let steps = 12;
     let cell_width_pct = 100.0 / (steps as f32 + 1.0);

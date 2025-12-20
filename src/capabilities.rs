@@ -2,6 +2,12 @@ use anyhow::Result;
 use termwiz::caps::{Capabilities, ColorLevel, ProbeHints};
 use std::env;
 
+#[derive(Debug, Clone)]
+pub struct DetectedCapabilities {
+    pub termwiz: Capabilities,
+    pub terminal: TerminalCapabilities,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct TerminalCapabilities {
     pub truecolor: bool,
@@ -11,20 +17,25 @@ pub struct TerminalCapabilities {
 }
 
 impl TerminalCapabilities {
-    pub fn detect() -> Result<Self> {
-        let caps = termwiz_capabilities()?;
+    pub(crate) fn from_termwiz(caps: &Capabilities) -> Self {
         let iterm2_images = caps.iterm2_image();
         let sixel_images = caps.sixel();
-        Ok(Self {
+        Self {
             truecolor: matches!(caps.color_level(), ColorLevel::TrueColor),
             inline_images: iterm2_images || sixel_images,
             iterm2_images,
             sixel_images,
-        })
+        }
     }
 }
 
-pub fn termwiz_capabilities() -> Result<Capabilities> {
+pub fn detect() -> Result<DetectedCapabilities> {
+    let termwiz = termwiz_capabilities()?;
+    let terminal = TerminalCapabilities::from_termwiz(&termwiz);
+    Ok(DetectedCapabilities { termwiz, terminal })
+}
+
+pub(crate) fn termwiz_capabilities() -> Result<Capabilities> {
     let mut hints = ProbeHints::new_from_env();
     if is_wezterm() {
         // WezTerm supports the iTerm2 OSC 1337 image protocol, but termwiz only
@@ -37,6 +48,12 @@ pub fn termwiz_capabilities() -> Result<Capabilities> {
 
 fn is_wezterm() -> bool {
     if env::var("WEZTERM_PANE").is_ok() || env::var("WEZTERM_EXECUTABLE").is_ok() {
+        return true;
+    }
+
+    // If the user followed WezTerm's recommendation and configured `term = "wezterm"`,
+    // treat that as a strong signal that we're running under WezTerm.
+    if matches!(env::var("TERM").ok().as_deref(), Some("wezterm") | Some("wezterm-256color")) {
         return true;
     }
 
