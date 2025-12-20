@@ -76,7 +76,7 @@ impl Default for Config {
             tick_rate: std::time::Duration::from_millis(10),
             palette_roles: PaletteRoles::default(),
             image_policy: ImagePolicy::Inline,
-            image_downgrade: ImageDowngrade::Enabled,
+            image_downgrade: ImageDowngrade::Sampling,
         }
     }
 }
@@ -149,6 +149,8 @@ pub enum ImagePolicy {
     /// Prefer native terminal image protocols when available (OSC 1337 on supported terminals).
     /// If inline images are unsupported, behavior is controlled by `image_downgrade`.
     Inline,
+    /// Always render a cell-based approximation (▀ sampling).
+    Sampling,
     /// Always render the `alt` text (or `"<img unsupported>"`).
     AltText,
     /// Omit images entirely.
@@ -159,6 +161,12 @@ pub enum ImagePolicy {
 
 #[derive(Clone, Copy, Debug)]
 pub enum ImageDowngrade {
-    Enabled,
-    Disabled,
+    /// Render the `alt` text (or `"<img unsupported>"`).
+    AltText,
+    /// Render a cell-based approximation (▀ sampling).
+    Sampling,
+    /// Omit images.
+    Omit,
+    /// Return a hard error.
+    Error,
 }

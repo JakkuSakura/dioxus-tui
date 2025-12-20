@@ -495,25 +495,36 @@ fn paint_img(
         let _ = write_wrapped(surface, bounds, (rect.x, rect.y), fallback(), TextStyle::default());
     };
 
-    match image_policy {
+    let should_sample = match image_policy {
         ImagePolicy::AltText => {
             paint_alt_text(surface);
-            return Ok(());
+            false
         }
+        ImagePolicy::Omit => false,
+        ImagePolicy::Sampling => true,
         ImagePolicy::Inline => {
             if inline_images_supported {
                 let placed = placed_image_from_png(src, rect.x, rect.y, desired_w, desired_h)
                     .map_err(crate::error::Error::Other)?;
                 fill_rect(surface, Rect::new(rect.x, rect.y, desired_w, desired_h), None, None);
                 images.push_back(placed);
-                return Ok(());
+                false
+            } else {
+                // Inline unsupported: apply downgrade policy.
+                match image_downgrade {
+                    ImageDowngrade::AltText => {
+                        paint_alt_text(surface);
+                        false
+                    }
+                    ImageDowngrade::Sampling => true,
+                    ImageDowngrade::Omit => false,
+                    ImageDowngrade::Error => {
+                        return Err(crate::error::Error::Other(anyhow::anyhow!(
+                            "inline images not supported by terminal"
+                        )));
+                    }
+                }
             }
-
-            if matches!(image_downgrade, ImageDowngrade::Disabled) {
-                paint_alt_text(surface);
-                return Ok(());
-            }
-            // Downgrade to cell-based rendering below.
         }
         ImagePolicy::Error => {
             if !inline_images_supported {
@@ -525,17 +536,22 @@ fn paint_img(
                 .map_err(crate::error::Error::Other)?;
             fill_rect(surface, Rect::new(rect.x, rect.y, desired_w, desired_h), None, None);
             images.push_back(placed);
-            return Ok(());
+            false
         }
-        ImagePolicy::Omit => {
-            return Ok(());
-        }
+    };
+
+    if !should_sample {
+        return Ok(());
     }
 
     let img = match load_png_image(src) {
         Ok(img) => img,
         Err(err) => {
-            if matches!(image_policy, ImagePolicy::Error) {
+            // If sampling fails to load, fall back to alt text for best-effort modes,
+            // or propagate error if configured.
+            let hard_error = matches!(image_policy, ImagePolicy::Error)
+                || matches!(image_downgrade, ImageDowngrade::Error);
+            if hard_error {
                 return Err(crate::error::Error::Other(err.into()));
             }
             paint_alt_text(surface);

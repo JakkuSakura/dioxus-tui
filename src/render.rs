@@ -883,13 +883,13 @@ pub(crate) fn frame_to_cropped_stream_changes(
                     current_italic = false;
                     current_blink = termwiz::cell::Blink::None;
 
-                    changes.push(Change::Image(termwiz::surface::Image {
-                        width: img.width_cells as usize,
-                        height: img.height_cells as usize,
-                        top_left: termwiz::surface::TextureCoordinate::new_f32(0.0, 0.0),
-                        bottom_right: termwiz::surface::TextureCoordinate::new_f32(1.0, 1.0),
-                        image: img.image.clone(),
-                    }));
+                    if let Ok(osc) = crate::image::iterm2_osc_for_placed_image(
+                        img,
+                        true,
+                        false,
+                    ) {
+                        changes.push(Change::Text(osc));
+                    }
 
                     x = x.saturating_add(img.width_cells as usize);
                     let _ = img_iter.next();
@@ -1015,13 +1015,9 @@ pub(crate) fn flush_surface<T: Terminal>(
                 x: Position::Absolute(img.x_cell as usize),
                 y: Position::Absolute(img.y_cell as usize),
             });
-            term.add_change(Change::Image(termwiz::surface::Image {
-                width: img.width_cells as usize,
-                height: img.height_cells as usize,
-                top_left: termwiz::surface::TextureCoordinate::new_f32(0.0, 0.0),
-                bottom_right: termwiz::surface::TextureCoordinate::new_f32(1.0, 1.0),
-                image: img.image.clone(),
-            }));
+            if let Ok(osc) = crate::image::iterm2_osc_for_placed_image(img, true, false) {
+                term.add_change(Change::Text(osc));
+            }
         }
     }
 

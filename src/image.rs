@@ -9,6 +9,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::scene::InlineImage;
 use termwiz::image::{ImageData, ImageDataType};
+use termwiz::escape::{OperatingSystemCommand};
+use termwiz::escape::osc::{ITermDimension, ITermFileData, ITermProprietary};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlacedImage {
@@ -121,6 +123,32 @@ pub fn placed_image_from_png(
         width_cells: width_cells.max(1),
         height_cells: height_cells.max(1),
     })
+}
+
+pub fn iterm2_osc_for_placed_image(
+    img: &PlacedImage,
+    do_not_move_cursor: bool,
+    preserve_aspect_ratio: bool,
+) -> Result<String> {
+    let data = match &*img.image.data() {
+        ImageDataType::EncodedFile(data) => data.to_vec(),
+        ImageDataType::EncodedLease(lease) => lease.get_data()?,
+        ImageDataType::AnimRgba8 { .. } | ImageDataType::Rgba8 { .. } => png_bytes_from_src(&img.src)?,
+    };
+
+    let file = ITermFileData {
+        name: None,
+        size: Some(data.len()),
+        width: ITermDimension::Cells(img.width_cells as i64),
+        height: ITermDimension::Cells(img.height_cells as i64),
+        preserve_aspect_ratio,
+        inline: true,
+        do_not_move_cursor,
+        data,
+    };
+
+    let osc = OperatingSystemCommand::ITermProprietary(ITermProprietary::File(Box::new(file)));
+    Ok(format!("{}", osc))
 }
 
 pub fn encode_sixel_rgba(rgba: &[u8], width: u32, height: u32) -> String {

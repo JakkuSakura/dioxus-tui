@@ -46,8 +46,11 @@ If you want to render without entering the terminal alternate screen, see `examp
 
 - Layout for `<img>` uses the same Blitz/Taffy pipeline as other nodes (`layout.rs` + `node_rect`).
 - With `ImagePolicy::Inline`, if the terminal supports OSC 1337 inline images (iTerm2 protocol; also supported by WezTerm), the renderer emits an inline image.
-- If inline images are unsupported and `ImageDowngrade::Enabled` (default), the renderer downgrades to a cell-based approximation.
+- If inline images are unsupported, `ImageDowngrade` selects the fallback: `AltText`, `Sampling` (cell approximation), `Omit`, or `Error`.
+- `ImagePolicy::Sampling` forces the cell approximation even when inline images are supported.
 - `ImagePolicy::AltText` always renders `alt` (or `"<img unsupported>"`), `ImagePolicy::Omit` skips images, and `ImagePolicy::Error` returns a hard error.
+
+Note: the OSC 1337 image emission uses `preserveAspectRatio=0` so the requested cell width/height is honored (some terminals will otherwise shrink one dimension).
 
 ## Default TUI CSS (roles)
 
