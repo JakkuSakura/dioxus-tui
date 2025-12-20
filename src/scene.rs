@@ -113,6 +113,7 @@ impl<'a> TerminalScene<'a> {
         }
     }
 
+    #[allow(dead_code)]
     fn push_text(&mut self, text: &str, x_px: f32, y_px: f32, fg: Option<ColorAttribute>) {
         let cell_x = (x_px / self.metrics.cell_w_px).floor().max(0.0) as u16;
         let cell_y = (y_px / self.metrics.cell_h_px).floor().max(0.0) as u16;

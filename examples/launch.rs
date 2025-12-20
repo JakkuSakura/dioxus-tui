@@ -1,15 +1,18 @@
+use clap::{Parser, ValueEnum};
+
 #[path = "catalog/mod.rs"]
 mod catalog;
 
 fn main() {
-    let mut args = std::env::args().skip(1);
-    let name = args.next().unwrap_or_else(|| "dashboard".to_string());
-    if name == "--list" {
+    let args = Args::parse();
+    if args.list {
         for spec in catalog::apps() {
             println!("{}", spec.name);
         }
         return;
     }
+
+    let name = args.component.unwrap_or_else(|| "dashboard".to_string());
 
     let Some(spec) = catalog::app_by_name(&name) else {
         eprintln!("unknown component: {name}");
@@ -20,5 +23,46 @@ fn main() {
         std::process::exit(2);
     };
 
-    dioxus_tui::launch_cfg(spec.app, spec.cfg).unwrap();
+    let mut cfg = spec.cfg;
+    if let Some(mode) = args.rendering_mode {
+        cfg = cfg.with_rendering_mode(mode.into());
+    }
+
+    dioxus_tui::launch_cfg(spec.app, cfg).unwrap();
+}
+
+#[derive(Debug, Parser)]
+#[command(about = "Launch an interactive example component")]
+struct Args {
+    /// Print available components and exit
+    #[arg(long)]
+    list: bool,
+
+    /// Override rendering mode (useful for debugging)
+    #[arg(long)]
+    rendering_mode: Option<RenderingModeOpt>,
+
+    /// Component name (default: dashboard)
+    component: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum RenderingModeOpt {
+    Visual,
+    Debug,
+    BlitzTerminal,
+    BlitzGui,
+    Headless,
+}
+
+impl From<RenderingModeOpt> for dioxus_tui::RenderingMode {
+    fn from(value: RenderingModeOpt) -> Self {
+        match value {
+            RenderingModeOpt::Visual => dioxus_tui::RenderingMode::Visual,
+            RenderingModeOpt::Debug => dioxus_tui::RenderingMode::Debug,
+            RenderingModeOpt::BlitzTerminal => dioxus_tui::RenderingMode::BlitzTerminal,
+            RenderingModeOpt::BlitzGui => dioxus_tui::RenderingMode::BlitzGui,
+            RenderingModeOpt::Headless => dioxus_tui::RenderingMode::Headless,
+        }
+    }
 }

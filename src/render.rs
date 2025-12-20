@@ -263,6 +263,34 @@ where
     Ok(RenderedFrame { surface, images })
 }
 
+pub(crate) fn debug_layout<P, F>(cfg: Config, raw: RawVirtualDom<P, F>, area: Rect) -> Result<()>
+where
+    P: Clone + 'static,
+    F: ComponentFunction<P, ()> + 'static,
+{
+    let _ = cfg;
+    let metrics = CellMetrics {
+        cell_w_px: 8.0,
+        cell_h_px: 16.0,
+    };
+    let vdom = raw.into_virtual_dom();
+
+    let viewport = Viewport::new(
+        (area.width as f32 * metrics.cell_w_px).ceil().max(1.0) as u32,
+        (area.height as f32 * metrics.cell_h_px).ceil().max(1.0) as u32,
+        1.0,
+        ColorScheme::Light,
+    );
+    let (mut renderer, _event_tx, _event_rx) = DioxusRenderer::new_with_viewport(vdom, viewport);
+    renderer.update();
+    let _ = renderer.layout_root(area, metrics);
+
+    println!("-- dioxus-tui layout debug --");
+    let root_id = renderer.doc.inner.root_node().id;
+    crate::layout::print_layout(renderer.doc.inner.as_ref(), root_id, 0, area, metrics);
+    Ok(())
+}
+
 pub(crate) async fn run_renderer<P, F>(cfg: Config, raw: RawVirtualDom<P, F>) -> Result<()>
 where
     P: Clone + 'static,
@@ -976,7 +1004,7 @@ pub(crate) fn frame_to_cropped_stream_changes(
                     if img.x_cell as usize != x {
                         break;
                     }
-                    if let Ok(osc) = crate::image::iterm2_osc_for_placed_image(img, true, false) {
+                    if let Ok(osc) = crate::image::iterm2_osc_for_placed_image(img, true, true) {
                         changes.push(Change::Text(osc));
                     }
                     let _ = img_iter.next();
@@ -1117,7 +1145,7 @@ pub(crate) fn flush_surface<T: Terminal>(
                 x: Position::Absolute(img.x_cell as usize),
                 y: Position::Absolute(img.y_cell as usize),
             });
-            if let Ok(osc) = crate::image::iterm2_osc_for_placed_image(img, true, false) {
+            if let Ok(osc) = crate::image::iterm2_osc_for_placed_image(img, true, true) {
                 term.add_change(Change::Text(osc));
             }
         }

@@ -177,7 +177,37 @@ where
 }
 
 fn detect_output_width() -> Option<u16> {
-    // Respect the conventional env var first (useful in CI and non-TTY contexts).
+    #[cfg(unix)]
+    {
+        use std::io::IsTerminal;
+        use std::os::fd::AsRawFd;
+
+        unsafe fn cols_from_fd(fd: i32) -> Option<u16> {
+            let mut ws: libc::winsize = std::mem::zeroed();
+            if libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws) == 0 {
+                if ws.ws_col > 0 {
+                    return Some(ws.ws_col as u16);
+                }
+            }
+            None
+        }
+
+        let stdout = std::io::stdout();
+        if stdout.is_terminal() {
+            if let Some(cols) = unsafe { cols_from_fd(stdout.as_raw_fd()) } {
+                return Some(cols);
+            }
+        }
+
+        // If stdout isn't a TTY (piped output), try the controlling terminal.
+        if let Ok(tty) = std::fs::File::open("/dev/tty") {
+            if let Some(cols) = unsafe { cols_from_fd(tty.as_raw_fd()) } {
+                return Some(cols);
+            }
+        }
+    }
+
+    // Respect the conventional env var (useful in CI and non-TTY contexts).
     if let Some(width) = std::env::var("COLUMNS")
         .ok()
         .and_then(|s| s.parse::<u16>().ok())
@@ -225,6 +255,12 @@ fn render_request(request: RenderRequest) -> anyhow::Result<()> {
 
     let cfg = request.cfg;
 
+    let width = request
+        .size
+        .map(|(w, _h)| w)
+        .or_else(detect_output_width)
+        .unwrap_or(100);
+
     if cfg.rendering_mode == RenderingMode::BlitzTerminal {
         if let Ok(detected) = crate::capabilities::detect() {
             if blitz::terminal_image_supported(detected.terminal) {
@@ -255,11 +291,13 @@ fn render_request(request: RenderRequest) -> anyhow::Result<()> {
         }
     }
 
-    let width = request
-        .size
-        .map(|(w, _h)| w)
-        .or_else(detect_output_width)
-        .unwrap_or(100);
+    if cfg.rendering_mode == RenderingMode::Debug {
+        let height = request.size.map(|(_, h)| h).unwrap_or(80);
+        let raw = RawVirtualDom::with_contexts(move |_| (request.root)(), (), request.contexts);
+        render::debug_layout(cfg, raw, Rect::new(0, 0, width, height))?;
+        return Ok(());
+    }
+
     let height = request
         .size
         .map(|(_w, h)| h)

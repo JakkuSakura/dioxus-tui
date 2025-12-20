@@ -9,8 +9,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::scene::InlineImage;
 use termwiz::image::{ImageData, ImageDataType};
-use termwiz::escape::{OperatingSystemCommand};
-use termwiz::escape::osc::{ITermDimension, ITermFileData, ITermProprietary};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlacedImage {
@@ -136,19 +134,21 @@ pub fn iterm2_osc_for_placed_image(
         ImageDataType::AnimRgba8 { .. } | ImageDataType::Rgba8 { .. } => png_bytes_from_src(&img.src)?,
     };
 
-    let file = ITermFileData {
-        name: None,
-        size: Some(data.len()),
-        width: ITermDimension::Cells(img.width_cells as i64),
-        height: ITermDimension::Cells(img.height_cells as i64),
-        preserve_aspect_ratio,
-        inline: true,
-        do_not_move_cursor,
-        data,
-    };
-
-    let osc = OperatingSystemCommand::ITermProprietary(ITermProprietary::File(Box::new(file)));
-    Ok(format!("{}", osc))
+    // Emit OSC 1337 manually to match WezTerm's expected parameter format.
+    // In particular, WezTerm is stricter about `width=..cell;height=..cell`.
+    // Also prefer BEL termination for best compatibility.
+    let b64 = BASE64.encode(&data);
+    let mut spec = format!(
+        "File=inline=1;width={}cell;height={}cell;preserveAspectRatio={};size={}",
+        img.width_cells,
+        img.height_cells,
+        if preserve_aspect_ratio { 1 } else { 0 },
+        data.len(),
+    );
+    if do_not_move_cursor {
+        spec.push_str(";doNotMoveCursor=1");
+    }
+    Ok(format!("\x1b]1337;{spec}:{b64}\x07"))
 }
 
 pub fn encode_sixel_rgba(rgba: &[u8], width: u32, height: u32) -> String {

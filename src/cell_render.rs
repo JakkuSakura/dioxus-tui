@@ -559,7 +559,9 @@ fn paint_img(
             if inline_images_supported {
                 let placed = placed_image_from_png(src, rect.x, rect.y, desired_w, desired_h)
                     .map_err(crate::error::Error::Other)?;
-                fill_rect(surface, Rect::new(rect.x, rect.y, desired_w, desired_h), None, None);
+                // Preserve any already-painted background (from ancestors), but clear glyphs
+                // so the inline image isn't obscured by text.
+                clear_glyphs_preserve_bg(surface, Rect::new(rect.x, rect.y, desired_w, desired_h));
                 images.push_back(placed);
                 false
             } else {
@@ -587,7 +589,7 @@ fn paint_img(
             }
             let placed = placed_image_from_png(src, rect.x, rect.y, desired_w, desired_h)
                 .map_err(crate::error::Error::Other)?;
-            fill_rect(surface, Rect::new(rect.x, rect.y, desired_w, desired_h), None, None);
+            clear_glyphs_preserve_bg(surface, Rect::new(rect.x, rect.y, desired_w, desired_h));
             images.push_back(placed);
             false
         }
@@ -660,6 +662,23 @@ fn paint_img(
     Ok(())
 }
 
+fn clear_glyphs_preserve_bg(surface: &mut Surface, rect: Rect) {
+    let w = surface.width() as usize;
+    for y in rect.y..rect.y.saturating_add(rect.height).min(surface.height()) {
+        let row = y as usize * w;
+        for x in rect.x..rect.x.saturating_add(rect.width).min(surface.width()) {
+            if let Some(slot) = surface.content.get_mut(row + x as usize) {
+                slot.ch = ' ';
+                slot.fg = None;
+                slot.intensity = Intensity::Normal;
+                slot.underline = Underline::None;
+                slot.italic = false;
+                slot.blink = Blink::None;
+            }
+        }
+    }
+}
+
 fn pixel_rgba(buf: &[u8], width: u32, x: u32, y: u32) -> (u8, u8, u8, u8) {
     let idx = ((y * width + x) * 4) as usize;
     if idx + 3 >= buf.len() {
@@ -697,28 +716,73 @@ fn write_wrapped(
     let end_x = bounds.x.saturating_add(bounds.width);
     let end_y = bounds.y.saturating_add(bounds.height);
 
-    for ch in text.chars() {
-        if y >= end_y {
-            break;
+    if bounds.width == 0 || bounds.height == 0 {
+        return (x, y);
+    }
+
+    let max_line_width = bounds.width;
+
+    let mut word = String::new();
+    let mut pending_space = false;
+
+    let flush_word = |surface: &mut Surface, x: &mut u16, y: &mut u16, word: &mut String| {
+        if word.is_empty() {
+            return;
         }
-        if ch == '\n' {
-            x = bounds.x;
-            y = y.saturating_add(1);
-            continue;
+
+        let word_width: u16 = word
+            .chars()
+            .map(|c| UnicodeWidthChar::width(c).unwrap_or(1).max(1) as u16)
+            .sum();
+
+        if *x > bounds.x && x.saturating_add(word_width) > end_x {
+            *x = bounds.x;
+            *y = y.saturating_add(1);
         }
-        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1).max(1) as u16;
-        if x.saturating_add(ch_width) > end_x {
-            x = bounds.x;
-            y = y.saturating_add(1);
-            if y >= end_y {
-                break;
+
+        if *y >= end_y {
+            word.clear();
+            return;
+        }
+
+        // If the word is longer than the entire line, fall back to hard wrapping.
+        if word_width > max_line_width {
+            for ch in word.chars() {
+                if *y >= end_y {
+                    break;
+                }
+                let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1).max(1) as u16;
+                if x.saturating_add(ch_width) > end_x {
+                    *x = bounds.x;
+                    *y = y.saturating_add(1);
+                    if *y >= end_y {
+                        break;
+                    }
+                }
+                let line_width = end_x.saturating_sub(*x) as usize;
+                surface.set_stringn_styled(
+                    *x,
+                    *y,
+                    ch.to_string(),
+                    line_width,
+                    style.fg,
+                    style.bg,
+                    style.intensity,
+                    style.underline,
+                    style.italic,
+                    style.blink,
+                );
+                *x = x.saturating_add(ch_width);
             }
+            word.clear();
+            return;
         }
-        let line_width = end_x.saturating_sub(x) as usize;
+
+        let line_width = end_x.saturating_sub(*x) as usize;
         surface.set_stringn_styled(
-            x,
-            y,
-            ch.to_string(),
+            *x,
+            *y,
+            word.as_str(),
             line_width,
             style.fg,
             style.bg,
@@ -727,9 +791,60 @@ fn write_wrapped(
             style.italic,
             style.blink,
         );
-        x = x.saturating_add(ch_width);
+        *x = x.saturating_add(word_width);
+        word.clear();
+    };
+
+    for ch in text.chars() {
+        if y >= end_y {
+            break;
+        }
+
+        if ch == '\n' {
+            flush_word(surface, &mut x, &mut y, &mut word);
+            pending_space = false;
+            x = bounds.x;
+            y = y.saturating_add(1);
+            continue;
+        }
+
+        if ch.is_whitespace() {
+            flush_word(surface, &mut x, &mut y, &mut word);
+            pending_space = true;
+            continue;
+        }
+
+        if pending_space {
+            if x > bounds.x {
+                let space_width = 1u16;
+                if x.saturating_add(space_width) > end_x {
+                    x = bounds.x;
+                    y = y.saturating_add(1);
+                }
+                if y < end_y {
+                    let line_width = end_x.saturating_sub(x) as usize;
+                    surface.set_stringn_styled(
+                        x,
+                        y,
+                        " ",
+                        line_width,
+                        style.fg,
+                        style.bg,
+                        style.intensity,
+                        style.underline,
+                        style.italic,
+                        style.blink,
+                    );
+                    x = x.saturating_add(space_width);
+                }
+            }
+            pending_space = false;
+        }
+
+        word.push(ch);
     }
 
+    flush_word(surface, &mut x, &mut y, &mut word);
     (x, y)
 }
 

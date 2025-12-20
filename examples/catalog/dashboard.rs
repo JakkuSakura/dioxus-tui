@@ -3,8 +3,8 @@ use dioxus::prelude::*;
 pub fn app() -> Element {
     rsx! {
         div {
-            width: "90ch",
-            padding: "1ch",
+            width: "100%",
+            padding: "0.5ch",
 
             border_style: "solid",
             border_width: "thick",
@@ -14,12 +14,17 @@ pub fn app() -> Element {
             // Header
             div {
                 width: "100%",
-                padding: "1ch",
+                padding: "0.5ch",
                 background_color: "#1f2335",
                 color: "#c0caf5",
 
+                display: "flex",
+                flex_direction: "row",
+                align_items: "center",
+                justify_content: "space-between",
+
                 h1 { color: "#7aa2f7", "Dashboard" }
-                div { color: "#a9b1d6", "16/256 palettes + text attributes" }
+                div { color: "#a9b1d6", "palettes + attrs + image" }
             }
 
             // Body
@@ -27,83 +32,94 @@ pub fn app() -> Element {
                 width: "100%",
                 display: "flex",
                 flex_direction: "row",
-                gap: "2ch",
-                padding_top: "1ch",
+                gap: "1ch",
+                padding_top: "0.5ch",
 
                 div {
-                    width: "24ch",
-                    padding: "1ch",
+                    width: "22ch",
+                    flex_shrink: "0",
+                    padding: "0.5ch",
                     background_color: "#16161e",
                     border_style: "solid",
                     border_width: "1px",
                     border_color: "#414868",
 
                     div { color: "#bb9af7", "NAV" }
-                    ul {
-                        li { color: "#7dcfff", "Overview" }
-                        li { color: "#9ece6a", "Palettes" }
-                        li { color: "#ff9e64", "Attributes" }
-                        li { color: "#f7768e", "Alerts" }
+                    div {
+                        display: "flex",
+                        flex_wrap: "wrap",
+                        gap: "0.5ch",
+                        span { color: "#7dcfff", "Overview" }
+                        span { color: "#9ece6a", "Palettes" }
+                        span { color: "#ff9e64", "Attrs" }
+                        span { color: "#f7768e", "Alerts" }
                     }
 
-                    div { padding_top: "1ch", color: "#bb9af7", "STATUS" }
+                    div { padding_top: "0.5ch", color: "#bb9af7", "STATUS" }
                     div {
-                        padding: "1ch",
+                        padding: "0.5ch",
                         background_color: "#0f111a",
                         border_style: "solid",
                         border_width: "1px",
                         border_color: "#2ac3de",
 
                         div { color: "#9ece6a", "OK" }
-                        div { color: "#a9b1d6", "renderer: headless" }
-                        div { color: "#a9b1d6", "output: stdout" }
+                        div { color: "#a9b1d6", "mode: headless" }
+                        div { color: "#a9b1d6", "out: stdout" }
                     }
                 }
 
                 div {
                     display: "flex",
-                    flex_direction: "column",
+                    flex_direction: "row",
+                    flex_wrap: "wrap",
                     flex_grow: "1",
+                    gap: "1ch",
 
                     div {
-                        padding: "1ch",
-                        background_color: "#1a1b26",
-                        border_style: "solid",
-                        border_width: "1px",
-                        border_color: "#414868",
+                        flex_basis: "46ch",
+                        flex_grow: "1",
 
-                        div { color: "#c0caf5", "Demos" }
-                        div { color: "#a9b1d6", "- Palette-index FG/BG (data_*_idx)" }
-                        div { color: "#a9b1d6", "- Bold / underline / italic / blink (data_attrs)" }
-                    }
-
-                    div {
-                        padding_top: "1ch",
                         display: "flex",
                         flex_direction: "column",
-                        gap: "1ch",
+                        gap: "0.5ch",
 
                         div {
-                            padding: "1ch",
+                            padding: "0.5ch",
+                            background_color: "#1a1b26",
+                            border_style: "solid",
+                            border_width: "1px",
+                            border_color: "#414868",
+
+                            div { color: "#c0caf5", "Demos" }
+                            div { color: "#a9b1d6", "palette fg/bg; text attrs; inline img" }
+                        }
+
+                        div {
+                            padding: "0.5ch",
                             background_color: "#0f111a",
                             border_style: "solid",
                             border_width: "1px",
                             border_color: "#ff9e64",
                             color: "#c0caf5",
 
-                            div { color: "#ff9e64", "Example commands" }
-                            pre {
-                                background_color: "#16161e",
-                                color: "#7dcfff",
-                                padding: "1ch",
-                                "cargo run --example render -- dashboard\n"
-                            }
+                            div { color: "#ff9e64", "Example" }
+                            div { color: "#7dcfff", "cargo run --example render -- dashboard" }
                         }
 
                         CapabilitiesPanel {}
-
                         TextAttributesDemo {}
                         ImageDemo {}
+                    }
+
+                    div {
+                        flex_basis: "27ch",
+                        flex_grow: "1",
+
+                        display: "flex",
+                        flex_direction: "column",
+                        gap: "0.5ch",
+
                         Palette16 {}
                         Palette256 {}
                     }
@@ -116,6 +132,49 @@ pub fn app() -> Element {
 #[component]
 fn CapabilitiesPanel() -> Element {
     let env = |k: &str| std::env::var(k).ok().unwrap_or_else(|| "<unset>".to_string());
+    let mut expanded = use_signal(|| false);
+
+    let term = env("TERM");
+
+    #[cfg(unix)]
+    let stdout_size = {
+        use std::io::IsTerminal;
+        use std::os::fd::AsRawFd;
+        let stdout = std::io::stdout();
+        if stdout.is_terminal() {
+            unsafe {
+                let mut ws: libc::winsize = std::mem::zeroed();
+                if libc::ioctl(stdout.as_raw_fd(), libc::TIOCGWINSZ, &mut ws) == 0 {
+                    format!("{}x{}", ws.ws_col, ws.ws_row)
+                } else {
+                    "<ioctl failed>".to_string()
+                }
+            }
+        } else {
+            "<not a tty>".to_string()
+        }
+    };
+    #[cfg(not(unix))]
+    let stdout_size = "<n/a>".to_string();
+
+    #[cfg(unix)]
+    let tty_size = {
+        use std::os::fd::AsRawFd;
+        if let Ok(tty) = std::fs::File::open("/dev/tty") {
+            unsafe {
+                let mut ws: libc::winsize = std::mem::zeroed();
+                if libc::ioctl(tty.as_raw_fd(), libc::TIOCGWINSZ, &mut ws) == 0 {
+                    format!("{}x{}", ws.ws_col, ws.ws_row)
+                } else {
+                    "<ioctl failed>".to_string()
+                }
+            }
+        } else {
+            "<no /dev/tty>".to_string()
+        }
+    };
+    #[cfg(not(unix))]
+    let tty_size = "<n/a>".to_string();
 
     let detected = dioxus_tui::capabilities::detect();
     let (termwiz_iterm2, termwiz_sixel, termwiz_color_level) = match &detected {
@@ -129,18 +188,21 @@ fn CapabilitiesPanel() -> Element {
 
     let terminal_caps = match &detected {
         Ok(c) => format!(
-            "truecolor={}; iterm2_images={}; sixel_images={}; inline_images={} ",
+            "truecolor={}; iterm2={}; sixel={}; inline={} ",
             c.terminal.truecolor, c.terminal.iterm2_images, c.terminal.sixel_images, c.terminal.inline_images
         ),
         Err(err) => format!("<detect failed: {err}>"),
     };
 
     let details = format!(
-        "ENV\n  TERM={}\n  TERM_PROGRAM={}\n  COLORTERM={}\n  WEZTERM_PANE={}\n\ntermwiz::caps\n  iterm2_image={}\n  sixel={}\n  color_level={}\n\nDerived\n  {}\n\nConfig defaults\n  image_policy=Inline\n  image_downgrade=Sampling\n",
+        "ENV\n  TERM={}\n  TERM_PROGRAM={}\n  COLORTERM={}\n  WEZTERM_PANE={}\n  COLUMNS={}\n  stdout={}\n  /dev/tty={}\n\ntermwiz::caps\n  iterm2_image={}\n  sixel={}\n  color_level={}\n\nDerived\n  {}\n\nConfig defaults\n  image_policy=Inline\n  image_downgrade=Sampling\n",
         env("TERM"),
         env("TERM_PROGRAM"),
         env("COLORTERM"),
         env("WEZTERM_PANE"),
+        env("COLUMNS"),
+        stdout_size,
+        tty_size,
         termwiz_iterm2,
         termwiz_sixel,
         termwiz_color_level,
@@ -149,20 +211,38 @@ fn CapabilitiesPanel() -> Element {
 
     rsx! {
         div {
-            padding_top: "1ch",
-            padding: "1ch",
+            padding: "0.5ch",
             background_color: "#16161e",
             border_style: "solid",
             border_width: "1px",
             border_color: "#9ece6a",
 
-            div { color: "#9ece6a", "Capabilities" }
-            pre {
-                background_color: "#0f111a",
-                color: "#c0caf5",
-                padding: "1ch",
-                font_size: "0.9em",
-                "{details}"
+            div {
+                display: "flex",
+                flex_direction: "row",
+                align_items: "center",
+                justify_content: "space-between",
+
+                div { color: "#9ece6a", "Capabilities" }
+                span {
+                    color: "#7dcfff",
+                    onclick: move |_| expanded.set(!expanded()),
+                    if expanded() { "hide" } else { "show" }
+                }
+            }
+
+            div { color: "#c0caf5", "TERM={term}  stdout={stdout_size}  tty={tty_size}" }
+            div { color: "#c0caf5", "termwiz: iterm2={termwiz_iterm2}  sixel={termwiz_sixel}  {termwiz_color_level}" }
+            div { color: "#c0caf5", "derived: {terminal_caps}" }
+
+            if expanded() {
+                pre {
+                    background_color: "#0f111a",
+                    color: "#c0caf5",
+                    padding: "0.5ch",
+                    font_size: "0.9em",
+                    "{details}"
+                }
             }
         }
     }
@@ -172,8 +252,7 @@ fn CapabilitiesPanel() -> Element {
 fn TextAttributesDemo() -> Element {
     rsx! {
         div {
-            padding_top: "1ch",
-            padding: "1ch",
+            padding: "0.5ch",
             background_color: "#16161e",
             border_style: "solid",
             border_width: "1px",
@@ -202,8 +281,7 @@ fn TextAttributesDemo() -> Element {
 fn ImageDemo() -> Element {
     rsx! {
         div {
-            padding_top: "1ch",
-            padding: "1ch",
+            padding: "0.5ch",
             background_color: "#16161e",
             border_style: "solid",
             border_width: "1px",
@@ -214,7 +292,9 @@ fn ImageDemo() -> Element {
             // Specify only width and let layout infer the height from the PNG aspect ratio.
             img {
                 src: "examples/example.png",
-                style: "display: block; width: 60ch;",
+                // Use `ch` so we can infer height reliably in the terminal cell grid.
+                // (Percent widths on replaced elements are still flaky in Blitz/Taffy.)
+                style: "display: block; width: 50ch;",
             }
         }
     }
@@ -224,20 +304,20 @@ fn ImageDemo() -> Element {
 fn Palette16() -> Element {
     rsx! {
         div {
-            padding_top: "1ch",
-            padding: "1ch",
+            padding: "0.5ch",
             background_color: "#16161e",
             border_style: "solid",
             border_width: "1px",
             border_color: "#9ece6a",
 
             div { color: "#9ece6a", "16-color palette (0-15)" }
+            div { color: "#a9b1d6", "2 rows \u{00d7} 8 blocks" }
             div {
                 display: "flex",
                 flex_wrap: "wrap",
-                gap: "1ch",
+                gap: "0.5ch",
                 for idx in 0u8..16u8 {
-                    PaletteSwatch { key: "p16-{idx}", idx }
+                    PaletteBlock { key: "p16-{idx}", idx, label: Some(format!("{idx:02}")), width_ch: 4 }
                 }
             }
         }
@@ -246,22 +326,52 @@ fn Palette16() -> Element {
 
 #[component]
 fn Palette256() -> Element {
+    let mut expanded = use_signal(|| false);
+
     rsx! {
         div {
-            padding_top: "1ch",
-            padding: "1ch",
+            padding: "0.5ch",
             background_color: "#16161e",
             border_style: "solid",
             border_width: "1px",
             border_color: "#bb9af7",
 
-            div { color: "#bb9af7", "256-color palette (0-255)" }
             div {
                 display: "flex",
-                flex_wrap: "wrap",
-                gap: "0ch",
-                for idx in 0u16..256u16 {
-                    PaletteSwatchSmall { key: "p256-{idx}", idx: idx as u8 }
+                flex_direction: "row",
+                align_items: "center",
+                justify_content: "space-between",
+
+                div { color: "#bb9af7", "256-color palette (0-255)" }
+                span {
+                    color: "#7dcfff",
+                    onclick: move |_| expanded.set(!expanded()),
+                    if expanded() { "hide" } else { "show" }
+                }
+            }
+
+            if expanded() {
+                div {
+                    color: "#a9b1d6",
+                    "16 \u{00d7} 16 grid (bg uses palette index)"
+                }
+                div {
+                    display: "flex",
+                    flex_wrap: "wrap",
+                    gap: "0ch",
+                    for idx in 0u16..256u16 {
+                        PaletteBlock { key: "p256-{idx}", idx: idx as u8, label: None, width_ch: 2 }
+                    }
+                }
+            } else {
+                div { color: "#a9b1d6", "collapsed (click show)" }
+                div {
+                    display: "flex",
+                    flex_wrap: "wrap",
+                    gap: "0ch",
+                    for idx in 0u8..64u8 {
+                        PaletteBlock { key: "p256-preview-{idx}", idx, label: None, width_ch: 2 }
+                    }
                 }
             }
         }
@@ -269,30 +379,33 @@ fn Palette256() -> Element {
 }
 
 #[component]
-fn PaletteSwatch(idx: u8) -> Element {
+fn PaletteBlock(idx: u8, label: Option<String>, width_ch: u16) -> Element {
     let fg = if idx <= 7 { 15 } else { 0 };
-    rsx! {
-        span {
-            "data-bg-idx": "{idx}",
-            "data-fg-idx": "{fg}",
-            padding: "0 1ch",
-            border_style: "solid",
-            border_width: "1px",
-            border_color: "#414868",
-            "{idx:02}"
+    let width = format!("{width_ch}ch");
+    let content = match label {
+        Some(label) => {
+            if width_ch as usize <= label.len() {
+                label
+            } else {
+                let total = width_ch as usize;
+                let left = (total - label.len()) / 2;
+                let right = total - label.len() - left;
+                format!("{}{}{}", " ".repeat(left), label, " ".repeat(right))
+            }
         }
-    }
-}
+        None => " ".repeat(width_ch as usize),
+    };
 
-#[component]
-fn PaletteSwatchSmall(idx: u8) -> Element {
-    let fg = if idx % 2 == 0 { 15 } else { 0 };
     rsx! {
         span {
             "data-bg-idx": "{idx}",
             "data-fg-idx": "{fg}",
-            padding: "0 0.5ch",
-            "{idx:03}"
+            width: "{width}",
+            height: "1ch",
+            display: "flex",
+            align_items: "center",
+            justify_content: "center",
+            "{content}"
         }
     }
 }
