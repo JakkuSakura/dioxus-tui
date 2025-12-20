@@ -56,7 +56,7 @@ pub fn app() -> Element {
 
                         div { color: "#9ece6a", "OK" }
                         div { color: "#a9b1d6", "renderer: headless" }
-                        div { color: "#a9b1d6", "output: stdout (stream)" }
+                        div { color: "#a9b1d6", "output: stdout" }
                     }
                 }
 
@@ -92,7 +92,7 @@ pub fn app() -> Element {
                                 background_color: "#16161e",
                                 color: "#7dcfff",
                                 padding: "1ch",
-                                "cargo run --example render_dashboard -- 100 40\n"
+                                "cargo run --example render -- dashboard\n"
                             }
                         }
 

@@ -152,17 +152,10 @@ fn paint_node(
                         .unwrap_or(fallback_fg),
                 );
                 let style = TextStyle { fg, ..node_style };
-                let text_width = if is_blockish(node) {
-                    area.width.saturating_sub(rect.x)
-                } else {
-                    rect.width
-                };
-                let text_bounds = Rect::new(
-                    rect.x,
-                    rect.y,
-                    text_width,
-                    area.height.saturating_sub(rect.y),
-                );
+                // Constrain inline text rendering to this node's box.
+                // Otherwise, text may spill into sibling regions and later get overwritten,
+                // which looks like truncation/hidden content.
+                let text_bounds = rect;
 
                 if node.data.is_element_with_tag_name(&local_name!("input")) {
                     if let Some(value) = node.attr(local_name!("value")) {
