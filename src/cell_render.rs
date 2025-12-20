@@ -8,13 +8,15 @@ use crate::geometry::Rect;
 use crate::layout::node_rect;
 use crate::scene::CellMetrics;
 use crate::surface::Surface;
-use crate::config::ImagePolicy;
-use crate::image::load_png_image;
+use crate::config::{ImageDowngrade, ImagePolicy};
+use crate::image::{load_png_image, placed_image_from_png, PlacedImage};
+use std::collections::VecDeque;
 use style::color::AbsoluteColor;
 use unicode_width::UnicodeWidthChar;
 
 pub fn paint_surface(
     surface: &mut Surface,
+    images: &mut VecDeque<PlacedImage>,
     doc: &BaseDocument,
     area: Rect,
     metrics: CellMetrics,
@@ -22,8 +24,11 @@ pub fn paint_surface(
     color_mode: ColorMode,
     truecolor: bool,
     image_policy: ImagePolicy,
-) {
+    image_downgrade: ImageDowngrade,
+    inline_images_supported: bool,
+) -> crate::error::Result<()> {
     surface.clear();
+    images.clear();
 
     let fallback_fg = palette_entry_to_attr(palette_roles.fg_primary, color_mode, truecolor);
 
@@ -34,6 +39,7 @@ pub fn paint_surface(
 
     paint_node(
         surface,
+        images,
         doc,
         root,
         area,
@@ -43,7 +49,11 @@ pub fn paint_surface(
         fallback_fg,
         TextStyle::default(),
         image_policy,
-    );
+        image_downgrade,
+        inline_images_supported,
+    )?;
+
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -92,6 +102,7 @@ impl TextStyle {
 
 fn paint_node(
     surface: &mut Surface,
+    images: &mut VecDeque<PlacedImage>,
     doc: &BaseDocument,
     node: &Node,
     area: Rect,
@@ -101,7 +112,9 @@ fn paint_node(
     fallback_fg: ColorAttribute,
     inherited: TextStyle,
     image_policy: ImagePolicy,
-) {
+    image_downgrade: ImageDowngrade,
+    inline_images_supported: bool,
+) -> crate::error::Result<()> {
     match &node.data {
         blitz_dom::node::NodeData::Element(_) | blitz_dom::node::NodeData::AnonymousBlock(_) => {
             let local_style = style_overrides(node, color_mode, truecolor);
@@ -109,8 +122,19 @@ fn paint_node(
 
             if node.data.is_element_with_tag_name(&local_name!("img")) {
                 let rect = node_rect(doc, node, area, metrics);
-                paint_img(surface, node, rect, color_mode, truecolor, image_policy);
-                return;
+                paint_img(
+                    surface,
+                    images,
+                    node,
+                    rect,
+                    metrics,
+                    color_mode,
+                    truecolor,
+                    image_policy,
+                    image_downgrade,
+                    inline_images_supported,
+                )?;
+                return Ok(());
             }
 
             let rect = node_rect(doc, node, area, metrics);
@@ -169,6 +193,7 @@ fn paint_node(
                 if is_blockish(child) {
                     paint_node(
                         surface,
+                        images,
                         doc,
                         child,
                         area,
@@ -178,7 +203,9 @@ fn paint_node(
                         fallback_fg,
                         node_style,
                         image_policy,
-                    );
+                        image_downgrade,
+                        inline_images_supported,
+                    )?;
                 }
             }
         }
@@ -188,6 +215,7 @@ fn paint_node(
                 if let Some(child) = doc.get_node(child_id) {
                     paint_node(
                         surface,
+                        images,
                         doc,
                         child,
                         area,
@@ -197,11 +225,15 @@ fn paint_node(
                         fallback_fg,
                         inherited,
                         image_policy,
-                    );
+                        image_downgrade,
+                        inline_images_supported,
+                    )?;
                 }
             }
         }
     }
+
+    Ok(())
 }
 
 fn paint_inline_text(
@@ -380,30 +412,140 @@ fn is_blockish(node: &Node) -> bool {
 
 fn paint_img(
     surface: &mut Surface,
+    images: &mut VecDeque<PlacedImage>,
     node: &Node,
     rect: Rect,
+    metrics: CellMetrics,
     color_mode: ColorMode,
     truecolor: bool,
     image_policy: ImagePolicy,
-) {
+    image_downgrade: ImageDowngrade,
+    inline_images_supported: bool,
+) -> crate::error::Result<()> {
     if rect.width == 0 || rect.height == 0 {
-        return;
+        return Ok(());
     }
 
     if matches!(image_policy, ImagePolicy::Omit) {
-        return;
+        return Ok(());
     }
 
     let Some(src) = node.attr(local_name!("src")) else {
-        return;
+        return Ok(());
     };
-    let Ok(img) = load_png_image(src) else {
-        return;
+
+    fn parse_dim_cells(value: &str, cell_px: f32) -> Option<u16> {
+        let s = value.trim();
+        if let Some(rest) = s.strip_suffix("ch") {
+            return rest.trim().parse::<u16>().ok();
+        }
+        if let Some(rest) = s.strip_suffix("px") {
+            let px = rest.trim().parse::<f32>().ok()?;
+            let cells = (px / cell_px).ceil().max(1.0) as u16;
+            return Some(cells);
+        }
+        // Best-effort: allow raw integers interpreted as cells.
+        s.parse::<u16>().ok()
+    }
+
+    // Blitz/Taffy doesn't always size replaced elements (`img`) correctly.
+    // If layout produced a 1x1 placeholder, honor explicit width/height attrs.
+    let mut desired_w = rect.width;
+    let mut desired_h = rect.height;
+    if desired_w <= 1 {
+        if let Some(w) = node
+            .attr(local_name!("width"))
+            .and_then(|v| parse_dim_cells(v, metrics.cell_w_px))
+        {
+            desired_w = w;
+        }
+    }
+    if desired_h <= 1 {
+        if let Some(h) = node
+            .attr(local_name!("height"))
+            .and_then(|v| parse_dim_cells(v, metrics.cell_h_px))
+        {
+            desired_h = h;
+        }
+    }
+
+    if rect.x + desired_w > surface.width() {
+        desired_w = surface.width().saturating_sub(rect.x);
+    }
+    if rect.y + desired_h > surface.height() {
+        desired_h = surface.height().saturating_sub(rect.y);
+    }
+    if desired_w == 0 || desired_h == 0 {
+        return Ok(());
+    }
+
+    let fallback = || {
+        node.attr(local_name!("alt"))
+            .filter(|s| !s.is_empty())
+            .unwrap_or("<img unsupported>")
+    };
+
+    let paint_alt_text = |surface: &mut Surface| {
+        let bounds = Rect::new(
+            rect.x,
+            rect.y,
+            surface.width().saturating_sub(rect.x),
+            surface.height().saturating_sub(rect.y),
+        );
+        let _ = write_wrapped(surface, bounds, (rect.x, rect.y), fallback(), TextStyle::default());
+    };
+
+    match image_policy {
+        ImagePolicy::AltText => {
+            paint_alt_text(surface);
+            return Ok(());
+        }
+        ImagePolicy::Inline => {
+            if inline_images_supported {
+                let placed = placed_image_from_png(src, rect.x, rect.y, desired_w, desired_h)
+                    .map_err(crate::error::Error::Other)?;
+                fill_rect(surface, Rect::new(rect.x, rect.y, desired_w, desired_h), None, None);
+                images.push_back(placed);
+                return Ok(());
+            }
+
+            if matches!(image_downgrade, ImageDowngrade::Disabled) {
+                paint_alt_text(surface);
+                return Ok(());
+            }
+            // Downgrade to cell-based rendering below.
+        }
+        ImagePolicy::Error => {
+            if !inline_images_supported {
+                return Err(crate::error::Error::Other(anyhow::anyhow!(
+                    "inline images not supported by terminal"
+                )));
+            }
+            let placed = placed_image_from_png(src, rect.x, rect.y, desired_w, desired_h)
+                .map_err(crate::error::Error::Other)?;
+            fill_rect(surface, Rect::new(rect.x, rect.y, desired_w, desired_h), None, None);
+            images.push_back(placed);
+            return Ok(());
+        }
+        ImagePolicy::Omit => {
+            return Ok(());
+        }
+    }
+
+    let img = match load_png_image(src) {
+        Ok(img) => img,
+        Err(err) => {
+            if matches!(image_policy, ImagePolicy::Error) {
+                return Err(crate::error::Error::Other(err.into()));
+            }
+            paint_alt_text(surface);
+            return Ok(());
+        }
     };
 
     // Degrade: use half-block characters, encoding two vertical samples per cell.
-    let cell_w = rect.width as u32;
-    let cell_h = rect.height as u32;
+    let cell_w = desired_w as u32;
+    let cell_h = desired_h as u32;
     let sample_w = cell_w.max(1);
     let sample_h = (cell_h * 2).max(1);
 
@@ -445,6 +587,8 @@ fn paint_img(
             }
         }
     }
+
+    Ok(())
 }
 
 fn pixel_rgba(buf: &[u8], width: u32, x: u32, y: u32) -> (u8, u8, u8, u8) {

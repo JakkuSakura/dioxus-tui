@@ -42,6 +42,13 @@ Render HTML via Blitz/Servo into a terminal grid with a single, deterministic pi
 
 If you want to render without entering the terminal alternate screen, see `examples/render_dashboard.rs`.
 
+## Inline images
+
+- Layout for `<img>` uses the same Blitz/Taffy pipeline as other nodes (`layout.rs` + `node_rect`).
+- With `ImagePolicy::Inline`, if the terminal supports OSC 1337 inline images (iTerm2 protocol; also supported by WezTerm), the renderer emits an inline image.
+- If inline images are unsupported and `ImageDowngrade::Enabled` (default), the renderer downgrades to a cell-based approximation.
+- `ImagePolicy::AltText` always renders `alt` (or `"<img unsupported>"`), `ImagePolicy::Omit` skips images, and `ImagePolicy::Error` returns a hard error.
+
 ## Default TUI CSS (roles)
 
 Use palette roles and cell-friendly units; map roles per capability profile:

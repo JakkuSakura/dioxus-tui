@@ -2,14 +2,14 @@ use std::time::Duration;
 
 use termwiz::terminal::Terminal;
 use termwiz::{
-    caps::Capabilities,
     color::ColorAttribute,
     surface::{Change, Position},
     terminal::{buffered::BufferedTerminal, SystemTerminal},
 };
 
 fn main() -> anyhow::Result<()> {
-    let mut term = BufferedTerminal::new(SystemTerminal::new(Capabilities::new_from_env()?)?)?;
+    let caps = dioxus_tui::capabilities::termwiz_capabilities()?;
+    let mut term = BufferedTerminal::new(SystemTerminal::new(caps)?)?;
     term.terminal().set_raw_mode()?;
     term.terminal().enter_alternate_screen()?;
 

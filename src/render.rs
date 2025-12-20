@@ -9,7 +9,6 @@ use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use futures::{pin_mut, StreamExt};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use termwiz::{
-    caps::Capabilities,
     color::ColorAttribute,
     surface::{Change, Position},
     terminal::{buffered::BufferedTerminal, ScreenSize, Terminal},
@@ -19,6 +18,7 @@ use termwiz::input::{InputEvent as TzInputEvent, KeyCode, Modifiers as TzModifie
 use termwiz::terminal::new_terminal;
 
 use crate::capabilities::TerminalCapabilities;
+use crate::capabilities::termwiz_capabilities;
 use crate::config::{Config, RenderingMode};
 use crate::geometry::Rect;
 use crate::hooks::event_from_termwiz;
@@ -27,10 +27,16 @@ use crate::scene::CellMetrics;
 use crate::surface::Surface;
 use crate::RawVirtualDom;
 use crate::cell_render::paint_surface;
+use crate::image::PlacedImage;
 use tracing::debug;
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
     unbounded()
+}
+
+pub(crate) struct RenderedFrame {
+    pub(crate) surface: Surface,
+    pub(crate) images: std::collections::VecDeque<PlacedImage>,
 }
 
 #[derive(Clone)]
@@ -198,9 +204,23 @@ where
     P: Clone + 'static,
     F: ComponentFunction<P, ()> + 'static,
 {
+    Ok(render_once_frame(cfg, raw, area)?.surface)
+}
+
+pub(crate) fn render_once_frame<P, F>(
+    cfg: Config,
+    raw: RawVirtualDom<P, F>,
+    area: Rect,
+) -> Result<RenderedFrame>
+where
+    P: Clone + 'static,
+    F: ComponentFunction<P, ()> + 'static,
+{
     let capabilities = TerminalCapabilities::detect().unwrap_or(TerminalCapabilities {
         truecolor: false,
         inline_images: false,
+        iterm2_images: false,
+        sixel_images: false,
     });
     let metrics = CellMetrics {
         cell_w_px: 8.0,
@@ -208,14 +228,21 @@ where
     };
     let vdom = raw.into_virtual_dom();
 
-    let viewport = Viewport::new(area.width.into(), area.height.into(), 1.0, ColorScheme::Light);
+    let viewport = Viewport::new(
+        (area.width as f32 * metrics.cell_w_px).ceil().max(1.0) as u32,
+        (area.height as f32 * metrics.cell_h_px).ceil().max(1.0) as u32,
+        1.0,
+        ColorScheme::Light,
+    );
     let (mut renderer, _event_tx, _event_rx) = DioxusRenderer::new_with_viewport(vdom, viewport);
 
     renderer.update();
     let mut surface = Surface::new(area.width, area.height);
+    let mut images = std::collections::VecDeque::<PlacedImage>::new();
     let _ = renderer.layout_root(area, metrics);
     paint_surface(
         &mut surface,
+        &mut images,
         renderer.doc.inner.as_ref(),
         area,
         metrics,
@@ -223,8 +250,10 @@ where
         cfg.color_mode,
         capabilities.truecolor,
         cfg.image_policy,
-    );
-    Ok(surface)
+        cfg.image_downgrade,
+        capabilities.iterm2_images,
+    )?;
+    Ok(RenderedFrame { surface, images })
 }
 
 pub(crate) async fn run_renderer<P, F>(cfg: Config, raw: RawVirtualDom<P, F>) -> Result<()>
@@ -258,7 +287,7 @@ async fn run_tui_renderer(
         let tick_rate = cfg.tick_rate;
         std::thread::spawn(move || {
             let res: Result<()> = (|| {
-                let caps = Capabilities::new_from_env()?;
+                let caps = termwiz_capabilities()?;
                 let mut term = new_terminal(caps)?;
                 term.set_raw_mode()?;
 
@@ -284,7 +313,7 @@ async fn run_tui_renderer(
     }
 
     let mut terminal = if run_terminal {
-        let caps = Capabilities::new_from_env()?;
+        let caps = termwiz_capabilities()?;
         let mut term = new_terminal(caps)?;
         term.set_raw_mode()?;
         term.enter_alternate_screen()?;
@@ -296,11 +325,16 @@ async fn run_tui_renderer(
     let capabilities = TerminalCapabilities::detect().unwrap_or(TerminalCapabilities {
         truecolor: false,
         inline_images: false,
+        iterm2_images: false,
+        sixel_images: false,
     });
     let mut last_surface: Option<Surface> = None;
     let mut last_area: Option<Rect> = None;
+    let mut last_images: Option<std::collections::VecDeque<PlacedImage>> = None;
 
     renderer.update();
+
+    let mut paint_error: Option<crate::error::Error> = None;
 
     loop {
         let mut input_event: Option<InputEvent> = None;
@@ -346,10 +380,12 @@ async fn run_tui_renderer(
         if let Some(term) = &mut terminal {
             let (area, metrics) = terminal_size(term)?;
             let mut surface = Surface::new(area.width, area.height);
+            let mut images = std::collections::VecDeque::<PlacedImage>::new();
             last_area = Some(area);
             if let Some(_root) = renderer.layout_root(area, metrics) {
-                paint_surface(
+                if let Err(err) = paint_surface(
                     &mut surface,
+                    &mut images,
                     renderer.doc.inner.as_ref(),
                     area,
                     metrics,
@@ -357,7 +393,12 @@ async fn run_tui_renderer(
                     cfg.color_mode,
                     capabilities.truecolor,
                     cfg.image_policy,
-                );
+                    cfg.image_downgrade,
+                    capabilities.iterm2_images,
+                ) {
+                    paint_error = Some(err);
+                    break;
+                }
             }
             // Debug: dump first few lines of the surface for tracing.
             if cfg!(debug_assertions) {
@@ -370,16 +411,17 @@ async fn run_tui_renderer(
                     .collect();
                 debug!(?dump, "surface_dump");
             }
-            let images = std::collections::VecDeque::new();
             flush_surface(
                 term,
                 &surface,
                 last_surface.as_ref(),
                 &capabilities,
                 &images,
+                last_images.as_ref(),
                 metrics,
             )?;
             last_surface = Some(surface);
+            last_images = Some(images);
         }
     }
 
@@ -387,6 +429,10 @@ async fn run_tui_renderer(
         term.terminal().exit_alternate_screen()?;
         term.terminal().set_cooked_mode()?;
         term.flush()?;
+    }
+
+    if let Some(err) = paint_error {
+        return Err(err);
     }
 
     Ok(())
@@ -411,14 +457,18 @@ fn terminal_size<T: Terminal>(term: &mut BufferedTerminal<T>) -> Result<(Rect, C
 }
 
 fn initial_viewport_size() -> Option<(u16, u16)> {
-    let caps = Capabilities::new_from_env().ok()?;
+    let caps = termwiz_capabilities().ok()?;
     let mut term = new_terminal(caps).ok()?;
     term.get_screen_size()
         .ok()
         .map(|s| (s.cols as u16, s.rows as u16))
 }
 
-pub(crate) fn surface_to_changes(surface: &Surface, prev: Option<&Surface>) -> Vec<Change> {
+pub(crate) fn surface_to_changes(
+    surface: &Surface,
+    prev: Option<&Surface>,
+    masked_intervals_by_row: Option<&[Vec<(usize, usize)>]>,
+) -> Vec<Change> {
     let full_redraw = prev.map(|p| p.dims() != surface.dims()).unwrap_or(true);
     let mut changes = Vec::new();
 
@@ -461,7 +511,30 @@ pub(crate) fn surface_to_changes(surface: &Surface, prev: Option<&Surface>) -> V
             y: Position::Absolute(y),
         });
 
-        for cell in chunk.iter() {
+        let intervals = masked_intervals_by_row
+            .and_then(|rows| rows.get(y))
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        let mut interval_idx = 0usize;
+
+        let mut x = 0usize;
+        while x < chunk.len() {
+            if let Some((start, end)) = intervals.get(interval_idx).copied() {
+                if x == start {
+                    if !buf.is_empty() {
+                        changes.push(Change::Text(std::mem::take(&mut buf)));
+                    }
+                    changes.push(Change::CursorPosition {
+                        x: Position::Absolute(end),
+                        y: Position::Absolute(y),
+                    });
+                    x = end.min(chunk.len());
+                    interval_idx += 1;
+                    continue;
+                }
+            }
+
+            let cell = &chunk[x];
             let fg = cell.fg.unwrap_or(ColorAttribute::Default);
             let bg = cell.bg.unwrap_or(ColorAttribute::Default);
             let intensity = cell.intensity;
@@ -514,6 +587,7 @@ pub(crate) fn surface_to_changes(surface: &Surface, prev: Option<&Surface>) -> V
             }
 
             buf.push(cell.ch);
+            x += 1;
         }
 
         if !buf.is_empty() {
@@ -551,6 +625,51 @@ pub(crate) fn surface_to_changes(surface: &Surface, prev: Option<&Surface>) -> V
     }
 
     changes
+}
+
+fn image_mask_intervals_by_row(
+    images: &std::collections::VecDeque<PlacedImage>,
+    surface_width: usize,
+    surface_height: usize,
+) -> Vec<Vec<(usize, usize)>> {
+    let mut rows: Vec<Vec<(usize, usize)>> = vec![Vec::new(); surface_height];
+    for img in images {
+        let x0 = (img.x_cell as usize).min(surface_width);
+        let x1 = (img.x_cell as usize)
+            .saturating_add(img.width_cells as usize)
+            .min(surface_width);
+        if x0 >= x1 {
+            continue;
+        }
+
+        let y0 = (img.y_cell as usize).min(surface_height);
+        let y1 = (img.y_cell as usize)
+            .saturating_add(img.height_cells as usize)
+            .min(surface_height);
+        for y in y0..y1 {
+            rows[y].push((x0, x1));
+        }
+    }
+
+    for row in &mut rows {
+        if row.len() <= 1 {
+            continue;
+        }
+        row.sort_by_key(|(s, _e)| *s);
+        let mut merged: Vec<(usize, usize)> = Vec::with_capacity(row.len());
+        for (s, e) in row.drain(..) {
+            if let Some((_ms, me)) = merged.last_mut() {
+                if s <= *me {
+                    *me = (*me).max(e);
+                    continue;
+                }
+            }
+            merged.push((s, e));
+        }
+        *row = merged;
+    }
+
+    rows
 }
 
 pub(crate) fn surface_to_cropped_stream_changes(surface: &Surface) -> Vec<Change> {
@@ -689,6 +808,164 @@ pub(crate) fn surface_to_cropped_stream_changes(surface: &Surface) -> Vec<Change
     changes
 }
 
+pub(crate) fn frame_to_cropped_stream_changes(
+    frame: &RenderedFrame,
+    caps: &TerminalCapabilities,
+) -> Vec<Change> {
+    if frame.images.is_empty() || !caps.iterm2_images {
+        return surface_to_cropped_stream_changes(&frame.surface);
+    }
+
+    // Determine the bottom-most row that we should include.
+    let width = frame.surface.width() as usize;
+    let height = frame.surface.height() as usize;
+
+    let mut last_row_with_content: Option<usize> = None;
+    for (y, row) in frame.surface.content.chunks(width).enumerate() {
+        if row_has_non_blank(row) {
+            last_row_with_content = Some(y);
+        }
+    }
+
+    let mut last_row_with_image: Option<usize> = None;
+    for img in &frame.images {
+        let bottom = (img.y_cell as usize)
+            .saturating_add((img.height_cells as usize).saturating_sub(1));
+        last_row_with_image = Some(last_row_with_image.map_or(bottom, |v| v.max(bottom)));
+    }
+
+    let max_row = last_row_with_content
+        .into_iter()
+        .chain(last_row_with_image)
+        .max();
+    let cropped_height = max_row.map(|r| r + 1).unwrap_or(0).min(height);
+
+    let mut images_by_row: Vec<Vec<&PlacedImage>> = vec![Vec::new(); cropped_height];
+    for img in &frame.images {
+        let y = img.y_cell as usize;
+        if y < cropped_height {
+            images_by_row[y].push(img);
+        }
+    }
+    for row in &mut images_by_row {
+        row.sort_by_key(|img| img.x_cell);
+    }
+
+    let mut changes = Vec::new();
+    for y in 0..cropped_height {
+        let row = &frame.surface.content[y * width..(y + 1) * width];
+
+        let mut img_iter = images_by_row[y].iter().copied().peekable();
+
+        let mut current_fg = ColorAttribute::Default;
+        let mut current_bg = ColorAttribute::Default;
+        let mut current_intensity = termwiz::cell::Intensity::Normal;
+        let mut current_underline = termwiz::cell::Underline::None;
+        let mut current_italic = false;
+        let mut current_blink = termwiz::cell::Blink::None;
+        let mut buf = String::with_capacity(width);
+
+        let mut x = 0usize;
+        while x < width {
+            if let Some(img) = img_iter.peek().copied() {
+                if img.x_cell as usize == x {
+                    if !buf.is_empty() {
+                        changes.push(Change::Text(std::mem::take(&mut buf)));
+                    }
+
+                    // Ensure we don't accidentally carry styling into the terminal state
+                    // across the inline image.
+                    push_reset_attributes(&mut changes);
+                    current_fg = ColorAttribute::Default;
+                    current_bg = ColorAttribute::Default;
+                    current_intensity = termwiz::cell::Intensity::Normal;
+                    current_underline = termwiz::cell::Underline::None;
+                    current_italic = false;
+                    current_blink = termwiz::cell::Blink::None;
+
+                    changes.push(Change::Image(termwiz::surface::Image {
+                        width: img.width_cells as usize,
+                        height: img.height_cells as usize,
+                        top_left: termwiz::surface::TextureCoordinate::new_f32(0.0, 0.0),
+                        bottom_right: termwiz::surface::TextureCoordinate::new_f32(1.0, 1.0),
+                        image: img.image.clone(),
+                    }));
+
+                    x = x.saturating_add(img.width_cells as usize);
+                    let _ = img_iter.next();
+                    continue;
+                }
+            }
+
+            let cell = &row[x];
+            let fg = cell.fg.unwrap_or(ColorAttribute::Default);
+            let bg = cell.bg.unwrap_or(ColorAttribute::Default);
+            let intensity = cell.intensity;
+            let underline = cell.underline;
+            let italic = cell.italic;
+            let blink = cell.blink;
+
+            if fg != current_fg
+                || bg != current_bg
+                || intensity != current_intensity
+                || underline != current_underline
+                || italic != current_italic
+                || blink != current_blink
+            {
+                if !buf.is_empty() {
+                    changes.push(Change::Text(std::mem::take(&mut buf)));
+                }
+
+                if bg != current_bg {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Background(
+                        bg,
+                    )));
+                    current_bg = bg;
+                }
+                if fg != current_fg {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Foreground(
+                        fg,
+                    )));
+                    current_fg = fg;
+                }
+                if intensity != current_intensity {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Intensity(
+                        intensity,
+                    )));
+                    current_intensity = intensity;
+                }
+                if underline != current_underline {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Underline(
+                        underline,
+                    )));
+                    current_underline = underline;
+                }
+                if italic != current_italic {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Italic(italic)));
+                    current_italic = italic;
+                }
+                if blink != current_blink {
+                    changes.push(Change::Attribute(termwiz::cell::AttributeChange::Blink(blink)));
+                    current_blink = blink;
+                }
+            }
+
+            buf.push(cell.ch);
+            x += 1;
+        }
+
+        if !buf.is_empty() {
+            changes.push(Change::Text(buf));
+        }
+
+        // Ensure each row ends with default attributes and a newline.
+        push_reset_attributes(&mut changes);
+        changes.push(Change::Text("\r\n".to_string()));
+    }
+
+    changes
+}
+
 fn push_reset_attributes(changes: &mut Vec<Change>) {
     changes.push(Change::AllAttributes(termwiz::cell::CellAttributes::default()));
 }
@@ -702,14 +979,53 @@ pub(crate) fn flush_surface<T: Terminal>(
     surface: &Surface,
     prev: Option<&Surface>,
     caps: &TerminalCapabilities,
-    images: &std::collections::VecDeque<crate::scene::InlineImage>,
+    images: &std::collections::VecDeque<PlacedImage>,
+    prev_images: Option<&std::collections::VecDeque<PlacedImage>>,
     metrics: CellMetrics,
 ) -> Result<()> {
-    let changes = surface_to_changes(surface, prev);
+    let images_changed = prev_images.map(|p| p != images).unwrap_or(!images.is_empty());
+
+    // If the image set changes, do a full redraw to avoid leaving stale image placements behind.
+    let full_redraw = images_changed || prev.map(|p| p.dims() != surface.dims()).unwrap_or(true);
+
+    let masked = if caps.iterm2_images && !images.is_empty() {
+        Some(image_mask_intervals_by_row(
+            images,
+            surface.width() as usize,
+            surface.height() as usize,
+        ))
+    } else {
+        None
+    };
+
+    let changes = surface_to_changes(
+        surface,
+        if full_redraw { None } else { prev },
+        masked.as_deref(),
+    );
+
     for change in changes {
         term.add_change(change);
     }
-    let _ = (caps, images, metrics);
+
+    // Place images after text so they don't get overwritten by cleared cell regions.
+    if caps.iterm2_images && !images.is_empty() {
+        for img in images {
+            term.add_change(Change::CursorPosition {
+                x: Position::Absolute(img.x_cell as usize),
+                y: Position::Absolute(img.y_cell as usize),
+            });
+            term.add_change(Change::Image(termwiz::surface::Image {
+                width: img.width_cells as usize,
+                height: img.height_cells as usize,
+                top_left: termwiz::surface::TextureCoordinate::new_f32(0.0, 0.0),
+                bottom_right: termwiz::surface::TextureCoordinate::new_f32(1.0, 1.0),
+                image: img.image.clone(),
+            }));
+        }
+    }
+
+    let _ = (metrics,);
     term.flush()?;
     Ok(())
 }

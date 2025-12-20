@@ -1,7 +1,8 @@
 use dioxus::prelude::*;
+use dioxus_tui::{Config, ImagePolicy};
 
 fn main() {
-    dioxus_tui::launch(app).unwrap();
+    dioxus_tui::launch_cfg(app, Config::default().with_image_policy(ImagePolicy::Inline)).unwrap();
 }
 
 pub fn app() -> Element {
@@ -152,11 +153,13 @@ fn ImageDemo() -> Element {
             border_width: "1px",
             border_color: "#7aa2f7",
 
-            div { color: "#7aa2f7", "PNG (degraded to cells)" }
+            div { color: "#7aa2f7", "PNG (inline if supported, else <img unsupported>)" }
             img {
                 src: "examples/example.png",
-                width: "60ch",
-                height: "16ch",
+                // Use `px` here because Blitz/Taffy doesn't reliably size replaced
+                // elements (like `img`) with `ch` units.
+                width: "480px",
+                height: "256px",
             }
         }
     }

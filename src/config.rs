@@ -13,6 +13,9 @@ pub struct Config {
     pub(crate) palette_roles: PaletteRoles,
     /// Policy for handling images/media in terminals without inline image support.
     pub(crate) image_policy: ImagePolicy,
+    /// Whether `ImagePolicy::Inline` should downgrade to cell-based rendering when inline images
+    /// are unsupported.
+    pub(crate) image_downgrade: ImageDowngrade,
 }
 
 impl Config {
@@ -55,6 +58,13 @@ impl Config {
             ..self
         }
     }
+
+    pub fn with_image_downgrade(self, image_downgrade: ImageDowngrade) -> Self {
+        Self {
+            image_downgrade,
+            ..self
+        }
+    }
 }
 
 impl Default for Config {
@@ -65,7 +75,8 @@ impl Default for Config {
             ctrl_c_quit: true,
             tick_rate: std::time::Duration::from_millis(10),
             palette_roles: PaletteRoles::default(),
-            image_policy: ImagePolicy::Degrade,
+            image_policy: ImagePolicy::Inline,
+            image_downgrade: ImageDowngrade::Enabled,
         }
     }
 }
@@ -135,8 +146,19 @@ pub enum PaletteEntry {
 
 #[derive(Clone, Copy, Debug)]
 pub enum ImagePolicy {
-    /// Downsample or approximate images in-place using block characters.
-    Degrade,
-    /// Omit images entirely when unsupported.
+    /// Prefer native terminal image protocols when available (OSC 1337 on supported terminals).
+    /// If inline images are unsupported, behavior is controlled by `image_downgrade`.
+    Inline,
+    /// Always render the `alt` text (or `"<img unsupported>"`).
+    AltText,
+    /// Omit images entirely.
     Omit,
+    /// Return a hard error if an image cannot be rendered according to the policy.
+    Error,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ImageDowngrade {
+    Enabled,
+    Disabled,
 }

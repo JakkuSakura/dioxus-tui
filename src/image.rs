@@ -8,6 +8,17 @@ use std::io::Write;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::scene::InlineImage;
+use termwiz::image::{ImageData, ImageDataType};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlacedImage {
+    pub src: String,
+    pub image: Arc<ImageData>,
+    pub x_cell: u16,
+    pub y_cell: u16,
+    pub width_cells: u16,
+    pub height_cells: u16,
+}
 
 #[derive(Debug)]
 pub struct DecodedImage {
@@ -74,11 +85,7 @@ pub fn load_png_image(src: &str) -> Result<Arc<DecodedImage>> {
         return Ok(hit);
     }
 
-    let bytes = if let Some(rest) = src.strip_prefix("data:image/png;base64,") {
-        BASE64.decode(rest)?
-    } else {
-        std::fs::read(src)?
-    };
+    let bytes = png_bytes_from_src(src)?;
     let decoded = Arc::new(decode_png_rgba(&bytes)?);
 
     cache
@@ -86,6 +93,139 @@ pub fn load_png_image(src: &str) -> Result<Arc<DecodedImage>> {
         .unwrap()
         .insert(src.to_string(), decoded.clone());
     Ok(decoded)
+}
+
+pub fn png_bytes_from_src(src: &str) -> Result<Vec<u8>> {
+    if let Some(rest) = src.strip_prefix("data:image/png;base64,") {
+        Ok(BASE64.decode(rest)?)
+    } else {
+        Ok(std::fs::read(src)?)
+    }
+}
+
+pub fn placed_image_from_png(
+    src: &str,
+    x_cell: u16,
+    y_cell: u16,
+    width_cells: u16,
+    height_cells: u16,
+) -> Result<PlacedImage> {
+    let bytes = png_bytes_from_src(src)?;
+    let image = Arc::new(ImageData::with_data(ImageDataType::EncodedFile(bytes)));
+
+    Ok(PlacedImage {
+        src: src.to_string(),
+        image,
+        x_cell,
+        y_cell,
+        width_cells: width_cells.max(1),
+        height_cells: height_cells.max(1),
+    })
+}
+
+pub fn encode_sixel_rgba(rgba: &[u8], width: u32, height: u32) -> String {
+    // Minimal sixel encoder with a small (<=64) RGB palette (4 levels per channel).
+    // This is intentionally simple and good enough for demo/debug rendering.
+    fn quantize(v: u8) -> u8 {
+        match v {
+            0..=63 => 0,
+            64..=127 => 85,
+            128..=191 => 170,
+            _ => 255,
+        }
+    }
+
+    fn pct(v: u8) -> u8 {
+        ((v as u16 * 100) / 255) as u8
+    }
+
+    let mut palette: HashMap<(u8, u8, u8), u8> = HashMap::new();
+    let mut next_idx: u8 = 0;
+    let mut idx_map: Vec<Option<u8>> = Vec::with_capacity((width * height) as usize);
+
+    for p in rgba.chunks_exact(4) {
+        let a = p[3];
+        if a < 16 {
+            idx_map.push(None);
+            continue;
+        }
+        let key = (quantize(p[0]), quantize(p[1]), quantize(p[2]));
+        let idx = *palette.entry(key).or_insert_with(|| {
+            let idx = next_idx;
+            next_idx = next_idx.saturating_add(1);
+            idx
+        });
+        idx_map.push(Some(idx));
+    }
+
+    let mut out = String::new();
+    out.push_str("\x1bPq");
+    out.push_str(&format!("\"1;1;{};{}", width, height));
+
+    // Define palette
+    let mut colors: Vec<((u8, u8, u8), u8)> = palette.into_iter().collect();
+    colors.sort_by_key(|(_, idx)| *idx);
+    for ((r, g, b), idx) in &colors {
+        out.push_str(&format!("#{};2;{};{};{}", idx, pct(*r), pct(*g), pct(*b)));
+    }
+
+    let w = width as usize;
+    let h = height as usize;
+    let bands = (h + 5) / 6;
+
+    for band in 0..bands {
+        let y0 = band * 6;
+
+        for (_rgb, idx) in &colors {
+            // Build one scanline for this color.
+            let mut line = Vec::with_capacity(w);
+            for x in 0..w {
+                let mut bits: u8 = 0;
+                for dy in 0..6 {
+                    let y = y0 + dy;
+                    if y >= h {
+                        continue;
+                    }
+                    let pos = y * w + x;
+                    if idx_map.get(pos).copied().flatten() == Some(*idx) {
+                        bits |= 1 << dy;
+                    }
+                }
+                line.push((bits + 63) as u8);
+            }
+
+            if line.iter().all(|&b| b == 63) {
+                continue;
+            }
+
+            out.push_str(&format!("#{}", idx));
+            // naive RLE
+            let mut i = 0;
+            while i < line.len() {
+                let b = line[i];
+                let mut run = 1usize;
+                while i + run < line.len() && line[i + run] == b {
+                    run += 1;
+                }
+                if run > 3 {
+                    out.push_str(&format!("!{}{}", run, b as char));
+                } else {
+                    for _ in 0..run {
+                        out.push(b as char);
+                    }
+                }
+                i += run;
+            }
+            out.push('$');
+        }
+
+        if band + 1 < bands {
+            out.push('-');
+        }
+    }
+
+    out.push_str("\x1b\\");
+    out
 }
 
 pub fn emit_inline_images(

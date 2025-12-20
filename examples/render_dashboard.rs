@@ -1,4 +1,4 @@
-use dioxus_tui::{ColorMode, Config, RenderRequest};
+use dioxus_tui::{ColorMode, Config, ImagePolicy, RenderRequest};
 
 #[path = "support/mod.rs"]
 mod render_support;
@@ -9,7 +9,9 @@ mod run_dashboard;
 
 fn main() {
     let (width, height) = render_support::dims_from_args_env_or_default(100, 40);
-    let cfg = Config::default().with_color_mode(ColorMode::Ansi);
+    let cfg = Config::default()
+        .with_color_mode(ColorMode::Ansi)
+        .with_image_policy(ImagePolicy::Inline);
 
     dioxus_tui::render(RenderRequest::new(run_dashboard::app)
         .with_config(cfg)

@@ -18,7 +18,7 @@ pub mod styles;
 pub mod surface;
 
 pub use capabilities::TerminalCapabilities;
-pub use config::{ColorMode, Config, ImagePolicy, PaletteEntry, PaletteRoles, RenderingMode};
+pub use config::{ColorMode, Config, ImageDowngrade, ImagePolicy, PaletteEntry, PaletteRoles, RenderingMode};
 pub use error::Error;
 pub use geometry::{Alignment, Rect};
 pub use hooks::EventData;
@@ -34,7 +34,6 @@ use tokio::runtime::Builder as RuntimeBuilder;
 use std::io::Write;
 
 use termwiz::{
-    caps::Capabilities,
     render::RenderTty,
     terminal::{Terminal as _},
 };
@@ -182,7 +181,7 @@ fn detect_output_size() -> Option<(u16, u16)> {
 
     // Best-effort: ask the current terminal.
     // Prefer stdio here so `render()` can work in environments without `/dev/tty` access.
-    let caps = Capabilities::new_from_env().ok()?;
+    let caps = capabilities::termwiz_capabilities().ok()?;
     let mut term = termwiz::terminal::new_terminal(caps).ok()?;
     term.get_screen_size()
         .ok()
@@ -196,15 +195,26 @@ fn render_request(request: RenderRequest) -> anyhow::Result<()> {
         .unwrap_or((100, 40));
 
     let raw = RawVirtualDom::with_contexts(move |_| (request.root)(), (), request.contexts);
-    let surface = render_surface_raw(raw, request.cfg, Rect::new(0, 0, width, height))?;
+    let frame = {
+        let rt = RuntimeBuilder::new_current_thread().enable_all().build()?;
+        rt.block_on(async move { render::render_once_frame(request.cfg, raw, Rect::new(0, 0, width, height)) })?
+    };
 
     // `render()` is a one-shot, non-interactive API. It should behave like normal stdout output:
     // no alternate screen and no cursor addressing that overwrites existing content.
     //
     // We still use the same pipeline as `launch` up to `Surface`, and then we render the resulting
     // `Change` stream using termwiz's own `TerminfoRenderer`.
-    let caps = Capabilities::new_from_env()?;
-    let changes = render::surface_to_cropped_stream_changes(&surface);
+    let caps = capabilities::termwiz_capabilities()?;
+    let term_caps = crate::capabilities::TerminalCapabilities::detect().unwrap_or(
+        crate::capabilities::TerminalCapabilities {
+            truecolor: false,
+            inline_images: false,
+            iterm2_images: false,
+            sixel_images: false,
+        },
+    );
+    let changes = render::frame_to_cropped_stream_changes(&frame, &term_caps);
     let mut renderer = TerminfoRenderer::new(caps);
     let mut out = std::io::stdout().lock();
     let mut tty = StdoutRenderTty {
