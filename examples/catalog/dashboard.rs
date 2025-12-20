@@ -61,6 +61,7 @@ pub fn app() -> Element {
                 }
 
                 div {
+                    display: "flex",
                     flex_direction: "column",
                     flex_grow: "1",
 
@@ -78,6 +79,9 @@ pub fn app() -> Element {
 
                     div {
                         padding_top: "1ch",
+                        display: "flex",
+                        flex_direction: "column",
+                        gap: "1ch",
 
                         div {
                             padding: "1ch",

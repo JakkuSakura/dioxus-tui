@@ -480,12 +480,27 @@ fn paint_img(
         .attr(local_name!("height"))
         .and_then(|v| parse_dim_cells(v, metrics.cell_h_px));
 
-    let mut desired_w = width_style_cells
-        .or(width_attr_cells)
-        .unwrap_or(rect.width);
-    let mut desired_h = height_style_cells
-        .or(height_attr_cells)
-        .unwrap_or(rect.height);
+    let width_hint = width_style_cells.or(width_attr_cells);
+    let height_hint = height_style_cells.or(height_attr_cells);
+
+    let mut desired_w = width_hint.unwrap_or(rect.width);
+    let mut desired_h = height_hint.unwrap_or(rect.height);
+
+    // If only one dimension is specified, infer the other from the intrinsic aspect ratio.
+    // This is important for terminals where replaced element layout is unreliable.
+    if width_hint.is_some() ^ height_hint.is_some() {
+        if let Ok(decoded) = load_png_image(src) {
+            if let Some(w) = width_hint {
+                let w_px = w as f32 * metrics.cell_w_px;
+                let h_px = w_px * (decoded.height as f32 / decoded.width as f32);
+                desired_h = (h_px / metrics.cell_h_px).ceil().max(1.0) as u16;
+            } else if let Some(h) = height_hint {
+                let h_px = h as f32 * metrics.cell_h_px;
+                let w_px = h_px * (decoded.width as f32 / decoded.height as f32);
+                desired_w = (w_px / metrics.cell_w_px).ceil().max(1.0) as u16;
+            }
+        }
+    }
 
     // If sizing is still degenerate (common for replaced elements), try deriving a
     // reasonable size from the intrinsic PNG dimensions.
@@ -498,34 +513,11 @@ fn paint_img(
                 .ceil()
                 .max(1.0) as u16;
 
-            match (width_attr_cells, height_attr_cells) {
-                (Some(w), None) if desired_h <= 1 => {
-                    // Preserve aspect ratio in pixel space.
-                    let w_px = w as f32 * metrics.cell_w_px;
-                    let h_px = w_px * (decoded.height as f32 / decoded.width as f32);
-                    desired_h = (h_px / metrics.cell_h_px).ceil().max(1.0) as u16;
-                }
-                (None, Some(h)) if desired_w <= 1 => {
-                    let h_px = h as f32 * metrics.cell_h_px;
-                    let w_px = h_px * (decoded.width as f32 / decoded.height as f32);
-                    desired_w = (w_px / metrics.cell_w_px).ceil().max(1.0) as u16;
-                }
-                (None, None) => {
-                    if desired_w <= 1 {
-                        desired_w = intrinsic_w_cells;
-                    }
-                    if desired_h <= 1 {
-                        desired_h = intrinsic_h_cells;
-                    }
-                }
-                _ => {
-                    if desired_w <= 1 {
-                        desired_w = intrinsic_w_cells;
-                    }
-                    if desired_h <= 1 {
-                        desired_h = intrinsic_h_cells;
-                    }
-                }
+            if desired_w <= 1 {
+                desired_w = intrinsic_w_cells;
+            }
+            if desired_h <= 1 {
+                desired_h = intrinsic_h_cells;
             }
         }
     }
