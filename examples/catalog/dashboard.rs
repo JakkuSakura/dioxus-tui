@@ -210,14 +210,11 @@ fn ImageDemo() -> Element {
             border_color: "#7aa2f7",
 
             div { color: "#7aa2f7", "PNG (inline if supported, else <img unsupported>)" }
-            // Blitz/Taffy replaced-element sizing is still unreliable for `img`.
-            // Use a sized block wrapper to reserve layout space, and then size the image within it.
-            div {
-                style: "display: block; width: 60ch; height: 16ch;",
-                img {
-                    src: "examples/example.png",
-                    style: "display: block; width: 100%; height: 100%;",
-                }
+            // Rely on Blitz/Taffy replaced-element sizing with intrinsic image dimensions.
+            // Specify only width and let layout infer the height from the PNG aspect ratio.
+            img {
+                src: "examples/example.png",
+                style: "display: block; width: 60ch;",
             }
         }
     }

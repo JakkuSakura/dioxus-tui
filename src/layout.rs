@@ -2,14 +2,21 @@ use crate::geometry::{Alignment, Rect as UiRect};
 use crate::scene::CellMetrics;
 use crate::styles::DEFAULT_TUI_CSS;
 use blitz_dom::{BaseDocument, Node};
+use blitz_dom::local_name;
+use blitz_dom::node::{ImageData as BlitzImageData, RasterImageData, SpecialElementData};
 use blitz_traits::shell::Viewport;
 use dioxus_native_dom::DioxusDocument;
+use std::sync::Arc;
 
 pub fn resolve_document(doc: &mut DioxusDocument, area: UiRect, metrics: CellMetrics) -> Option<usize> {
     // Ensure UA stylesheet is present for consistent defaults.
     doc.inner.add_user_agent_stylesheet(DEFAULT_TUI_CSS);
 
     let root_id = doc.inner.root_node().id;
+
+    // Provide intrinsic sizes for `<img>` so Blitz/Taffy can perform replaced-element sizing
+    // (including aspect-ratio inference when only one dimension is constrained).
+    populate_raster_images(doc);
 
     let width_px = (area.width as f32 * metrics.cell_w_px).ceil().max(1.0) as u32;
     let height_px = (area.height as f32 * metrics.cell_h_px).ceil().max(1.0) as u32;
@@ -27,6 +34,41 @@ pub fn resolve_document(doc: &mut DioxusDocument, area: UiRect, metrics: CellMet
         }
     }
     doc.inner.get_node(root_id).map(|_| root_id)
+}
+
+fn populate_raster_images(doc: &mut DioxusDocument) {
+    let root_id = doc.inner.root_node().id;
+    let mut stack = vec![root_id];
+
+    while let Some(node_id) = stack.pop() {
+        let children = doc
+            .inner
+            .get_node(node_id)
+            .map(|n| n.children.clone())
+            .unwrap_or_default();
+        stack.extend(children);
+
+        let Some(node) = doc.inner.get_node_mut(node_id) else {
+            continue;
+        };
+        if !node.data.is_element_with_tag_name(&local_name!("img")) {
+            continue;
+        }
+
+        let Some(elem) = node.data.downcast_element_mut() else {
+            continue;
+        };
+        let Some(src) = elem.attr(local_name!("src")).map(|s| s.to_string()) else {
+            continue;
+        };
+
+        let Ok(decoded) = crate::image::load_png_image(&src) else {
+            continue;
+        };
+
+        let raster = RasterImageData::new(decoded.width, decoded.height, Arc::new(decoded.rgba.clone()));
+        elem.special_data = SpecialElementData::Image(Box::new(BlitzImageData::Raster(raster)));
+    }
 }
 
 pub fn node_rect(doc: &BaseDocument, node: &Node, area: UiRect, metrics: CellMetrics) -> UiRect {

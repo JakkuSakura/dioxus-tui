@@ -14,4 +14,3 @@ pub(crate) fn gui_env_supported() -> bool {
 pub(crate) fn terminal_image_supported(caps: TerminalCapabilities) -> bool {
     caps.inline_images
 }
-
