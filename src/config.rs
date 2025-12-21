@@ -16,6 +16,13 @@ pub struct Config {
     /// Whether `ImagePolicy::Inline` should downgrade to cell-based rendering when inline images
     /// are unsupported.
     pub(crate) image_downgrade: ImageDowngrade,
+
+    /// HiDPI supersampling factor for `RenderingMode::BlitzTerminal`.
+    ///
+    /// `1` disables supersampling. `2` renders at 2x resolution and then fits into the original
+    /// terminal cell width/height.
+    #[allow(dead_code)]
+    pub(crate) blitz_hidpi_scale: u8,
 }
 
 impl Config {
@@ -65,6 +72,13 @@ impl Config {
             ..self
         }
     }
+
+    pub fn with_blitz_hidpi_scale(self, scale: u8) -> Self {
+        Self {
+            blitz_hidpi_scale: scale.max(1),
+            ..self
+        }
+    }
 }
 
 impl Default for Config {
@@ -77,6 +91,7 @@ impl Default for Config {
             palette_roles: PaletteRoles::default(),
             image_policy: ImagePolicy::Inline,
             image_downgrade: ImageDowngrade::Sampling,
+            blitz_hidpi_scale: 1,
         }
     }
 }

@@ -281,6 +281,7 @@ fn render_request(request: RenderRequest) -> anyhow::Result<()> {
                     raw,
                     width_cells,
                     height_cells,
+                    cfg,
                 )?;
                 if !rendered {
                     anyhow::bail!("BlitzTerminal rendering was selected but produced no output");

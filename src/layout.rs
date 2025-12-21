@@ -9,6 +9,13 @@ use dioxus_native_dom::DioxusDocument;
 use std::sync::Arc;
 
 pub fn resolve_document(doc: &mut DioxusDocument, area: UiRect, metrics: CellMetrics) -> Option<usize> {
+    let width_px = (area.width as f32 * metrics.cell_w_px).ceil().max(1.0) as u32;
+    let height_px = (area.height as f32 * metrics.cell_h_px).ceil().max(1.0) as u32;
+    let viewport = Viewport::new(width_px, height_px, 1.0, doc.inner.viewport().color_scheme);
+    resolve_document_with_viewport(doc, viewport)
+}
+
+pub fn resolve_document_with_viewport(doc: &mut DioxusDocument, viewport: Viewport) -> Option<usize> {
     // Ensure UA stylesheet is present for consistent defaults.
     doc.inner.add_user_agent_stylesheet(DEFAULT_TUI_CSS);
 
@@ -18,9 +25,7 @@ pub fn resolve_document(doc: &mut DioxusDocument, area: UiRect, metrics: CellMet
     // (including aspect-ratio inference when only one dimension is constrained).
     populate_raster_images(doc);
 
-    let width_px = (area.width as f32 * metrics.cell_w_px).ceil().max(1.0) as u32;
-    let height_px = (area.height as f32 * metrics.cell_h_px).ceil().max(1.0) as u32;
-    let viewport = Viewport::new(width_px, height_px, 1.0, doc.inner.viewport().color_scheme);
+    let (width_px, height_px) = viewport.window_size;
     doc.inner.set_viewport(viewport);
     doc.inner.resolve(0.0);
 
