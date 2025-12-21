@@ -5,6 +5,7 @@ pub fn app() -> Element {
         div {
             width: "100%",
             padding: "0.5ch",
+            box_sizing: "border-box",
 
             border_style: "solid",
             border_width: "thick",
@@ -15,6 +16,7 @@ pub fn app() -> Element {
             div {
                 width: "100%",
                 padding: "0.5ch",
+                box_sizing: "border-box",
                 background_color: "#1f2335",
                 color: "#c0caf5",
 
@@ -30,14 +32,17 @@ pub fn app() -> Element {
             // Body
             div {
                 width: "100%",
+                box_sizing: "border-box",
                 display: "flex",
                 flex_direction: "row",
+                flex_wrap: "wrap",
                 gap: "1ch",
                 padding_top: "0.5ch",
 
                 div {
-                    width: "22ch",
-                    flex_shrink: "0",
+                    flex_basis: "22ch",
+                    flex_shrink: "1",
+                    min_width: "16ch",
                     padding: "0.5ch",
                     background_color: "#16161e",
                     border_style: "solid",
@@ -75,10 +80,12 @@ pub fn app() -> Element {
                     flex_wrap: "wrap",
                     flex_grow: "1",
                     gap: "1ch",
+                    min_width: "0",
 
                     div {
                         flex_basis: "46ch",
                         flex_grow: "1",
+                        min_width: "0",
 
                         display: "flex",
                         flex_direction: "column",
@@ -115,6 +122,7 @@ pub fn app() -> Element {
                     div {
                         flex_basis: "27ch",
                         flex_grow: "1",
+                        min_width: "0",
 
                         display: "flex",
                         flex_direction: "column",
@@ -292,9 +300,9 @@ fn ImageDemo() -> Element {
             // Specify only width and let layout infer the height from the PNG aspect ratio.
             img {
                 src: "examples/example.png",
-                // Use `ch` so we can infer height reliably in the terminal cell grid.
-                // (Percent widths on replaced elements are still flaky in Blitz/Taffy.)
-                style: "display: block; width: 50ch;",
+                // Use `max-width` to keep the image reasonably sized, while still fitting
+                // smaller terminals.
+                style: "display: block; width: 100%; max-width: 50ch;",
             }
         }
     }
