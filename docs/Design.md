@@ -43,7 +43,6 @@ Key modules:
 Blitz modes are explicit and compile-time gated:
 
 - `BlitzTerminal` (feature: `blitz-terminal`)
-  - Only affects `render()`.
   - If the terminal supports inline image protocols, render the *entire document* via Blitz offscreen rasterization and
     emit it as an inline terminal image.
   - If the terminal does not support image protocols, do not enter Blitz rendering and fall back to ANSI output.
