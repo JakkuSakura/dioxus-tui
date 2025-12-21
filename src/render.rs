@@ -1000,19 +1000,22 @@ pub(crate) fn frame_to_cropped_stream_changes(
                 current_blink = termwiz::cell::Blink::None;
 
                 // Emit any images that start at this position.
+                // Let the terminal advance the cursor after the image on the first row.
+                let mut emitted_image = false;
                 while let Some(img) = img_iter.peek().copied() {
                     if img.x_cell as usize != x {
                         break;
                     }
-                    if let Ok(osc) = crate::image::iterm2_osc_for_placed_image(img, true, true) {
+                    if let Ok(osc) = crate::image::iterm2_osc_for_placed_image(img, false, true) {
                         changes.push(Change::Text(osc));
+                        emitted_image = true;
                     }
                     let _ = img_iter.next();
                 }
 
                 let skip = end.saturating_sub(start);
-                if skip > 0 {
-                    // Move the cursor right without writing spaces (which would overwrite the image).
+                if skip > 0 && !emitted_image {
+                    // Non-start rows for the image: move the cursor right without writing spaces.
                     changes.push(Change::Text(format!("\x1b[{}C", skip)));
                 }
 
