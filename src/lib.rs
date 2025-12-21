@@ -18,10 +18,10 @@ pub mod scene;
 pub mod styles;
 pub mod surface;
 
-#[cfg(feature = "blitz-gui")]
+#[cfg(feature = "blitz")]
 mod gui;
 
-#[cfg(feature = "blitz-terminal")]
+#[cfg(feature = "blitz")]
 mod blitz_terminal;
 
 pub use capabilities::TerminalCapabilities;
@@ -223,7 +223,7 @@ fn detect_output_width() -> Option<u16> {
     term.get_screen_size().ok().map(|s| s.cols as u16)
 }
 
-#[cfg(feature = "blitz-terminal")]
+#[cfg(feature = "blitz")]
 fn detect_output_size() -> Option<(u16, u16)> {
     // Respect the conventional env vars first (useful in CI and non-TTY contexts).
     let width = std::env::var("COLUMNS")
@@ -261,32 +261,31 @@ fn render_request(request: RenderRequest) -> anyhow::Result<()> {
         .or_else(detect_output_width)
         .unwrap_or(100);
 
+    #[cfg(feature = "blitz")]
     if cfg.rendering_mode == RenderingMode::BlitzTerminal {
         if let Ok(detected) = crate::capabilities::detect() {
             if blitz::terminal_image_supported(detected.terminal) {
-                #[cfg(feature = "blitz-terminal")]
-                {
-                    let (width_cells, height_cells) = request
-                        .size
-                        .or_else(detect_output_size)
-                        .unwrap_or((100, 24));
-                    let raw = RawVirtualDom::with_contexts(
-                        move |_| (request.root)(),
-                        (),
-                        request.contexts,
-                    );
-                    let rendered = crate::blitz_terminal::render_blitz_terminal(
-                        cfg.rendering_mode,
-                        detected.terminal,
-                        raw,
-                        width_cells,
-                        height_cells,
-                    )?;
-                    if !rendered {
-                        anyhow::bail!("BlitzTerminal rendering was selected but produced no output");
-                    }
-                    return Ok(());
+                let (width_cells, height_cells) = request
+                    .size
+                    .or_else(detect_output_size)
+                    .unwrap_or((100, 24));
+                let raw = RawVirtualDom::with_contexts(
+                    move |_| (request.root)(),
+                    (),
+                    request.contexts,
+                );
+                let rendered = crate::blitz_terminal::render_blitz_terminal(
+                    cfg.rendering_mode,
+                    detected.termwiz,
+                    detected.terminal,
+                    raw,
+                    width_cells,
+                    height_cells,
+                )?;
+                if !rendered {
+                    anyhow::bail!("BlitzTerminal rendering was selected but produced no output");
                 }
+                return Ok(());
             }
         }
     }
@@ -381,12 +380,10 @@ pub fn launch_raw<P: Clone + 'static, F>(
 where
     F: ComponentFunction<P, ()> + 'static,
 {
+    #[cfg(feature = "blitz")]
     if cfg.rendering_mode == RenderingMode::BlitzGui && blitz::gui_env_supported() {
-        #[cfg(feature = "blitz-gui")]
-        {
-            crate::gui::launch_blitz_gui(raw);
-            return Ok(());
-        }
+        crate::gui::launch_blitz_gui(raw);
+        return Ok(());
     }
 
     let rt = RuntimeBuilder::new_current_thread().enable_all().build()?;

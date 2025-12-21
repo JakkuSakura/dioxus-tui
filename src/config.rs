@@ -90,9 +90,11 @@ pub enum RenderingMode {
     /// In `render()` mode: if the terminal supports image protocols, render the full document
     /// via Blitz offscreen rasterization and emit it as a terminal image; otherwise, fall back
     /// to ANSI text rendering.
+    #[cfg(feature = "blitz")]
     BlitzTerminal,
     /// In `launch()` mode: if the environment supports a GUI, launch via `dioxus-native`;
     /// otherwise, fall back to the TUI renderer.
+    #[cfg(feature = "blitz")]
     BlitzGui,
     /// Do not create a terminal or input thread (useful for tests)
     Headless,

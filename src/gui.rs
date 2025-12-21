@@ -1,4 +1,4 @@
-#![cfg(feature = "blitz-gui")]
+#![cfg(feature = "blitz")]
 
 use std::any::Any;
 
@@ -19,4 +19,3 @@ where
 
     dioxus_native::launch_cfg_with_props(app, props, contexts, Vec::new());
 }
-

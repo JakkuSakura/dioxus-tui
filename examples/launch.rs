@@ -50,7 +50,9 @@ struct Args {
 enum RenderingModeOpt {
     Visual,
     Debug,
+    #[cfg(feature = "blitz")]
     BlitzTerminal,
+    #[cfg(feature = "blitz")]
     BlitzGui,
     Headless,
 }
@@ -60,7 +62,9 @@ impl From<RenderingModeOpt> for dioxus_tui::RenderingMode {
         match value {
             RenderingModeOpt::Visual => dioxus_tui::RenderingMode::Visual,
             RenderingModeOpt::Debug => dioxus_tui::RenderingMode::Debug,
+            #[cfg(feature = "blitz")]
             RenderingModeOpt::BlitzTerminal => dioxus_tui::RenderingMode::BlitzTerminal,
+            #[cfg(feature = "blitz")]
             RenderingModeOpt::BlitzGui => dioxus_tui::RenderingMode::BlitzGui,
             RenderingModeOpt::Headless => dioxus_tui::RenderingMode::Headless,
         }

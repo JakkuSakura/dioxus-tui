@@ -57,5 +57,8 @@ harness = false
 [features]
 default = []
 hot-reload = ["dioxus-hot-reload"]
-blitz-terminal = ["dep:blitz-paint", "dep:anyrender_vello_cpu"]
-blitz-gui = ["dep:dioxus-native"]
+blitz = ["dep:blitz-paint", "dep:anyrender_vello_cpu", "dep:dioxus-native"]
+
+# Backwards-compatible aliases.
+blitz-terminal = ["blitz"]
+blitz-gui = ["blitz"]
