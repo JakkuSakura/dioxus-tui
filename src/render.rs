@@ -382,9 +382,6 @@ async fn run_tui_renderer(
     let mut last_area: Option<Rect> = None;
     let mut last_images: Option<std::collections::VecDeque<PlacedImage>> = None;
 
-    #[cfg(feature = "blitz")]
-    let mut blitz_last_raster: Option<(u32, u32)> = None;
-
     renderer.update();
 
     let mut paint_error: Option<crate::error::Error> = None;
@@ -550,13 +547,15 @@ async fn run_tui_renderer(
                     )));
                 }
                 let png = crate::image::rgba_to_png_bytes(&rgba, render_w_px, cropped_px.min(render_h_px))?;
-                let osc = crate::image::iterm2_osc_for_png(
-                    png,
-                    area.width,
-                    cropped_cells,
-                    true,
-                    false,
-                )?;
+                let image = termwiz::surface::Image {
+                    width: area.width as usize,
+                    height: cropped_cells as usize,
+                    top_left: TextureCoordinate::new_f32(0.0, 0.0),
+                    bottom_right: TextureCoordinate::new_f32(1.0, 1.0),
+                    image: std::sync::Arc::new(termwiz::image::ImageData::with_data(
+                        termwiz::image::ImageDataType::EncodedFile(png),
+                    )),
+                };
 
                 // Full redraw each frame.
                 term.add_change(Change::ClearScreen(ColorAttribute::Default));
@@ -564,15 +563,13 @@ async fn run_tui_renderer(
                     x: Position::Absolute(0),
                     y: Position::Absolute(0),
                 });
-                term.add_change(Change::Text(osc));
+                term.add_change(Change::Image(image));
                 term.add_change(Change::CursorPosition {
                     x: Position::Absolute(0),
                     y: Position::Absolute((cropped_cells as usize).min(area.height as usize - 1)),
                 });
                 term.flush()?;
 
-                blitz_last_raster = Some((render_w_px, render_h_px));
-                let _ = blitz_last_raster;
                 continue;
             }
 

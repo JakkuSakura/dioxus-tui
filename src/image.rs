@@ -149,40 +149,8 @@ pub fn iterm2_osc_for_placed_image(
 
     let osc = OperatingSystemCommand::ITermProprietary(ITermProprietary::File(Box::new(file)));
 
-    // WezTerm is more reliable with BEL-terminated OSC 1337 payloads.
-    let mut s = format!("{}", osc);
-    if s.ends_with("\x1b\\") {
-        s.truncate(s.len().saturating_sub(2));
-        s.push('\x07');
-    }
-    Ok(s)
-}
-
-pub fn iterm2_osc_for_png(
-    png: Vec<u8>,
-    width_cells: u16,
-    height_cells: u16,
-    do_not_move_cursor: bool,
-    preserve_aspect_ratio: bool,
-) -> Result<String> {
-    let file = ITermFileData {
-        name: None,
-        size: Some(png.len()),
-        width: ITermDimension::Cells(width_cells as i64),
-        height: ITermDimension::Cells(height_cells as i64),
-        preserve_aspect_ratio,
-        inline: true,
-        do_not_move_cursor,
-        data: png,
-    };
-
-    let osc = OperatingSystemCommand::ITermProprietary(ITermProprietary::File(Box::new(file)));
-    let mut s = format!("{}", osc);
-    if s.ends_with("\x1b\\") {
-        s.truncate(s.len().saturating_sub(2));
-        s.push('\x07');
-    }
-    Ok(s)
+    // Let termwiz format the OSC sequence.
+    Ok(format!("{}", osc))
 }
 
 pub fn encode_sixel_rgba(rgba: &[u8], width: u32, height: u32) -> String {
