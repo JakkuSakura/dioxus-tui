@@ -65,6 +65,14 @@ fn main() -> anyhow::Result<()> {
 ```
 
 ## Images
+Run the dashboard example:
+
+```sh
+TERM=wezterm cargo run --example render -- --rendering-mode=visual dashboard
+```
+
+![Screenshot](https://i.imgur.com/UigQy8M.png)
+
 
 ### Inline `<img>` elements
 
