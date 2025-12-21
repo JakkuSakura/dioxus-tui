@@ -8,6 +8,11 @@ use blitz_traits::shell::Viewport;
 use dioxus_native_dom::DioxusDocument;
 use std::sync::Arc;
 
+fn upsert_user_agent_stylesheet(doc: &mut DioxusDocument, css: &str) {
+    doc.inner.remove_user_agent_stylesheet(css);
+    doc.inner.add_user_agent_stylesheet(css);
+}
+
 pub fn resolve_document(doc: &mut DioxusDocument, area: UiRect, metrics: CellMetrics) -> Option<usize> {
     let width_px = (area.width as f32 * metrics.cell_w_px).ceil().max(1.0) as u32;
     let height_px = (area.height as f32 * metrics.cell_h_px).ceil().max(1.0) as u32;
@@ -16,8 +21,19 @@ pub fn resolve_document(doc: &mut DioxusDocument, area: UiRect, metrics: CellMet
 }
 
 pub fn resolve_document_with_viewport(doc: &mut DioxusDocument, viewport: Viewport) -> Option<usize> {
+    resolve_document_with_viewport_and_extra_css(doc, viewport, None)
+}
+
+pub fn resolve_document_with_viewport_and_extra_css(
+    doc: &mut DioxusDocument,
+    viewport: Viewport,
+    extra_user_agent_css: Option<&str>,
+) -> Option<usize> {
     // Ensure UA stylesheet is present for consistent defaults.
-    doc.inner.add_user_agent_stylesheet(DEFAULT_TUI_CSS);
+    upsert_user_agent_stylesheet(doc, DEFAULT_TUI_CSS);
+    if let Some(css) = extra_user_agent_css {
+        upsert_user_agent_stylesheet(doc, css);
+    }
 
     let root_id = doc.inner.root_node().id;
 

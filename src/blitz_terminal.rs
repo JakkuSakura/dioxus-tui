@@ -16,7 +16,7 @@ use crate::cell_render::paint_surface;
 use crate::config::{ColorMode, Config, ImagePolicy, RenderingMode};
 use crate::geometry::Rect;
 use crate::image::{encode_sixel_rgba, rgba_to_png_bytes};
-use crate::layout::resolve_document_with_viewport;
+use crate::layout::resolve_document_with_viewport_and_extra_css;
 use crate::render::DioxusRenderer;
 use crate::surface::Surface;
 use crate::RawVirtualDom;
@@ -79,16 +79,30 @@ where
     let viewport = Viewport::new(render_width_px, render_height_px, supersample, ColorScheme::Light);
 
     let area = Rect::new(0, 0, width_cells, height_cells);
+    // Use the base per-cell pixel sizes for the cell-based painter.
+    // The viewport scaling handles HiDPI.
     let metrics = crate::scene::CellMetrics {
-        cell_w_px: cell_w_px * supersample,
-        cell_h_px: cell_h_px * supersample,
+        cell_w_px,
+        cell_h_px,
     };
 
     let vdom = raw.into_virtual_dom();
     let (mut renderer, _event_tx, _event_rx) =
         DioxusRenderer::new_with_viewport(vdom, viewport.clone());
     renderer.update();
-    let _ = resolve_document_with_viewport(&mut renderer.doc, viewport.clone());
+
+    // Make the default text size map 1em ~= 1 cell height.
+    // This keeps the rasterized output readable and aligned with the terminal grid.
+    let font_px = (cell_h_px.round().max(1.0)) as u32;
+    let extra_css = format!(
+        ":root, html, body {{ font-family: monospace; font-size: {}px; line-height: {}px; }}",
+        font_px, font_px
+    );
+    let _ = resolve_document_with_viewport_and_extra_css(
+        &mut renderer.doc,
+        viewport.clone(),
+        Some(extra_css.as_str()),
+    );
 
     // Crop trailing empty rows before emission.
     // Use the normal cell pipeline to decide what is "empty".
