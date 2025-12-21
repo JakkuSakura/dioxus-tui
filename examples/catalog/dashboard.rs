@@ -1,5 +1,55 @@
 use dioxus::prelude::*;
 
+fn xterm_palette_rgb(idx: u8) -> (u8, u8, u8) {
+    // XTerm 256-color palette.
+    // 0-15: basic ANSI colors.
+    const ANSI16: [(u8, u8, u8); 16] = [
+        (0, 0, 0),
+        (205, 0, 0),
+        (0, 205, 0),
+        (205, 205, 0),
+        (0, 0, 238),
+        (205, 0, 205),
+        (0, 205, 205),
+        (229, 229, 229),
+        (127, 127, 127),
+        (255, 0, 0),
+        (0, 255, 0),
+        (255, 255, 0),
+        (92, 92, 255),
+        (255, 0, 255),
+        (0, 255, 255),
+        (255, 255, 255),
+    ];
+
+    match idx {
+        0..=15 => ANSI16[idx as usize],
+        16..=231 => {
+            let n = idx as u16 - 16;
+            let r = n / 36;
+            let g = (n / 6) % 6;
+            let b = n % 6;
+            const STEPS: [u8; 6] = [0, 95, 135, 175, 215, 255];
+            (STEPS[r as usize], STEPS[g as usize], STEPS[b as usize])
+        }
+        232..=255 => {
+            let k = idx as u16 - 232;
+            let v = (8 + 10 * k) as u8;
+            (v, v, v)
+        }
+    }
+}
+
+fn rgb_hex(r: u8, g: u8, b: u8) -> String {
+    format!("#{:02x}{:02x}{:02x}", r, g, b)
+}
+
+fn contrast_fg_for_bg(r: u8, g: u8, b: u8) -> &'static str {
+    // Simple luminance heuristic.
+    let luma = (r as u32 * 2126 + g as u32 * 7152 + b as u32 * 722) / 10000;
+    if luma > 128 { "#0f111a" } else { "#c0caf5" }
+}
+
 pub fn app() -> Element {
     rsx! {
         div {
@@ -258,6 +308,14 @@ fn CapabilitiesPanel() -> Element {
 
 #[component]
 fn TextAttributesDemo() -> Element {
+    let c15 = rgb_hex(xterm_palette_rgb(15).0, xterm_palette_rgb(15).1, xterm_palette_rgb(15).2);
+    let c45 = rgb_hex(xterm_palette_rgb(45).0, xterm_palette_rgb(45).1, xterm_palette_rgb(45).2);
+    let c141 = rgb_hex(xterm_palette_rgb(141).0, xterm_palette_rgb(141).1, xterm_palette_rgb(141).2);
+    let c226 = rgb_hex(xterm_palette_rgb(226).0, xterm_palette_rgb(226).1, xterm_palette_rgb(226).2);
+    let c16 = rgb_hex(xterm_palette_rgb(16).0, xterm_palette_rgb(16).1, xterm_palette_rgb(16).2);
+    let bg220 = rgb_hex(xterm_palette_rgb(220).0, xterm_palette_rgb(220).1, xterm_palette_rgb(220).2);
+    let bg196 = rgb_hex(xterm_palette_rgb(196).0, xterm_palette_rgb(196).1, xterm_palette_rgb(196).2);
+
     rsx! {
         div {
             padding: "0.5ch",
@@ -268,18 +326,30 @@ fn TextAttributesDemo() -> Element {
 
             div { color: "#2ac3de", "Text attributes" }
             p {
-                span { "data-attrs": "bold", "data-fg-idx": "15", "bold" }
+                span { "data-attrs": "bold", "data-fg-idx": "15", style: format!("color: {c15};"), "bold" }
                 " "
-                span { "data-attrs": "underline", "data-fg-idx": "45", "underline" }
+                span { "data-attrs": "underline", "data-fg-idx": "45", style: format!("color: {c45};"), "underline" }
                 " "
-                span { "data-attrs": "italic", "data-fg-idx": "141", "italic" }
+                span { "data-attrs": "italic", "data-fg-idx": "141", style: format!("color: {c141};"), "italic" }
                 " "
-                span { "data-attrs": "blink", "data-fg-idx": "226", "blink" }
+                span { "data-attrs": "blink", "data-fg-idx": "226", style: format!("color: {c226};"), "blink" }
             }
             p {
-                span { "data-attrs": "bold underline", "data-fg-idx": "16", "data-bg-idx": "220", "bold+underline bg" }
+                span {
+                    "data-attrs": "bold underline",
+                    "data-fg-idx": "16",
+                    "data-bg-idx": "220",
+                    style: format!("color: {c16}; background-color: {bg220};"),
+                    "bold+underline bg"
+                }
                 " "
-                span { "data-attrs": "blink underline", "data-fg-idx": "15", "data-bg-idx": "196", "blink+underline" }
+                span {
+                    "data-attrs": "blink underline",
+                    "data-fg-idx": "15",
+                    "data-bg-idx": "196",
+                    style: format!("color: {c15}; background-color: {bg196};"),
+                    "blink+underline"
+                }
             }
         }
     }
@@ -388,8 +458,14 @@ fn Palette256() -> Element {
 
 #[component]
 fn PaletteBlock(idx: u8, label: Option<String>, width_ch: u16) -> Element {
-    let fg = if idx <= 7 { 15 } else { 0 };
+    let (r, g, b) = xterm_palette_rgb(idx);
+    let bg_css = rgb_hex(r, g, b);
+    let fg_css = contrast_fg_for_bg(r, g, b);
+    let fg = if fg_css == "#c0caf5" { 15 } else { 0 };
     let width = format!("{width_ch}ch");
+    let style = format!(
+        "background-color: {bg_css}; color: {fg_css}; width: {width}; height: 1em; line-height: 1em; display: flex; flex-shrink: 0; align-items: center; justify-content: center;",
+    );
     let content = match label {
         Some(label) => {
             if width_ch as usize <= label.len() {
@@ -405,18 +481,10 @@ fn PaletteBlock(idx: u8, label: Option<String>, width_ch: u16) -> Element {
     };
 
     rsx! {
-        span {
+        div {
             "data-bg-idx": "{idx}",
             "data-fg-idx": "{fg}",
-            width: "{width}",
-            // In CSS, `ch` is a horizontal unit. For vertical sizing, use `em` so the block is
-            // one line tall in BlitzTerminal raster output and also maps cleanly to one cell in
-            // the cell renderer.
-            height: "1em",
-            line_height: "1em",
-            display: "flex",
-            align_items: "center",
-            justify_content: "center",
+            style: style,
             "{content}"
         }
     }
