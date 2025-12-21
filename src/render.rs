@@ -449,7 +449,7 @@ async fn run_tui_renderer(
                     )));
                 }
 
-                let cell_w_px = (xpixel as f32) / (cols as f32);
+                let _cell_w_px = (xpixel as f32) / (cols as f32);
                 let cell_h_px = (ypixel as f32) / (rows as f32);
                 let supersample = cfg.blitz_hidpi_scale.max(1) as f32;
                 let render_w_px = ((xpixel as f32) * supersample).ceil().max(1.0) as u32;
@@ -467,54 +467,9 @@ async fn run_tui_renderer(
                     Some(extra_css.as_str()),
                 );
 
-                // Determine cropped height in cells using the standard cell painter.
-                let scaled_metrics = CellMetrics {
-                    cell_w_px: cell_w_px * supersample,
-                    cell_h_px: cell_h_px * supersample,
-                };
-                let mut crop_surface = Surface::new(area.width, area.height);
-                let mut crop_images = std::collections::VecDeque::<PlacedImage>::new();
-                let _ = renderer.layout_root(area, scaled_metrics);
-                paint_surface(
-                    &mut crop_surface,
-                    &mut crop_images,
-                    renderer.doc.inner.as_ref(),
-                    area,
-                    scaled_metrics,
-                    cfg.palette_roles,
-                    cfg.color_mode,
-                    capabilities.truecolor,
-                    cfg.image_policy,
-                    cfg.image_downgrade,
-                    capabilities.iterm2_images,
-                )?;
-
-                let width_cells = area.width as usize;
-                let height_cells = area.height as usize;
-                let mut last_row_with_content: Option<usize> = None;
-                for (y, row) in crop_surface.content.chunks(width_cells).enumerate() {
-                    if row.iter().any(crate::surface::Cell::has_visible_content) {
-                        last_row_with_content = Some(y);
-                    }
-                }
-                let mut last_row_with_image: Option<usize> = None;
-                for img in &crop_images {
-                    let bottom = (img.y_cell as usize)
-                        .saturating_add((img.height_cells as usize).saturating_sub(1));
-                    last_row_with_image = Some(last_row_with_image.map_or(bottom, |v| v.max(bottom)));
-                }
-                let max_row = last_row_with_content
-                    .into_iter()
-                    .chain(last_row_with_image)
-                    .max();
-                let cropped_cells = max_row
-                    .map(|r| (r + 1).min(height_cells))
-                    .unwrap_or(0)
-                    .max(1) as u16;
-
-                let cropped_px = ((cropped_cells as f32) * (cell_h_px * supersample))
-                    .ceil()
-                    .max(1.0) as u32;
+                // In launch mode, avoid expensive per-frame cropping. Render the full viewport.
+                let cropped_cells = area.height;
+                let cropped_px = render_h_px;
 
                 let mut image_renderer = <anyrender_vello_cpu::VelloCpuImageRenderer as ImageRenderer>::new(
                     render_w_px,

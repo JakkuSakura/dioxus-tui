@@ -409,7 +409,11 @@ fn PaletteBlock(idx: u8, label: Option<String>, width_ch: u16) -> Element {
             "data-bg-idx": "{idx}",
             "data-fg-idx": "{fg}",
             width: "{width}",
-            height: "1ch",
+            // In CSS, `ch` is a horizontal unit. For vertical sizing, use `em` so the block is
+            // one line tall in BlitzTerminal raster output and also maps cleanly to one cell in
+            // the cell renderer.
+            height: "1em",
+            line_height: "1em",
             display: "flex",
             align_items: "center",
             justify_content: "center",
