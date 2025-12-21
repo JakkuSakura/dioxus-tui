@@ -1,44 +1,56 @@
 use dioxus::prelude::*;
 
+use crate::catalog::ExampleFrame;
+
 pub fn app() -> Element {
     rsx! {
-        div {
-            width: "100%",
-            height: "100%",
-            flex_direction: "column",
-            background_color: "black",
-            margin_right: "10px",
+        ExampleFrame {
+            title: "Margin + padding",
+            help: &[
+                "Demonstrates margin and padding on nested containers.",
+                "Useful for debugging box model calculations.",
+            ],
 
             div {
-                width: "70%",
-                height: "70%",
-                background_color: "green",
-                margin_left: "4px",
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                flex_direction: "column",
+                background_color: "black",
+                margin_right: "10px",
 
                 div {
-                    width: "100%",
-                    height: "100%",
+                    width: "70%",
+                    height: "70%",
+                    background_color: "green",
+                    margin_left: "4px",
 
-                    margin_top: "2px",
-                    margin_bottom: "2px",
-                    margin_left: "2px",
-                    margin_right: "2px",
-                    flex_shrink: "0",
+                    div {
+                        width: "100%",
+                        height: "100%",
+                        display: "flex",
+                        flex_direction: "column",
+                        justify_content: "center",
+                        align_items: "center",
 
-                    background_color: "red",
-                    justify_content: "center",
-                    align_items: "center",
-                    flex_direction: "column",
+                        margin_top: "2px",
+                        margin_bottom: "2px",
+                        margin_left: "2px",
+                        margin_right: "2px",
+                        flex_shrink: "0",
 
-                    padding_top: "2px",
-                    padding_bottom: "2px",
-                    padding_left: "4px",
-                    padding_right: "4px",
+                        background_color: "red",
 
-                    "[A]"
-                    "[A]"
-                    "[A]"
-                    "[A]"
+                        padding_top: "2px",
+                        padding_bottom: "2px",
+                        padding_left: "4px",
+                        padding_right: "4px",
+
+                        "[A]"
+                        "[A]"
+                        "[A]"
+                        "[A]"
+                    }
                 }
             }
         }

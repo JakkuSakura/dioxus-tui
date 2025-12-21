@@ -1,6 +1,8 @@
 use dioxus::prelude::*;
 use dioxus_html::input_data::keyboard_types::Code;
 
+use crate::catalog::ExampleFrame;
+
 #[component]
 fn Button(color_offset: u32, layer: u16) -> Element {
     let mut toggle = use_signal(|| false);
@@ -36,28 +38,36 @@ fn Button(color_offset: u32, layer: u16) -> Element {
 
 pub fn app() -> Element {
     rsx! {
-        div {
-            display: "flex",
-            flex_direction: "column",
-            width: "100%",
-            height: "100%",
-            for y in 1..8 {
-                div {
-                    display: "flex",
-                    flex_direction: "row",
-                    width: "100%",
-                    height: "100%",
-                    for x in 1..8 {
-                        if (x + y) % 2 == 0 {
-                            div {
-                                width: "100%",
-                                height: "100%",
-                                background_color: "rgb(100, 100, 100)",
-                            }
-                        } else {
-                            Button {
-                                color_offset: x * y,
-                                layer: ((x + y) % 3) as u16,
+        ExampleFrame {
+            title: "Buttons",
+            help: &[
+                "A grid of focusable tiles (divs with tabindex).",
+                "Use Tab to move focus; Space toggles the focused tile.",
+            ],
+
+            div {
+                display: "flex",
+                flex_direction: "column",
+                width: "100%",
+                height: "100%",
+                for y in 1..8 {
+                    div {
+                        display: "flex",
+                        flex_direction: "row",
+                        width: "100%",
+                        height: "100%",
+                        for x in 1..8 {
+                            if (x + y) % 2 == 0 {
+                                div {
+                                    width: "100%",
+                                    height: "100%",
+                                    background_color: "rgb(100, 100, 100)",
+                                }
+                            } else {
+                                Button {
+                                    color_offset: x * y,
+                                    layer: ((x + y) % 3) as u16,
+                                }
                             }
                         }
                     }

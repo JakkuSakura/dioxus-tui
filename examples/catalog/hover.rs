@@ -4,6 +4,8 @@ use std::convert::TryInto;
 use std::fmt::Write;
 use std::rc::Rc;
 
+use crate::catalog::ExampleFrame;
+
 pub fn app() -> Element {
     fn to_str(c: &[i32; 3]) -> String {
         let mut result = String::new();
@@ -40,18 +42,29 @@ pub fn app() -> Element {
     };
 
     rsx! {
-        div {
-            width: "100%",
-            height: "100%",
-            flex_direction: "column",
+        ExampleFrame {
+            title: "Hover + mouse events",
+            help: &[
+                "Move the mouse, click, and scroll over the quadrants.",
+                "Shows basic mouse events + coordinate extraction.",
+            ],
+
             div {
                 width: "100%",
-                height: "50%",
-                flex_direction: "row",
+                height: "100%",
+                display: "flex",
+                flex_direction: "column",
+
+                div {
+                    width: "100%",
+                    height: "50%",
+                    display: "flex",
+                    flex_direction: "row",
                 div {
                     border_width: "1px",
                     width: "50%",
                     height: "100%",
+                    display: "flex",
                     justify_content: "center",
                     align_items: "center",
                     background_color: to_str(&q1_color()),
@@ -66,6 +79,7 @@ pub fn app() -> Element {
                 div {
                     width: "50%",
                     height: "100%",
+                    display: "flex",
                     justify_content: "center",
                     align_items: "center",
                     background_color: to_str(&q2_color()),
@@ -82,10 +96,12 @@ pub fn app() -> Element {
             div {
                 width: "100%",
                 height: "50%",
+                display: "flex",
                 flex_direction: "row",
                 div {
                     width: "50%",
                     height: "100%",
+                    display: "flex",
                     justify_content: "center",
                     align_items: "center",
                     background_color: to_str(&q3_color()),
@@ -100,6 +116,7 @@ pub fn app() -> Element {
                 div {
                     width: "50%",
                     height: "100%",
+                    display: "flex",
                     justify_content: "center",
                     align_items: "center",
                     background_color: to_str(&q4_color()),
@@ -116,6 +133,7 @@ pub fn app() -> Element {
             div { "Element coordinates: {element_coordinates}" }
             div { "Buttons: {buttons}" }
             div { "Modifiers: {modifiers}" }
+            }
         }
     }
 }

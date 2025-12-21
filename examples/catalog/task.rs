@@ -1,5 +1,7 @@
 use dioxus::prelude::*;
 
+use crate::catalog::ExampleFrame;
+
 pub fn app() -> Element {
     let mut count = use_signal(|| 0);
 
@@ -11,12 +13,38 @@ pub fn app() -> Element {
     });
 
     rsx! {
-        div { width: "100%",
-            div { width: "50%", height: "5px", background_color: "blue", justify_content: "center", align_items: "center",
-                "Hello {count}!"
-            }
-            div { width: "50%", height: "10px", background_color: "red", justify_content: "center", align_items: "center",
-                "Hello {count}!"
+        ExampleFrame {
+            title: "Task",
+            help: &[
+                "Spawns an async task and updates UI state once per second.",
+                "Useful for validating the render loop and async integration.",
+            ],
+
+            div {
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                flex_direction: "column",
+                gap: "1px",
+
+                div {
+                    width: "50%",
+                    height: "16px",
+                    display: "flex",
+                    background_color: "blue",
+                    justify_content: "center",
+                    align_items: "center",
+                    "Hello {count}!"
+                }
+                div {
+                    width: "50%",
+                    height: "16px",
+                    display: "flex",
+                    background_color: "red",
+                    justify_content: "center",
+                    align_items: "center",
+                    "Hello {count}!"
+                }
             }
         }
     }

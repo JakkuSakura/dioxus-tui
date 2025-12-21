@@ -60,7 +60,12 @@ fn app() -> Element {
 }
 
 fn main() -> anyhow::Result<()> {
-    dioxus_tui::render_cfg(app, Config::new().with_rendering_mode(RenderingMode::BlitzTerminal))
+    #[cfg(feature = "blitz-terminal")]
+    let mode = RenderingMode::BlitzTerminal;
+    #[cfg(not(feature = "blitz-terminal"))]
+    let mode = RenderingMode::Visual;
+
+    dioxus_tui::render_cfg(app, Config::new().with_rendering_mode(mode))
 }
 ```
 

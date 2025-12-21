@@ -1,77 +1,56 @@
 use dioxus::prelude::*;
 
+use crate::catalog::ExampleFrame;
+
 pub fn app() -> Element {
     rsx! {
-        div {
-            width: "100%",
-            height: "100%",
-            flex_direction: "column",
-            // justify_content: "center",
-            // align_items: "center",
-            // flex_direction: "row",
-            // background_color: "red",
+        ExampleFrame {
+            title: "Flex",
+            help: &[
+                "Basic flex column container with several colored children.",
+                "This is mainly a visual sanity check for flexbox and stacking order.",
+            ],
 
-            p {
-                background_color: "black",
+            div {
+                width: "100%",
+                height: "100%",
+                display: "flex",
                 flex_direction: "column",
-                justify_content: "center",
-                align_items: "center",
-                // height: "10%",
-                "hi"
-                "hi"
-                "hi"
-            }
 
-            li {
-                background_color: "red",
-                flex_direction: "column",
-                justify_content: "center",
-                align_items: "center",
-                // height: "10%",
-                "bib"
-                "bib"
-                "bib"
-                "bib"
-                "bib"
-                "bib"
-                "bib"
-                "bib"
-            }
-            li {
-                background_color: "blue",
-                flex_direction: "column",
-                justify_content: "center",
-                align_items: "center",
-                // height: "10%",
-                "zib"
-                "zib"
-                "zib"
-                "zib"
-                "zib"
-                "zib"
-                "zib"
-                "zib"
-                "zib"
-                "zib"
-                "zib"
-                "zib"
-                "zib"
-            }
-            p {
-                background_color: "yellow",
-                "asd"
-            }
-            p {
-                background_color: "green",
-                "asd"
-            }
-            p {
-                background_color: "white",
-                "asd"
-            }
-            p {
-                background_color: "cyan",
-                "asd"
+                p {
+                    display: "flex",
+                    background_color: "black",
+                    justify_content: "center",
+                    align_items: "center",
+                    "hi"
+                    "hi"
+                    "hi"
+                }
+
+                li {
+                    display: "flex",
+                    background_color: "red",
+                    justify_content: "center",
+                    align_items: "center",
+                    "bib"
+                    "bib"
+                    "bib"
+                    "bib"
+                }
+                li {
+                    display: "flex",
+                    background_color: "blue",
+                    justify_content: "center",
+                    align_items: "center",
+                    "zib"
+                    "zib"
+                    "zib"
+                    "zib"
+                }
+                p { background_color: "yellow", "asd" }
+                p { background_color: "green", "asd" }
+                p { background_color: "white", "asd" }
+                p { background_color: "cyan", "asd" }
             }
         }
     }

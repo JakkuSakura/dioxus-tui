@@ -46,6 +46,23 @@ fn find_by_tag(doc: &blitz_dom::BaseDocument, id: usize, tag: &str, out: &mut Ve
     }
 }
 
+fn find_first_by_tag(doc: &blitz_dom::BaseDocument, id: usize, tag: &str) -> Option<usize> {
+    let node = doc.get_node(id)?;
+    if node
+        .element_data()
+        .map(|el| el.name.local.as_ref() == tag)
+        .unwrap_or(false)
+    {
+        return Some(id);
+    }
+    for child in node.children.iter().copied() {
+        if let Some(found) = find_first_by_tag(doc, child, tag) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 #[test]
 fn layout_root_matches_viewport() {
     fn app() -> Element {
@@ -138,4 +155,32 @@ fn explicit_sizes_are_respected() {
     let expected_h = (2.0 / TEST_METRICS.cell_h_px).ceil().max(1.0) as u16;
     assert_eq!(rect.width, expected_w);
     assert_eq!(rect.height, expected_h);
+}
+
+#[test]
+fn percent_sized_root_can_fill_viewport() {
+    fn app() -> Element {
+        rsx! {
+            div {
+                width: "100%",
+                height: "100%",
+                "hello"
+            }
+        }
+    }
+
+    let width = 80u16;
+    let height = 25u16;
+    let area = UiRect::new(0, 0, width, height);
+    let (doc, root) = build_doc_with_layout(app, width, height);
+
+    let main_id = find_first_by_tag(&doc.inner, root, "main").expect("main should exist");
+    let main_rect = node_rect(&doc.inner, doc.inner.get_node(main_id).unwrap(), area, TEST_METRICS);
+    assert_eq!(main_rect.width, width);
+    assert_eq!(main_rect.height, height);
+
+    let div_id = find_first_by_tag(&doc.inner, main_id, "div").expect("app root div should exist");
+    let div_rect = node_rect(&doc.inner, doc.inner.get_node(div_id).unwrap(), area, TEST_METRICS);
+    assert_eq!(div_rect.width, width);
+    assert_eq!(div_rect.height, height);
 }

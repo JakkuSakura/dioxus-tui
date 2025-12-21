@@ -1,4 +1,6 @@
 use dioxus::prelude::*;
+use dioxus_html::input_data::keyboard_types::Code;
+use dioxus_tui::TuiContext;
 
 fn xterm_palette_rgb(idx: u8) -> (u8, u8, u8) {
     // XTerm 256-color palette.
@@ -51,11 +53,22 @@ fn contrast_fg_for_bg(r: u8, g: u8, b: u8) -> &'static str {
 }
 
 pub fn app() -> Element {
+    let tui: TuiContext = consume_context();
+
     rsx! {
         div {
             width: "100%",
+            height: "100%",
+            display: "flex",
+            flex_direction: "column",
             padding: "0.5ch",
             box_sizing: "border-box",
+
+            tabindex: "0",
+            onkeydown: move |e| match e.code() {
+                Code::KeyQ | Code::Escape => tui.quit(),
+                _ => {}
+            },
 
             border_style: "solid",
             border_width: "thick",
@@ -86,6 +99,8 @@ pub fn app() -> Element {
                 display: "flex",
                 flex_direction: "row",
                 flex_wrap: "wrap",
+                flex_grow: "1",
+                min_height: "0px",
                 gap: "1ch",
                 padding_top: "0.5ch",
 

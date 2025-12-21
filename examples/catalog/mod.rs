@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 
 mod all_terminal_events;
 mod border;
+mod frame;
 mod buttons;
 mod color_test;
 mod dashboard;
@@ -18,6 +19,8 @@ mod tabview;
 mod task;
 mod text;
 mod widgets;
+
+pub use frame::ExampleFrame;
 
 pub struct AppSpec {
     pub name: &'static str,

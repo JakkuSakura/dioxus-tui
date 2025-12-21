@@ -1,10 +1,24 @@
 pub const DEFAULT_TUI_CSS: &str = r#"
 html, body {
+  width: 100%;
+  height: 100%;
   margin: 0;
   padding: 0;
   font-family: monospace;
   background: transparent;
   color: white;
+}
+
+/* `main` is block-level in the web UA stylesheet. */
+main {
+  display: block;
+}
+
+/* Dioxus apps are typically mounted under `body > main`.
+   Make that container fill the viewport so children using percent sizes resolve correctly. */
+body > main {
+  width: 100%;
+  height: 100%;
 }
 
 /* Basic HTML display defaults (Blitz doesn't inject a full UA stylesheet). */

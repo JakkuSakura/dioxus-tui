@@ -2,6 +2,17 @@ use std::any::Any;
 use dioxus::prelude::*;
 use dioxus_tui::{ColorMode, Config, RawVirtualDom, Rect, Surface};
 
+// Some of the catalog examples share a small wrapper component for consistent layout + keyboard handling.
+// The examples refer to it as `crate::catalog::ExampleFrame`, so we provide a minimal `catalog` module here
+// to keep the compile-time include-based tests working.
+mod catalog {
+    #![allow(dead_code)]
+    pub mod frame {
+        include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/catalog/frame.rs"));
+    }
+    pub use frame::ExampleFrame;
+}
+
 macro_rules! import_example {
     ($mod_name:ident, $path:literal) => {
         mod $mod_name {
@@ -14,52 +25,25 @@ macro_rules! import_example {
     };
 }
 
-import_example!(color_test_example, "/examples/run_color_test.rs");
-import_example!(buttons_example, "/examples/run_buttons.rs");
-import_example!(tabview_example, "/examples/run_tabview.rs");
-import_example!(task_example, "/examples/run_task.rs");
-import_example!(list_example, "/examples/run_list.rs");
-import_example!(flex_example, "/examples/run_flex.rs");
-import_example!(quadrants_example, "/examples/run_quadrants.rs");
+import_example!(dashboard_example, "/examples/catalog/dashboard.rs");
+import_example!(text_example, "/examples/catalog/text.rs");
+import_example!(widgets_example, "/examples/catalog/widgets.rs");
+import_example!(list_example, "/examples/catalog/list.rs");
+import_example!(border_example, "/examples/catalog/border.rs");
+import_example!(buttons_example, "/examples/catalog/buttons.rs");
+import_example!(color_test_example, "/examples/catalog/color_test.rs");
+import_example!(hover_example, "/examples/catalog/hover.rs");
+import_example!(flex_example, "/examples/catalog/flex.rs");
+import_example!(margin_example, "/examples/catalog/margin.rs");
+import_example!(quadrants_example, "/examples/catalog/quadrants.rs");
+import_example!(task_example, "/examples/catalog/task.rs");
+import_example!(tabview_example, "/examples/catalog/tabview.rs");
+import_example!(dioxus_basic_example, "/examples/catalog/dioxus_basic.rs");
+import_example!(readme_hello_world_example, "/examples/catalog/readme_hello_world.rs");
 import_example!(
     all_terminal_events_example,
-    "/examples/run_all_terminal_events.rs"
+    "/examples/catalog/all_terminal_events.rs"
 );
-import_example!(widgets_example, "/examples/run_widgets.rs");
-import_example!(dioxus_basic_example, "/examples/run_dioxus_basic.rs");
-import_example!(margin_example, "/examples/run_margin.rs");
-import_example!(hover_example, "/examples/run_hover.rs");
-import_example!(border_example, "/examples/run_border.rs");
-import_example!(
-    readme_hello_world_example,
-    "/examples/run_readme_hello_world.rs"
-);
-import_example!(text_example, "/examples/run_text.rs");
-import_example!(dashboard_example, "/examples/run_dashboard.rs");
-mod many_small_edit_stress_example {
-    #![allow(dead_code)]
-    use dioxus::prelude::*;
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/examples/run_many_small_edit_stress.rs"
-    ));
-
-    pub fn make_app() -> Element {
-        app()
-    }
-
-    pub fn make_app_with_context() -> Element {
-        #[allow(non_snake_case)]
-        fn Wrapper() -> Element {
-            let (tx, _rx) = dioxus_tui::render::channel();
-            use_context_provider(|| 4usize);
-            use_context_provider(|| dioxus_tui::render::TuiContext::new(tx));
-            app()
-        }
-
-        Wrapper()
-    }
-}
 
 fn render_app(app: fn() -> Element, width: u16, height: u16, ctx: Option<usize>) -> Surface {
     let cfg = Config::default().with_color_mode(ColorMode::Rgb);
@@ -78,35 +62,22 @@ fn render_app(app: fn() -> Element, width: u16, height: u16, ctx: Option<usize>)
 #[test]
 fn all_examples_render_non_empty() {
     let examples: &[(&str, fn() -> Element, Option<usize>)] = &[
-        ("color_test", color_test_example::make_app, None),
-        ("buttons", buttons_example::make_app, None),
-        ("tabview", tabview_example::make_app, None),
-        ("task", task_example::make_app, None),
-        ("list", list_example::make_app, None),
-        ("flex", flex_example::make_app, None),
-        ("quadrants", quadrants_example::make_app, None),
-        (
-            "all_terminal_events",
-            all_terminal_events_example::make_app,
-            None,
-        ),
-        ("widgets", widgets_example::make_app, None),
-        ("dioxus_basic", dioxus_basic_example::make_app, None),
-        ("margin", margin_example::make_app, None),
-        ("hover", hover_example::make_app, None),
-        ("border", border_example::make_app, None),
         ("dashboard", dashboard_example::make_app, None),
-        (
-            "readme_hello_world",
-            readme_hello_world_example::make_app,
-            None,
-        ),
         ("text", text_example::make_app, None),
-        (
-            "many_small_edit_stress",
-            many_small_edit_stress_example::make_app_with_context,
-            None,
-        ),
+        ("widgets", widgets_example::make_app, None),
+        ("list", list_example::make_app, None),
+        ("border", border_example::make_app, None),
+        ("buttons", buttons_example::make_app, None),
+        ("color_test", color_test_example::make_app, None),
+        ("hover", hover_example::make_app, None),
+        ("flex", flex_example::make_app, None),
+        ("margin", margin_example::make_app, None),
+        ("quadrants", quadrants_example::make_app, None),
+        ("task", task_example::make_app, None),
+        ("tabview", tabview_example::make_app, None),
+        ("dioxus_basic", dioxus_basic_example::make_app, None),
+        ("readme_hello_world", readme_hello_world_example::make_app, None),
+        ("all_terminal_events", all_terminal_events_example::make_app, None),
     ];
 
     for (name, app, ctx) in examples {
