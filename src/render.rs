@@ -10,6 +10,7 @@ use futures::{pin_mut, StreamExt};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use termwiz::{
     color::ColorAttribute,
+    image::TextureCoordinate,
     surface::{Change, Position},
     terminal::{buffered::BufferedTerminal, ScreenSize, Terminal},
 };
@@ -30,6 +31,13 @@ use crate::RawVirtualDom;
 use crate::cell_render::paint_surface;
 use crate::image::PlacedImage;
 use tracing::debug;
+
+#[cfg(feature = "blitz")]
+use anyrender::ImageRenderer;
+#[cfg(feature = "blitz")]
+use blitz_paint::paint_scene;
+#[cfg(feature = "blitz")]
+use crate::layout::resolve_document_with_viewport_and_extra_css;
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
     unbounded()
@@ -338,7 +346,7 @@ async fn run_tui_renderer(
         std::thread::spawn(move || {
             let res: Result<()> = (|| {
                 let mut term = new_terminal(term_caps)?;
-                term.set_raw_mode()?;
+                // The main thread owns raw mode; don't fight over tty state from two terminals.
 
                 loop {
                     match term.poll_input(Some(tick_rate))? {
@@ -351,7 +359,6 @@ async fn run_tui_renderer(
                     }
                 }
 
-                term.set_cooked_mode()?;
                 Ok(())
             })();
 
@@ -374,6 +381,9 @@ async fn run_tui_renderer(
     let mut last_surface: Option<Surface> = None;
     let mut last_area: Option<Rect> = None;
     let mut last_images: Option<std::collections::VecDeque<PlacedImage>> = None;
+
+    #[cfg(feature = "blitz")]
+    let mut blitz_last_raster: Option<(u32, u32)> = None;
 
     renderer.update();
 
@@ -422,6 +432,150 @@ async fn run_tui_renderer(
 
         if let Some(term) = &mut terminal {
             let (area, metrics) = terminal_size(term)?;
+
+            #[cfg(feature = "blitz")]
+            if cfg.rendering_mode == RenderingMode::BlitzTerminal {
+                let ScreenSize {
+                    cols,
+                    rows,
+                    xpixel,
+                    ypixel,
+                } = term.terminal().get_screen_size()?;
+                if cols == 0 || rows == 0 {
+                    return Err(crate::error::Error::Other(anyhow::anyhow!(
+                        "terminal reported zero-sized cell grid"
+                    )));
+                }
+                if xpixel == 0 || ypixel == 0 {
+                    return Err(crate::error::Error::Other(anyhow::anyhow!(
+                        "terminal did not report pixel dimensions (xpixel/ypixel=0); cannot use BlitzTerminal"
+                    )));
+                }
+
+                let cell_w_px = (xpixel as f32) / (cols as f32);
+                let cell_h_px = (ypixel as f32) / (rows as f32);
+                let supersample = cfg.blitz_hidpi_scale.max(1) as f32;
+                let render_w_px = ((xpixel as f32) * supersample).ceil().max(1.0) as u32;
+                let render_h_px = ((ypixel as f32) * supersample).ceil().max(1.0) as u32;
+
+                let viewport = Viewport::new(render_w_px, render_h_px, supersample, ColorScheme::Light);
+                let font_px = (cell_h_px.round().max(1.0)) as u32;
+                let extra_css = format!(
+                    ":root, html, body {{ font-family: monospace; font-size: {}px; line-height: {}px; }}",
+                    font_px, font_px
+                );
+                let _ = resolve_document_with_viewport_and_extra_css(
+                    &mut renderer.doc,
+                    viewport.clone(),
+                    Some(extra_css.as_str()),
+                );
+
+                // Determine cropped height in cells using the standard cell painter.
+                let scaled_metrics = CellMetrics {
+                    cell_w_px: cell_w_px * supersample,
+                    cell_h_px: cell_h_px * supersample,
+                };
+                let mut crop_surface = Surface::new(area.width, area.height);
+                let mut crop_images = std::collections::VecDeque::<PlacedImage>::new();
+                let _ = renderer.layout_root(area, scaled_metrics);
+                paint_surface(
+                    &mut crop_surface,
+                    &mut crop_images,
+                    renderer.doc.inner.as_ref(),
+                    area,
+                    scaled_metrics,
+                    cfg.palette_roles,
+                    cfg.color_mode,
+                    capabilities.truecolor,
+                    cfg.image_policy,
+                    cfg.image_downgrade,
+                    capabilities.iterm2_images,
+                )?;
+
+                let width_cells = area.width as usize;
+                let height_cells = area.height as usize;
+                let mut last_row_with_content: Option<usize> = None;
+                for (y, row) in crop_surface.content.chunks(width_cells).enumerate() {
+                    if row.iter().any(crate::surface::Cell::has_visible_content) {
+                        last_row_with_content = Some(y);
+                    }
+                }
+                let mut last_row_with_image: Option<usize> = None;
+                for img in &crop_images {
+                    let bottom = (img.y_cell as usize)
+                        .saturating_add((img.height_cells as usize).saturating_sub(1));
+                    last_row_with_image = Some(last_row_with_image.map_or(bottom, |v| v.max(bottom)));
+                }
+                let max_row = last_row_with_content
+                    .into_iter()
+                    .chain(last_row_with_image)
+                    .max();
+                let cropped_cells = max_row
+                    .map(|r| (r + 1).min(height_cells))
+                    .unwrap_or(0)
+                    .max(1) as u16;
+
+                let cropped_px = ((cropped_cells as f32) * (cell_h_px * supersample))
+                    .ceil()
+                    .max(1.0) as u32;
+
+                let mut image_renderer = <anyrender_vello_cpu::VelloCpuImageRenderer as ImageRenderer>::new(
+                    render_w_px,
+                    render_h_px,
+                );
+                let mut rgba = Vec::new();
+                image_renderer.render_to_vec(
+                    |scene| {
+                        paint_scene(
+                            scene,
+                            renderer.doc.inner.as_ref(),
+                            viewport.scale_f64(),
+                            render_w_px,
+                            render_h_px,
+                        );
+                    },
+                    &mut rgba,
+                );
+                if cropped_px < render_h_px {
+                    let bytes_per_row = (render_w_px as usize) * 4;
+                    let keep = (cropped_px as usize) * bytes_per_row;
+                    if keep < rgba.len() {
+                        rgba.truncate(keep);
+                    }
+                }
+
+                if !capabilities.iterm2_images {
+                    return Err(crate::error::Error::Other(anyhow::anyhow!(
+                        "BlitzTerminal launch currently requires iterm2 image support"
+                    )));
+                }
+                let png = crate::image::rgba_to_png_bytes(&rgba, render_w_px, cropped_px.min(render_h_px))?;
+                let osc = crate::image::iterm2_osc_for_png(
+                    png,
+                    area.width,
+                    cropped_cells,
+                    true,
+                    false,
+                )?;
+
+                // Full redraw each frame.
+                term.add_change(Change::ClearScreen(ColorAttribute::Default));
+                term.add_change(Change::CursorPosition {
+                    x: Position::Absolute(0),
+                    y: Position::Absolute(0),
+                });
+                term.add_change(Change::Text(osc));
+                term.add_change(Change::CursorPosition {
+                    x: Position::Absolute(0),
+                    y: Position::Absolute((cropped_cells as usize).min(area.height as usize - 1)),
+                });
+                term.flush()?;
+
+                blitz_last_raster = Some((render_w_px, render_h_px));
+                let _ = blitz_last_raster;
+                continue;
+            }
+
             let mut surface = Surface::new(area.width, area.height);
             let mut images = std::collections::VecDeque::<PlacedImage>::new();
             last_area = Some(area);
@@ -961,9 +1115,13 @@ pub(crate) fn flush_surface<T: Terminal>(
                 x: Position::Absolute(img.x_cell as usize),
                 y: Position::Absolute(img.y_cell as usize),
             });
-            if let Ok(osc) = crate::image::iterm2_osc_for_placed_image(img, true, true) {
-                term.add_change(Change::Text(osc));
-            }
+            term.add_change(Change::Image(termwiz::surface::Image {
+                width: img.width_cells as usize,
+                height: img.height_cells as usize,
+                top_left: TextureCoordinate::new_f32(0.0, 0.0),
+                bottom_right: TextureCoordinate::new_f32(1.0, 1.0),
+                image: img.image.clone(),
+            }));
         }
     }
 
