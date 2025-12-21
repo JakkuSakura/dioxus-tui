@@ -43,7 +43,9 @@ pub struct Surface {
 
 impl Surface {
     pub fn new(width: u16, height: u16) -> Self {
-        let len = width.saturating_mul(height) as usize;
+        // Use a usize multiplication so large render targets (e.g. render-mode with a tall
+        // virtual height for scrollback) allocate a consistent backing buffer.
+        let len = (width as usize) * (height as usize);
         Self {
             width,
             height,
