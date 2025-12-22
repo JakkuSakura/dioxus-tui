@@ -94,3 +94,10 @@ rasterizes the full document offscreen (Blitz paint pipeline) and emits it as a 
 - Tests render into `Surface` and compare snapshots under `tests/`.
 
 For deeper design notes, see `docs/Design.md`.
+
+## License
+
+Licensed under either of:
+
+- Apache License, Version 2.0 (`LICENSE-APACHE`)
+- MIT license (`LICENSE-MIT`)
