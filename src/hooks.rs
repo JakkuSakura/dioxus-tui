@@ -147,6 +147,7 @@ pub fn event_from_termwiz(
     evt: InputEvent,
     target: ElementId,
     viewport: Rect,
+    pixel_viewport: Option<Rect>,
 ) -> Vec<(ElementId, &'static str, EventData, bool)> {
     match evt {
         InputEvent::Key(key) => {
@@ -157,7 +158,10 @@ pub fn event_from_termwiz(
             vec![(target, "keydown", EventData::Keyboard(data), true)]
         }
         InputEvent::Mouse(mouse_evt) => map_mouse(mouse_evt, target, viewport),
-        InputEvent::PixelMouse(mouse_evt) => map_pixel_mouse(mouse_evt, target, viewport),
+        InputEvent::PixelMouse(mouse_evt) => {
+            let viewport = pixel_viewport.unwrap_or(viewport);
+            map_pixel_mouse(mouse_evt, target, viewport)
+        }
         _ => Vec::new(),
     }
 }
@@ -209,11 +213,41 @@ fn map_pixel_mouse(
     target: ElementId,
     viewport: Rect,
 ) -> Vec<(ElementId, &'static str, EventData, bool)> {
-    // treat pixel events as move for now
+    if evt.mouse_buttons.contains(MouseButtons::VERT_WHEEL)
+        || evt.mouse_buttons.contains(MouseButtons::HORZ_WHEEL)
+    {
+        let (delta_x, delta_y) = wheel_delta(evt.mouse_buttons);
+        let (_, _, coords) = build_coords(evt.x_pixels, evt.y_pixels, viewport);
+        let modifiers = map_modifiers(evt.modifiers);
+        let point = SerializedPointInteraction::new(None, MouseButtonSet::empty(), coords, modifiers);
+        let data = SerializedWheelData {
+            mouse: point,
+            delta_mode: 0,
+            delta_x,
+            delta_y,
+            delta_z: 0.0,
+        };
+        return vec![(target, "wheel", EventData::Wheel(data), true)];
+    }
+
+    let btn = button_from_mask(evt.mouse_buttons);
+    let (pressed, button) = match btn {
+        Some(b) => (true, Some(b)),
+        None => (false, None),
+    };
+
     let (_, _, coords) = build_coords(evt.x_pixels, evt.y_pixels, viewport);
     let modifiers = map_modifiers(evt.modifiers);
-    let data = SerializedMouseData::new(None, MouseButtonSet::empty(), coords, modifiers);
-    vec![(target, "mousemove", EventData::Mouse(data), true)]
+    let data = SerializedMouseData::new(button, to_button_set(button), coords, modifiers);
+
+    if pressed {
+        vec![(target, "mousedown", EventData::Mouse(data), true)]
+    } else {
+        vec![
+            (target, "mousemove", EventData::Mouse(data.clone()), true),
+            (target, "mouseenter", EventData::Mouse(data), true),
+        ]
+    }
 }
 
 fn wheel_delta(buttons: MouseButtons) -> (f64, f64) {

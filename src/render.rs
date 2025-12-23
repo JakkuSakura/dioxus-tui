@@ -380,11 +380,23 @@ async fn run_tui_renderer(
     let capabilities = detected.terminal;
     let mut last_surface: Option<Surface> = None;
     let mut last_area: Option<Rect> = None;
+    let mut last_pixel_viewport: Option<Rect> = None;
     let mut last_images: Option<std::collections::VecDeque<PlacedImage>> = None;
 
     renderer.update();
 
     let mut paint_error: Option<crate::error::Error> = None;
+
+    #[cfg(feature = "blitz")]
+    let mut pixel_mouse_enabled = false;
+
+    if let Some(term) = &mut terminal {
+        #[cfg(feature = "blitz")]
+        if cfg.rendering_mode == RenderingMode::BlitzTerminal {
+            set_sgr_pixel_mouse(term, true)?;
+            pixel_mouse_enabled = true;
+        }
+    }
 
     loop {
         let mut input_event: Option<InputEvent> = None;
@@ -413,9 +425,10 @@ async fn run_tui_renderer(
                     }
                     if let Some(root) = renderer.root_id() {
                         let viewport = last_area.unwrap_or_else(|| Rect::new(0, 0, 0, 0));
+                        let pixel_viewport = last_pixel_viewport;
 
                         for (target, name, data, bubbles) in
-                            event_from_termwiz(term_evt, root, viewport)
+                            event_from_termwiz(term_evt, root, viewport, pixel_viewport)
                         {
                             let runtime_event = data.into_platform_event(bubbles);
                             renderer.handle_event(target, name, runtime_event, bubbles);
@@ -454,6 +467,10 @@ async fn run_tui_renderer(
                 let supersample = cfg.blitz_hidpi_scale.max(1) as f32;
                 let render_w_px = ((xpixel as f32) * supersample).ceil().max(1.0) as u32;
                 let render_h_px = ((ypixel as f32) * supersample).ceil().max(1.0) as u32;
+
+                let pixel_w = (xpixel.min(u16::MAX as usize)) as u16;
+                let pixel_h = (ypixel.min(u16::MAX as usize)) as u16;
+                last_pixel_viewport = Some(Rect::new(0, 0, pixel_w, pixel_h));
 
                 let viewport = Viewport::new(render_w_px, render_h_px, supersample, ColorScheme::Light);
                 let font_px = (cell_h_px.round().max(1.0)) as u32;
@@ -575,6 +592,10 @@ async fn run_tui_renderer(
     }
 
     if let Some(term) = &mut terminal {
+        #[cfg(feature = "blitz")]
+        if pixel_mouse_enabled {
+            set_sgr_pixel_mouse(term, false)?;
+        }
         term.terminal().exit_alternate_screen()?;
         term.terminal().set_cooked_mode()?;
         term.flush()?;
@@ -603,6 +624,14 @@ fn terminal_size<T: Terminal>(term: &mut BufferedTerminal<T>) -> Result<(Rect, C
             cell_h_px,
         },
     ))
+}
+
+#[cfg(feature = "blitz")]
+fn set_sgr_pixel_mouse<T: Terminal>(term: &mut BufferedTerminal<T>, enabled: bool) -> Result<()> {
+    let suffix = if enabled { "h" } else { "l" };
+    term.add_change(Change::Text(format!("\x1b[?1016{suffix}")));
+    term.flush()?;
+    Ok(())
 }
 
 fn initial_viewport_size() -> Option<(u16, u16)> {
