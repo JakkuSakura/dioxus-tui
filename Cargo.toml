@@ -14,7 +14,7 @@ dioxus = { version = "0.7.1" }
 dioxus-core = { version = "0.7.1", features = ["serialize"] }
 dioxus-html = { version = "0.7.1" }
 dioxus-core-types = "0.7.1"
-keyboard-types = "0.8.3"
+keyboard-types = "0.7"
 dioxus-hot-reload = { version = "0.6.0-alpha.2", optional = true }
 dioxus-native = { version = "0.7.1", optional = true }
 

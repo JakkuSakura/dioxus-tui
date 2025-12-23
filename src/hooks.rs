@@ -6,7 +6,7 @@ use crate::geometry::Rect;
 use dioxus_html::input_data::keyboard_types::{Code, Key, Location, Modifiers};
 use dioxus_html::input_data::{MouseButton, MouseButtonSet};
 use dioxus_html::point_interaction::SerializedPointInteraction;
-use dioxus_html::{SerializedKeyboardData, SerializedMouseData, SerializedWheelData};
+use dioxus_html::{SerializedFocusData, SerializedKeyboardData, SerializedMouseData, SerializedWheelData};
 use termwiz::input::{InputEvent, KeyCode as TermKeyCode, KeyEvent, Modifiers as TermModifiers, MouseButtons, MouseEvent};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14,11 +14,19 @@ pub enum EventData {
     Mouse(SerializedMouseData),
     Keyboard(SerializedKeyboardData),
     Wheel(SerializedWheelData),
+    Focus(SerializedFocusData),
 }
 
 impl EventData {
     pub fn into_platform_event(self, _bubbles: bool) -> Box<dyn Any> {
-        Box::new(self)
+        // Dioxus HTML expects the underlying `Serialized*Data` as the platform event payload.
+        // Wrapping our enum would prevent the event converter from downcasting correctly.
+        match self {
+            EventData::Mouse(data) => Box::new(data),
+            EventData::Keyboard(data) => Box::new(data),
+            EventData::Wheel(data) => Box::new(data),
+            EventData::Focus(data) => Box::new(data),
+        }
     }
 }
 
@@ -41,7 +49,7 @@ fn map_modifiers(mods: TermModifiers) -> Modifiers {
 
 fn map_code(key: &KeyEvent) -> (Key, Code) {
     match key.key {
-        TermKeyCode::Char(c) => (Key::Character(c.to_string()), Code::Unidentified),
+        TermKeyCode::Char(c) => (Key::Character(c.to_string()), code_from_char(c)),
         TermKeyCode::Tab => (Key::Tab, Code::Tab),
         TermKeyCode::Enter => (Key::Enter, Code::Enter),
         TermKeyCode::Backspace => (Key::Backspace, Code::Backspace),
@@ -50,6 +58,80 @@ fn map_code(key: &KeyEvent) -> (Key, Code) {
         TermKeyCode::UpArrow => (Key::ArrowUp, Code::ArrowUp),
         TermKeyCode::DownArrow => (Key::ArrowDown, Code::ArrowDown),
         _ => (Key::Unidentified, Code::Unidentified),
+    }
+}
+
+fn code_from_char(c: char) -> Code {
+    // Termwiz only provides a character and modifiers, not the physical key.
+    // Map common ASCII characters to the closest `Code` so apps can match on it.
+    // This is necessarily layout-dependent; for non-US layouts, `Key::Character` is more reliable.
+    match c {
+        ' ' => Code::Space,
+        '0' => Code::Digit0,
+        '1' => Code::Digit1,
+        '2' => Code::Digit2,
+        '3' => Code::Digit3,
+        '4' => Code::Digit4,
+        '5' => Code::Digit5,
+        '6' => Code::Digit6,
+        '7' => Code::Digit7,
+        '8' => Code::Digit8,
+        '9' => Code::Digit9,
+
+        'a' | 'A' => Code::KeyA,
+        'b' | 'B' => Code::KeyB,
+        'c' | 'C' => Code::KeyC,
+        'd' | 'D' => Code::KeyD,
+        'e' | 'E' => Code::KeyE,
+        'f' | 'F' => Code::KeyF,
+        'g' | 'G' => Code::KeyG,
+        'h' | 'H' => Code::KeyH,
+        'i' | 'I' => Code::KeyI,
+        'j' | 'J' => Code::KeyJ,
+        'k' | 'K' => Code::KeyK,
+        'l' | 'L' => Code::KeyL,
+        'm' | 'M' => Code::KeyM,
+        'n' | 'N' => Code::KeyN,
+        'o' | 'O' => Code::KeyO,
+        'p' | 'P' => Code::KeyP,
+        'q' | 'Q' => Code::KeyQ,
+        'r' | 'R' => Code::KeyR,
+        's' | 'S' => Code::KeyS,
+        't' | 'T' => Code::KeyT,
+        'u' | 'U' => Code::KeyU,
+        'v' | 'V' => Code::KeyV,
+        'w' | 'W' => Code::KeyW,
+        'x' | 'X' => Code::KeyX,
+        'y' | 'Y' => Code::KeyY,
+        'z' | 'Z' => Code::KeyZ,
+
+        '-' => Code::Minus,
+        '=' => Code::Equal,
+        '[' => Code::BracketLeft,
+        ']' => Code::BracketRight,
+        '\\' => Code::Backslash,
+        ';' => Code::Semicolon,
+        '\'' => Code::Quote,
+        ',' => Code::Comma,
+        '.' => Code::Period,
+        '/' => Code::Slash,
+
+        _ => Code::Unidentified,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::code_from_char;
+    use dioxus_html::input_data::keyboard_types::Code;
+
+    #[test]
+    fn code_from_char_maps_common_ascii() {
+        assert_eq!(code_from_char('q'), Code::KeyQ);
+        assert_eq!(code_from_char('Q'), Code::KeyQ);
+        assert_eq!(code_from_char(' '), Code::Space);
+        assert_eq!(code_from_char('7'), Code::Digit7);
+        assert_eq!(code_from_char('['), Code::BracketLeft);
     }
 }
 

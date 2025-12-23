@@ -790,7 +790,7 @@ dependencies = [
  "fastrand 2.3.0",
  "html-escape",
  "image",
- "keyboard-types 0.7.0",
+ "keyboard-types",
  "linebender_resource_handle",
  "markup5ever",
  "objc2 0.6.3",
@@ -870,7 +870,7 @@ dependencies = [
  "blitz-paint",
  "blitz-traits",
  "futures-util",
- "keyboard-types 0.7.0",
+ "keyboard-types",
  "rfd",
  "winit",
 ]
@@ -885,7 +885,7 @@ dependencies = [
  "bytes",
  "cursor-icon",
  "http",
- "keyboard-types 0.7.0",
+ "keyboard-types",
  "serde",
  "smol_str",
  "url",
@@ -1903,7 +1903,7 @@ dependencies = [
  "euclid",
  "futures-channel",
  "generational-box 0.6.2",
- "keyboard-types 0.7.0",
+ "keyboard-types",
  "lazy-js-bundle 0.6.2",
  "rustversion",
  "tracing",
@@ -1927,7 +1927,7 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "generational-box 0.7.1",
- "keyboard-types 0.7.0",
+ "keyboard-types",
  "lazy-js-bundle 0.7.1",
  "rustversion",
  "serde",
@@ -2012,7 +2012,7 @@ dependencies = [
  "dioxus-html 0.7.1",
  "dioxus-native-dom",
  "futures-util",
- "keyboard-types 0.7.0",
+ "keyboard-types",
  "rustc-hash 2.1.1",
  "tokio",
  "webbrowser",
@@ -2030,7 +2030,7 @@ dependencies = [
  "dioxus-core 0.7.1",
  "dioxus-html 0.7.1",
  "futures-util",
- "keyboard-types 0.7.0",
+ "keyboard-types",
  "rustc-hash 2.1.1",
 ]
 
@@ -2141,7 +2141,7 @@ dependencies = [
  "dioxus-native-dom",
  "futures",
  "futures-channel",
- "keyboard-types 0.8.3",
+ "keyboard-types",
  "kurbo 0.12.0",
  "libc",
  "peniko",
@@ -3579,16 +3579,6 @@ dependencies = [
  "bitflags 2.10.0",
  "serde",
  "unicode-segmentation",
-]
-
-[[package]]
-name = "keyboard-types"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fbe853b403ae61a04233030ae8a79d94975281ed9770a1f9e246732b534b28d"
-dependencies = [
- "bitflags 2.10.0",
- "serde",
 ]
 
 [[package]]

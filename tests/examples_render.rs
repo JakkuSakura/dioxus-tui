@@ -40,6 +40,7 @@ import_example!(task_example, "/examples/catalog/task.rs");
 import_example!(tabview_example, "/examples/catalog/tabview.rs");
 import_example!(dioxus_basic_example, "/examples/catalog/dioxus_basic.rs");
 import_example!(readme_hello_world_example, "/examples/catalog/readme_hello_world.rs");
+import_example!(keys_example, "/examples/catalog/keys.rs");
 import_example!(
     all_terminal_events_example,
     "/examples/catalog/all_terminal_events.rs"
@@ -77,6 +78,7 @@ fn all_examples_render_non_empty() {
         ("tabview", tabview_example::make_app, None),
         ("dioxus_basic", dioxus_basic_example::make_app, None),
         ("readme_hello_world", readme_hello_world_example::make_app, None),
+        ("keys", keys_example::make_app, None),
         ("all_terminal_events", all_terminal_events_example::make_app, None),
     ];
 

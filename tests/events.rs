@@ -32,6 +32,10 @@ fn run_launch(app: fn() -> Element, cfg: dioxus_tui::Config) {
     let _ = dioxus_tui::launch_cfg(app, cfg);
 }
 
+// TODO: add a non-interactive end-to-end event dispatch test.
+// The current renderer dispatch targets a fixed root element and does not model focus,
+// which makes a robust headless test tricky without additional hooks.
+
 #[test]
 #[ignore]
 fn key_down() {

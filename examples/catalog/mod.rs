@@ -11,6 +11,7 @@ mod dashboard;
 mod dioxus_basic;
 mod flex;
 mod hover;
+mod keys;
 mod list;
 mod margin;
 mod quadrants;
@@ -72,6 +73,11 @@ pub fn apps() -> &'static [AppSpec] {
             AppSpec {
                 name: "hover",
                 app: hover::app,
+                cfg: Config::default().with_color_mode(ColorMode::Rgb),
+            },
+            AppSpec {
+                name: "keys",
+                app: keys::app,
                 cfg: Config::default().with_color_mode(ColorMode::Rgb),
             },
             AppSpec {
