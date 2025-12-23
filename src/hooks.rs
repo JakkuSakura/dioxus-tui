@@ -36,14 +36,14 @@ impl TuiInputBus {
         Self::default()
     }
 
-    pub fn subscribe(&self, listener: Rc<dyn Fn(RawInputEvent)>) -> InputSubscription {
+    pub(crate) fn subscribe(&self, listener: Rc<dyn Fn(RawInputEvent)>) -> InputSubscription {
         let mut listeners = self.listeners.borrow_mut();
         let id = listeners.len();
         listeners.push(Some(listener));
-        InputSubscription {
+        Rc::new(InputSubscriptionInner {
             id,
             listeners: Rc::downgrade(&self.listeners),
-        }
+        })
     }
 
     pub fn publish(&self, event: RawInputEvent) {
@@ -53,13 +53,12 @@ impl TuiInputBus {
     }
 }
 
-#[derive(Clone)]
-pub struct InputSubscription {
+pub(crate) struct InputSubscriptionInner {
     id: usize,
     listeners: Weak<RefCell<Vec<Option<Rc<dyn Fn(RawInputEvent)>>>>>,
 }
 
-impl Drop for InputSubscription {
+impl Drop for InputSubscriptionInner {
     fn drop(&mut self) {
         if let Some(listeners) = self.listeners.upgrade() {
             if let Some(slot) = listeners.borrow_mut().get_mut(self.id) {
@@ -68,6 +67,8 @@ impl Drop for InputSubscription {
         }
     }
 }
+
+pub type InputSubscription = Rc<InputSubscriptionInner>;
 
 impl EventData {
     pub fn into_platform_event(self, _bubbles: bool) -> Box<dyn Any> {
