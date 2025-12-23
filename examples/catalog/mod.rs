@@ -14,7 +14,6 @@ mod hover;
 mod keys;
 mod list;
 mod margin;
-mod pixel_mouse;
 mod quadrants;
 mod readme_hello_world;
 mod tabview;
@@ -79,11 +78,6 @@ pub fn apps() -> &'static [AppSpec] {
             AppSpec {
                 name: "keys",
                 app: keys::app,
-                cfg: Config::default().with_color_mode(ColorMode::Rgb),
-            },
-            AppSpec {
-                name: "pixel_mouse",
-                app: pixel_mouse::app,
                 cfg: Config::default().with_color_mode(ColorMode::Rgb),
             },
             AppSpec {
