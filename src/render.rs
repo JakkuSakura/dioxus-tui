@@ -15,6 +15,7 @@ use termwiz::{
     terminal::{buffered::BufferedTerminal, ScreenSize, Terminal},
 };
 use tokio::select;
+use tokio::time::sleep;
 use termwiz::input::{InputEvent as TzInputEvent, KeyCode, Modifiers as TzModifiers};
 use termwiz::terminal::new_terminal;
 
@@ -335,38 +336,9 @@ async fn run_tui_renderer(
     detected: DetectedCapabilities,
     mut renderer: DioxusRenderer,
     mut raw_event_reciever: UnboundedReceiver<InputEvent>,
-    event_tx: UnboundedSender<InputEvent>,
+    _event_tx: UnboundedSender<InputEvent>,
 ) -> Result<()> {
     let run_terminal = cfg.rendering_mode != RenderingMode::Headless;
-
-    if run_terminal {
-        let tx = event_tx.clone();
-        let tick_rate = cfg.tick_rate;
-        let term_caps = detected.termwiz.clone();
-        std::thread::spawn(move || {
-            let res: Result<()> = (|| {
-                let mut term = new_terminal(term_caps)?;
-                // The main thread owns raw mode; don't fight over tty state from two terminals.
-
-                loop {
-                    match term.poll_input(Some(tick_rate))? {
-                        Some(evt) => {
-                            if tx.unbounded_send(InputEvent::UserInput(evt)).is_err() {
-                                break;
-                            }
-                        }
-                        None => {}
-                    }
-                }
-
-                Ok(())
-            })();
-
-            if let Err(err) = res {
-                tracing::warn!("input thread terminated early: {err}");
-            }
-        });
-    }
 
     let mut terminal = if run_terminal {
         let mut term = new_terminal(detected.termwiz.clone())?;
@@ -380,7 +352,10 @@ async fn run_tui_renderer(
     let capabilities = detected.terminal;
     let mut last_surface: Option<Surface> = None;
     let mut last_area: Option<Rect> = None;
+    #[cfg(feature = "blitz")]
     let mut last_pixel_viewport: Option<Rect> = None;
+    #[cfg(not(feature = "blitz"))]
+    let last_pixel_viewport: Option<Rect> = None;
     let mut last_images: Option<std::collections::VecDeque<PlacedImage>> = None;
 
     renderer.update();
@@ -390,10 +365,10 @@ async fn run_tui_renderer(
     #[cfg(feature = "blitz")]
     let mut pixel_mouse_enabled = false;
 
-    if let Some(term) = &mut terminal {
+    if let Some(_term) = &mut terminal {
         #[cfg(feature = "blitz")]
         if cfg.rendering_mode == RenderingMode::BlitzTerminal {
-            set_sgr_pixel_mouse(term, true)?;
+            set_sgr_pixel_mouse(_term, true)?;
             pixel_mouse_enabled = true;
         }
     }
@@ -412,6 +387,7 @@ async fn run_tui_renderer(
                         input_event = Some(evt);
                     }
                 }
+                _ = sleep(cfg.tick_rate) => {}
             }
         }
 
@@ -419,22 +395,38 @@ async fn run_tui_renderer(
             match evt {
                 InputEvent::Close => break,
                 InputEvent::UserInput(term_evt) => {
-                    let ctrl_c = matches!(&term_evt, TzInputEvent::Key(key) if matches!(key.key, KeyCode::Char('c' | 'C')) && key.modifiers.contains(TzModifiers::CTRL) && cfg.ctrl_c_quit);
-                    if ctrl_c {
+                    if handle_termwiz_input(
+                        term_evt,
+                        &mut renderer,
+                        cfg,
+                        last_area,
+                        last_pixel_viewport,
+                    ) {
                         break;
                     }
-                    if let Some(root) = renderer.root_id() {
-                        let viewport = last_area.unwrap_or_else(|| Rect::new(0, 0, 0, 0));
-                        let pixel_viewport = last_pixel_viewport;
-
-                        for (target, name, data, bubbles) in
-                            event_from_termwiz(term_evt, root, viewport, pixel_viewport)
-                        {
-                            let runtime_event = data.into_platform_event(bubbles);
-                            renderer.handle_event(target, name, runtime_event, bubbles);
-                        }
-                    }
                 }
+            }
+        }
+
+        if let Some(term) = &mut terminal {
+            let mut should_break = false;
+            while let Some(term_evt) = term
+                .terminal()
+                .poll_input(Some(std::time::Duration::ZERO))?
+            {
+                if handle_termwiz_input(
+                    term_evt,
+                    &mut renderer,
+                    cfg,
+                    last_area,
+                    last_pixel_viewport,
+                ) {
+                    should_break = true;
+                    break;
+                }
+            }
+            if should_break {
+                break;
             }
         }
 
@@ -606,6 +598,31 @@ async fn run_tui_renderer(
     }
 
     Ok(())
+}
+
+fn handle_termwiz_input(
+    term_evt: TzInputEvent,
+    renderer: &mut DioxusRenderer,
+    cfg: Config,
+    last_area: Option<Rect>,
+    last_pixel_viewport: Option<Rect>,
+) -> bool {
+    let ctrl_c = matches!(&term_evt, TzInputEvent::Key(key) if matches!(key.key, KeyCode::Char('c' | 'C')) && key.modifiers.contains(TzModifiers::CTRL) && cfg.ctrl_c_quit);
+    if ctrl_c {
+        return true;
+    }
+    if let Some(root) = renderer.root_id() {
+        let viewport = last_area.unwrap_or_else(|| Rect::new(0, 0, 0, 0));
+        let pixel_viewport = last_pixel_viewport;
+
+        for (target, name, data, bubbles) in
+            event_from_termwiz(term_evt, root, viewport, pixel_viewport)
+        {
+            let runtime_event = data.into_platform_event(bubbles);
+            renderer.handle_event(target, name, runtime_event, bubbles);
+        }
+    }
+    false
 }
 
 fn terminal_size<T: Terminal>(term: &mut BufferedTerminal<T>) -> Result<(Rect, CellMetrics)> {
