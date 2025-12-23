@@ -40,6 +40,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "ansi"] }
 thiserror = "1"
 style = { version = "0.8", package = "stylo" }
+smol_str = "0.2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

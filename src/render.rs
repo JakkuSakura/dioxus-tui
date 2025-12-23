@@ -1,20 +1,22 @@
-use std::{any::Any, pin::Pin, rc::Rc};
+use std::{any::Any, rc::Rc};
 
 use crate::error::Result;
-use blitz_dom::Document as _;
+use blitz_dom::{Document as _, Node};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::events::{BlitzKeyEvent, BlitzMouseButtonEvent, KeyState, MouseEventButton, MouseEventButtons, UiEvent};
 use dioxus_core::{ComponentFunction, ElementId, Event, VirtualDom};
 use dioxus_html::PlatformEventData;
+use dioxus_html::input_data::keyboard_types::Location;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
-use futures::{pin_mut, StreamExt};
+use futures::{FutureExt, StreamExt};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use smol_str::SmolStr;
 use termwiz::{
     color::ColorAttribute,
     image::TextureCoordinate,
     surface::{Change, Position},
     terminal::{buffered::BufferedTerminal, ScreenSize, Terminal},
 };
-use tokio::select;
 use tokio::time::sleep;
 use termwiz::input::{InputEvent as TzInputEvent, KeyCode, Modifiers as TzModifiers};
 use termwiz::terminal::new_terminal;
@@ -24,7 +26,7 @@ use crate::capabilities::detect as detect_capabilities;
 use crate::capabilities::termwiz_capabilities;
 use crate::config::{Config, RenderingMode};
 use crate::geometry::Rect;
-use crate::hooks::event_from_termwiz;
+use crate::hooks::{map_code, map_modifiers, raw_input_from_termwiz, TuiInputBus};
 use crate::layout::resolve_document;
 use crate::scene::CellMetrics;
 use crate::surface::Surface;
@@ -76,6 +78,7 @@ pub enum InputEvent {
 
 pub(crate) struct DioxusRenderer {
     pub(crate) doc: DioxusDocument,
+    pub(crate) input_bus: TuiInputBus,
     #[cfg(all(feature = "hot-reload", debug_assertions))]
     pub(crate) hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<dioxus_hot_reload::HotReloadMsg>,
 }
@@ -120,7 +123,10 @@ impl DioxusRenderer {
     ) {
         let (event_tx, event_rx) = channel();
         let ctx = TuiContext::new(event_tx.clone());
-        let vdom = vdom.with_root_context(ctx);
+        let input_bus = TuiInputBus::new();
+        let vdom = vdom
+            .with_root_context(ctx)
+            .with_root_context(input_bus.clone());
 
         let mut doc = Self::build_document(vdom, viewport);
         doc.initial_build();
@@ -128,6 +134,7 @@ impl DioxusRenderer {
         (
             Self {
                 doc,
+                input_bus,
                 #[cfg(all(feature = "hot-reload", debug_assertions))]
                 hot_reload_rx: {
                     let (hot_reload_tx, hot_reload_rx) =
@@ -166,43 +173,6 @@ impl DioxusRenderer {
             .handle_event(event, runtime_event, id);
     }
 
-    fn poll_async(&mut self) -> Pin<Box<dyn futures::Future<Output = ()> + '_>> {
-        #[cfg(all(feature = "hot-reload", debug_assertions))]
-        return Box::pin(async {
-            let hot_reload_wait = self.hot_reload_rx.recv();
-            let mut hot_reload_msg = None;
-            let wait_for_work = self.doc.vdom.wait_for_work();
-            tokio::select! {
-                Some(msg) = hot_reload_wait => {
-                    #[cfg(all(feature = "hot-reload", debug_assertions))]
-                    {
-                        hot_reload_msg = Some(msg);
-                    }
-                    #[cfg(not(all(feature = "hot-reload", debug_assertions)))]
-                    let () = msg;
-                }
-                _ = wait_for_work => {}
-            }
-            if let Some(msg) = hot_reload_msg {
-                match msg {
-                    dioxus_hot_reload::HotReloadMsg::UpdateTemplate(template) => {
-                        self.doc.vdom.replace_template(template);
-                    }
-                    dioxus_hot_reload::HotReloadMsg::Shutdown => {
-                        std::process::exit(0);
-                    }
-                    dioxus_hot_reload::HotReloadMsg::UpdateAsset(_) => {}
-                }
-            }
-        });
-
-        #[cfg(not(all(feature = "hot-reload", debug_assertions)))]
-        Box::pin(self.doc.vdom.wait_for_work())
-    }
-
-    fn root_id(&self) -> Option<ElementId> {
-        Some(ElementId(0))
-    }
 
     pub(crate) fn layout_root(&mut self, area: Rect, metrics: CellMetrics) -> Option<usize> {
         resolve_document(&mut self.doc, area, metrics)
@@ -356,6 +326,10 @@ async fn run_tui_renderer(
     let mut last_pixel_viewport: Option<Rect> = None;
     #[cfg(not(feature = "blitz"))]
     let last_pixel_viewport: Option<Rect> = None;
+    #[cfg(feature = "blitz")]
+    let mut last_pixel_scale: f32 = 1.0;
+    #[cfg(not(feature = "blitz"))]
+    let last_pixel_scale: f32 = 1.0;
     let mut last_images: Option<std::collections::VecDeque<PlacedImage>> = None;
 
     renderer.update();
@@ -374,26 +348,26 @@ async fn run_tui_renderer(
     }
 
     loop {
-        let mut input_event: Option<InputEvent> = None;
-
-        {
-            let wait = renderer.poll_async();
-            pin_mut!(wait);
-
-            select! {
-                _ = wait => {},
-                evt = raw_event_reciever.next() => {
-                    if let Some(evt) = evt {
-                        input_event = Some(evt);
-                    }
+        if let Some(term) = &mut terminal {
+            if let Some(term_evt) = term.terminal().poll_input(Some(cfg.tick_rate))? {
+                if handle_termwiz_input(
+                    term_evt,
+                    &mut renderer,
+                    cfg,
+                    last_area,
+                    last_pixel_viewport,
+                    last_pixel_scale,
+                ) {
+                    break;
                 }
-                _ = sleep(cfg.tick_rate) => {}
             }
+        } else if cfg.tick_rate > std::time::Duration::ZERO {
+            sleep(cfg.tick_rate).await;
         }
 
-        if let Some(evt) = input_event {
+        while let Some(evt) = raw_event_reciever.next().now_or_never().flatten() {
             match evt {
-                InputEvent::Close => break,
+                InputEvent::Close => return Ok(()),
                 InputEvent::UserInput(term_evt) => {
                     if handle_termwiz_input(
                         term_evt,
@@ -401,32 +375,11 @@ async fn run_tui_renderer(
                         cfg,
                         last_area,
                         last_pixel_viewport,
+                        last_pixel_scale,
                     ) {
-                        break;
+                        return Ok(());
                     }
                 }
-            }
-        }
-
-        if let Some(term) = &mut terminal {
-            let mut should_break = false;
-            while let Some(term_evt) = term
-                .terminal()
-                .poll_input(Some(std::time::Duration::ZERO))?
-            {
-                if handle_termwiz_input(
-                    term_evt,
-                    &mut renderer,
-                    cfg,
-                    last_area,
-                    last_pixel_viewport,
-                ) {
-                    should_break = true;
-                    break;
-                }
-            }
-            if should_break {
-                break;
             }
         }
 
@@ -457,6 +410,7 @@ async fn run_tui_renderer(
                 let _cell_w_px = (xpixel as f32) / (cols as f32);
                 let cell_h_px = (ypixel as f32) / (rows as f32);
                 let supersample = cfg.blitz_hidpi_scale.max(1) as f32;
+                last_pixel_scale = supersample;
                 let render_w_px = ((xpixel as f32) * supersample).ceil().max(1.0) as u32;
                 let render_h_px = ((ypixel as f32) * supersample).ceil().max(1.0) as u32;
 
@@ -606,23 +560,153 @@ fn handle_termwiz_input(
     cfg: Config,
     last_area: Option<Rect>,
     last_pixel_viewport: Option<Rect>,
+    pixel_scale: f32,
 ) -> bool {
     let ctrl_c = matches!(&term_evt, TzInputEvent::Key(key) if matches!(key.key, KeyCode::Char('c' | 'C')) && key.modifiers.contains(TzModifiers::CTRL) && cfg.ctrl_c_quit);
     if ctrl_c {
         return true;
     }
-    if let Some(root) = renderer.root_id() {
-        let viewport = last_area.unwrap_or_else(|| Rect::new(0, 0, 0, 0));
-        let pixel_viewport = last_pixel_viewport;
+    let viewport = last_area.unwrap_or_else(|| Rect::new(0, 0, 0, 0));
+    let pixel_viewport = last_pixel_viewport;
+    let raw_inputs = raw_input_from_termwiz(&term_evt, viewport, pixel_viewport);
+    for event in raw_inputs.iter().cloned() {
+        renderer.input_bus.publish(event);
+    }
 
-        for (target, name, data, bubbles) in
-            event_from_termwiz(term_evt, root, viewport, pixel_viewport)
-        {
-            let runtime_event = data.into_platform_event(bubbles);
-            renderer.handle_event(target, name, runtime_event, bubbles);
+    if let Some(ui_event) = ui_event_from_termwiz(&term_evt, pixel_scale) {
+        renderer.doc.handle_ui_event(ui_event);
+        return false;
+    }
+
+    if let Some((x, y)) = mouse_position_from_termwiz(&term_evt, pixel_scale) {
+        if let Some(target) = target_from_hit(&renderer.doc, x, y) {
+            for evt in raw_inputs {
+                if evt.name == "wheel" {
+                    let runtime_event = evt.data.into_platform_event(evt.bubbles);
+                    renderer.handle_event(target, evt.name, runtime_event, evt.bubbles);
+                }
+            }
         }
     }
     false
+}
+
+fn ui_event_from_termwiz(evt: &TzInputEvent, pixel_scale: f32) -> Option<UiEvent> {
+    match evt {
+        TzInputEvent::Key(key) => {
+            let (key_val, code) = map_code(key);
+            let modifiers = map_modifiers(key.modifiers);
+            let text = match key.key {
+                KeyCode::Char(c) => Some(SmolStr::new(c.to_string())),
+                _ => None,
+            };
+            Some(UiEvent::KeyDown(BlitzKeyEvent {
+                key: key_val,
+                code,
+                modifiers,
+                location: Location::Standard,
+                is_auto_repeating: false,
+                is_composing: false,
+                state: KeyState::Pressed,
+                text,
+            }))
+        }
+        TzInputEvent::Mouse(mouse) => ui_event_from_mouse(
+            mouse.x as f32,
+            mouse.y as f32,
+            mouse.mouse_buttons.clone(),
+            mouse.modifiers,
+        ),
+        TzInputEvent::PixelMouse(mouse) => ui_event_from_mouse(
+            mouse.x_pixels as f32 * pixel_scale,
+            mouse.y_pixels as f32 * pixel_scale,
+            mouse.mouse_buttons.clone(),
+            mouse.modifiers,
+        ),
+        _ => None,
+    }
+}
+
+fn ui_event_from_mouse(
+    x: f32,
+    y: f32,
+    buttons: termwiz::input::MouseButtons,
+    mods: termwiz::input::Modifiers,
+) -> Option<UiEvent> {
+    if buttons.contains(termwiz::input::MouseButtons::VERT_WHEEL)
+        || buttons.contains(termwiz::input::MouseButtons::HORZ_WHEEL)
+    {
+        return None;
+    }
+
+    let button = mouse_button_from_termwiz(&buttons);
+    let buttons = mouse_buttons_from_termwiz(&buttons);
+    let modifiers = map_modifiers(mods);
+    let event = BlitzMouseButtonEvent {
+        x,
+        y,
+        button,
+        buttons,
+        mods: modifiers,
+    };
+
+    if buttons == MouseEventButtons::None {
+        Some(UiEvent::MouseMove(event))
+    } else {
+        Some(UiEvent::MouseDown(event))
+    }
+}
+
+fn mouse_button_from_termwiz(buttons: &termwiz::input::MouseButtons) -> MouseEventButton {
+    if buttons.contains(termwiz::input::MouseButtons::LEFT) {
+        MouseEventButton::Main
+    } else if buttons.contains(termwiz::input::MouseButtons::RIGHT) {
+        MouseEventButton::Secondary
+    } else if buttons.contains(termwiz::input::MouseButtons::MIDDLE) {
+        MouseEventButton::Auxiliary
+    } else {
+        MouseEventButton::Main
+    }
+}
+
+fn mouse_buttons_from_termwiz(buttons: &termwiz::input::MouseButtons) -> MouseEventButtons {
+    let mut mapped = MouseEventButtons::None;
+    if buttons.contains(termwiz::input::MouseButtons::LEFT) {
+        mapped.insert(MouseEventButtons::Primary);
+    }
+    if buttons.contains(termwiz::input::MouseButtons::RIGHT) {
+        mapped.insert(MouseEventButtons::Secondary);
+    }
+    if buttons.contains(termwiz::input::MouseButtons::MIDDLE) {
+        mapped.insert(MouseEventButtons::Auxiliary);
+    }
+    mapped
+}
+
+fn mouse_position_from_termwiz(evt: &TzInputEvent, pixel_scale: f32) -> Option<(f32, f32)> {
+    match evt {
+        TzInputEvent::Mouse(mouse) => Some((mouse.x as f32, mouse.y as f32)),
+        TzInputEvent::PixelMouse(mouse) => Some((
+            mouse.x_pixels as f32 * pixel_scale,
+            mouse.y_pixels as f32 * pixel_scale,
+        )),
+        _ => None,
+    }
+}
+
+fn target_from_hit(doc: &DioxusDocument, x: f32, y: f32) -> Option<ElementId> {
+    let hit = doc.inner.hit(x, y)?;
+    let node = doc.inner.get_node(hit.node_id)?;
+    dioxus_id_from_node(node)
+}
+
+fn dioxus_id_from_node(node: &Node) -> Option<ElementId> {
+    node.element_data()?
+        .attrs
+        .iter()
+        .find(|attr| *attr.name.local == *"data-dioxus-id")
+        .and_then(|attr| attr.value.parse::<usize>().ok())
+        .map(ElementId)
 }
 
 fn terminal_size<T: Terminal>(term: &mut BufferedTerminal<T>) -> Result<(Rect, CellMetrics)> {

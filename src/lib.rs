@@ -28,7 +28,10 @@ pub use capabilities::TerminalCapabilities;
 pub use config::{ColorMode, Config, ImageDowngrade, ImagePolicy, PaletteEntry, PaletteRoles, RenderingMode};
 pub use error::Error;
 pub use geometry::{Alignment, Rect};
-pub use hooks::EventData;
+pub use hooks::{
+    EventData, RawInputEvent, TuiInputBus, use_keyboard_input, use_mouse_input, use_raw_input,
+    use_wheel_input,
+};
 pub use render::TuiContext;
 pub use scene::{CellMetrics, InlineImage, TerminalScene};
 pub use surface::Surface;

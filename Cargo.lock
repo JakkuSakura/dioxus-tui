@@ -2146,6 +2146,7 @@ dependencies = [
  "libc",
  "peniko",
  "png",
+ "smol_str",
  "stylo",
  "termwiz",
  "thiserror 1.0.69",

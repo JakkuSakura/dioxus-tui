@@ -1,6 +1,8 @@
 use std::any::Any;
+use std::cell::RefCell;
+use std::rc::{Rc, Weak};
 
-use dioxus_core::ElementId;
+use dioxus::prelude::{use_context, use_hook, use_signal, Signal, WritableExt};
 use dioxus_html::geometry::{ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint};
 use crate::geometry::Rect;
 use dioxus_html::input_data::keyboard_types::{Code, Key, Location, Modifiers};
@@ -17,6 +19,56 @@ pub enum EventData {
     Focus(SerializedFocusData),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct RawInputEvent {
+    pub name: &'static str,
+    pub data: EventData,
+    pub bubbles: bool,
+}
+
+#[derive(Clone, Default)]
+pub struct TuiInputBus {
+    listeners: Rc<RefCell<Vec<Option<Rc<dyn Fn(RawInputEvent)>>>>>,
+}
+
+impl TuiInputBus {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn subscribe(&self, listener: Rc<dyn Fn(RawInputEvent)>) -> InputSubscription {
+        let mut listeners = self.listeners.borrow_mut();
+        let id = listeners.len();
+        listeners.push(Some(listener));
+        InputSubscription {
+            id,
+            listeners: Rc::downgrade(&self.listeners),
+        }
+    }
+
+    pub fn publish(&self, event: RawInputEvent) {
+        for listener in self.listeners.borrow().iter().flatten() {
+            listener(event.clone());
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct InputSubscription {
+    id: usize,
+    listeners: Weak<RefCell<Vec<Option<Rc<dyn Fn(RawInputEvent)>>>>>,
+}
+
+impl Drop for InputSubscription {
+    fn drop(&mut self) {
+        if let Some(listeners) = self.listeners.upgrade() {
+            if let Some(slot) = listeners.borrow_mut().get_mut(self.id) {
+                *slot = None;
+            }
+        }
+    }
+}
+
 impl EventData {
     pub fn into_platform_event(self, _bubbles: bool) -> Box<dyn Any> {
         // Dioxus HTML expects the underlying `Serialized*Data` as the platform event payload.
@@ -30,7 +82,7 @@ impl EventData {
     }
 }
 
-fn map_modifiers(mods: TermModifiers) -> Modifiers {
+pub(crate) fn map_modifiers(mods: TermModifiers) -> Modifiers {
     let mut m = Modifiers::empty();
     if mods.contains(TermModifiers::SHIFT) {
         m.insert(Modifiers::SHIFT);
@@ -47,7 +99,7 @@ fn map_modifiers(mods: TermModifiers) -> Modifiers {
     m
 }
 
-fn map_code(key: &KeyEvent) -> (Key, Code) {
+pub(crate) fn map_code(key: &KeyEvent) -> (Key, Code) {
     match key.key {
         TermKeyCode::Char(c) => (Key::Character(c.to_string()), code_from_char(c)),
         TermKeyCode::Tab => (Key::Tab, Code::Tab),
@@ -143,38 +195,37 @@ fn to_button_set(btn: Option<MouseButton>) -> MouseButtonSet {
     set
 }
 
-pub fn event_from_termwiz(
-    evt: InputEvent,
-    target: ElementId,
+pub fn raw_input_from_termwiz(
+    evt: &InputEvent,
     viewport: Rect,
     pixel_viewport: Option<Rect>,
-) -> Vec<(ElementId, &'static str, EventData, bool)> {
+) -> Vec<RawInputEvent> {
     match evt {
         InputEvent::Key(key) => {
-            let (key_val, code) = map_code(&key);
+            let (key_val, code) = map_code(key);
             let mods = map_modifiers(key.modifiers);
             let data =
                 SerializedKeyboardData::new(key_val, code, Location::Standard, false, mods, false);
-            vec![(target, "keydown", EventData::Keyboard(data), true)]
+            vec![RawInputEvent {
+                name: "keydown",
+                data: EventData::Keyboard(data),
+                bubbles: true,
+            }]
         }
-        InputEvent::Mouse(mouse_evt) => map_mouse(mouse_evt, target, viewport),
+        InputEvent::Mouse(mouse_evt) => map_mouse_input(mouse_evt, viewport),
         InputEvent::PixelMouse(mouse_evt) => {
             let viewport = pixel_viewport.unwrap_or(viewport);
-            map_pixel_mouse(mouse_evt, target, viewport)
+            map_pixel_mouse_input(mouse_evt, viewport)
         }
         _ => Vec::new(),
     }
 }
 
-fn map_mouse(
-    evt: MouseEvent,
-    target: ElementId,
-    viewport: Rect,
-) -> Vec<(ElementId, &'static str, EventData, bool)> {
+fn map_mouse_input(evt: &MouseEvent, viewport: Rect) -> Vec<RawInputEvent> {
     if evt.mouse_buttons.contains(MouseButtons::VERT_WHEEL)
         || evt.mouse_buttons.contains(MouseButtons::HORZ_WHEEL)
     {
-        let (delta_x, delta_y) = wheel_delta(evt.mouse_buttons);
+        let (delta_x, delta_y) = wheel_delta(evt.mouse_buttons.clone());
         let (_, _, coords) = build_coords(evt.x, evt.y, viewport);
         let modifiers = map_modifiers(evt.modifiers);
         let point = SerializedPointInteraction::new(None, MouseButtonSet::empty(), coords, modifiers);
@@ -185,10 +236,14 @@ fn map_mouse(
             delta_y,
             delta_z: 0.0,
         };
-        return vec![(target, "wheel", EventData::Wheel(data), true)];
+        return vec![RawInputEvent {
+            name: "wheel",
+            data: EventData::Wheel(data),
+            bubbles: true,
+        }];
     }
 
-    let btn = button_from_mask(evt.mouse_buttons);
+    let btn = button_from_mask(evt.mouse_buttons.clone());
     let (pressed, button) = match btn {
         Some(b) => (true, Some(b)),
         None => (false, None),
@@ -199,24 +254,32 @@ fn map_mouse(
     let data = SerializedMouseData::new(button, to_button_set(button), coords, modifiers);
 
     if pressed {
-        vec![(target, "mousedown", EventData::Mouse(data), true)]
+        vec![RawInputEvent {
+            name: "mousedown",
+            data: EventData::Mouse(data),
+            bubbles: true,
+        }]
     } else {
         vec![
-            (target, "mousemove", EventData::Mouse(data.clone()), true),
-            (target, "mouseenter", EventData::Mouse(data), true),
+            RawInputEvent {
+                name: "mousemove",
+                data: EventData::Mouse(data.clone()),
+                bubbles: true,
+            },
+            RawInputEvent {
+                name: "mouseenter",
+                data: EventData::Mouse(data),
+                bubbles: true,
+            },
         ]
     }
 }
 
-fn map_pixel_mouse(
-    evt: termwiz::input::PixelMouseEvent,
-    target: ElementId,
-    viewport: Rect,
-) -> Vec<(ElementId, &'static str, EventData, bool)> {
+fn map_pixel_mouse_input(evt: &termwiz::input::PixelMouseEvent, viewport: Rect) -> Vec<RawInputEvent> {
     if evt.mouse_buttons.contains(MouseButtons::VERT_WHEEL)
         || evt.mouse_buttons.contains(MouseButtons::HORZ_WHEEL)
     {
-        let (delta_x, delta_y) = wheel_delta(evt.mouse_buttons);
+        let (delta_x, delta_y) = wheel_delta(evt.mouse_buttons.clone());
         let (_, _, coords) = build_coords(evt.x_pixels, evt.y_pixels, viewport);
         let modifiers = map_modifiers(evt.modifiers);
         let point = SerializedPointInteraction::new(None, MouseButtonSet::empty(), coords, modifiers);
@@ -227,10 +290,14 @@ fn map_pixel_mouse(
             delta_y,
             delta_z: 0.0,
         };
-        return vec![(target, "wheel", EventData::Wheel(data), true)];
+        return vec![RawInputEvent {
+            name: "wheel",
+            data: EventData::Wheel(data),
+            bubbles: true,
+        }];
     }
 
-    let btn = button_from_mask(evt.mouse_buttons);
+    let btn = button_from_mask(evt.mouse_buttons.clone());
     let (pressed, button) = match btn {
         Some(b) => (true, Some(b)),
         None => (false, None),
@@ -241,13 +308,79 @@ fn map_pixel_mouse(
     let data = SerializedMouseData::new(button, to_button_set(button), coords, modifiers);
 
     if pressed {
-        vec![(target, "mousedown", EventData::Mouse(data), true)]
+        vec![RawInputEvent {
+            name: "mousedown",
+            data: EventData::Mouse(data),
+            bubbles: true,
+        }]
     } else {
         vec![
-            (target, "mousemove", EventData::Mouse(data.clone()), true),
-            (target, "mouseenter", EventData::Mouse(data), true),
+            RawInputEvent {
+                name: "mousemove",
+                data: EventData::Mouse(data.clone()),
+                bubbles: true,
+            },
+            RawInputEvent {
+                name: "mouseenter",
+                data: EventData::Mouse(data),
+                bubbles: true,
+            },
         ]
     }
+}
+
+pub fn use_raw_input() -> Signal<Option<RawInputEvent>> {
+    let bus = use_context::<TuiInputBus>();
+    let signal = use_signal(|| None);
+    let _subscription = use_hook(|| {
+        let signal = signal.clone();
+        bus.subscribe(Rc::new(move |event| {
+            *signal.write_unchecked() = Some(event);
+        }))
+    });
+    signal
+}
+
+pub fn use_keyboard_input() -> Signal<Option<SerializedKeyboardData>> {
+    let bus = use_context::<TuiInputBus>();
+    let signal = use_signal(|| None);
+    let _subscription = use_hook(|| {
+        let signal = signal.clone();
+        bus.subscribe(Rc::new(move |event| {
+            if let EventData::Keyboard(data) = event.data {
+                *signal.write_unchecked() = Some(data);
+            }
+        }))
+    });
+    signal
+}
+
+pub fn use_mouse_input() -> Signal<Option<SerializedMouseData>> {
+    let bus = use_context::<TuiInputBus>();
+    let signal = use_signal(|| None);
+    let _subscription = use_hook(|| {
+        let signal = signal.clone();
+        bus.subscribe(Rc::new(move |event| {
+            if let EventData::Mouse(data) = event.data {
+                *signal.write_unchecked() = Some(data);
+            }
+        }))
+    });
+    signal
+}
+
+pub fn use_wheel_input() -> Signal<Option<SerializedWheelData>> {
+    let bus = use_context::<TuiInputBus>();
+    let signal = use_signal(|| None);
+    let _subscription = use_hook(|| {
+        let signal = signal.clone();
+        bus.subscribe(Rc::new(move |event| {
+            if let EventData::Wheel(data) = event.data {
+                *signal.write_unchecked() = Some(data);
+            }
+        }))
+    });
+    signal
 }
 
 fn wheel_delta(buttons: MouseButtons) -> (f64, f64) {
