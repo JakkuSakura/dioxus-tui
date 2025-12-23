@@ -6,6 +6,7 @@ mod all_terminal_events;
 mod border;
 mod frame;
 mod buttons;
+mod buttons_hooks;
 mod color_test;
 mod dashboard;
 mod dioxus_basic;
@@ -63,6 +64,11 @@ pub fn apps() -> &'static [AppSpec] {
             AppSpec {
                 name: "buttons",
                 app: buttons::app,
+                cfg: Config::default().with_color_mode(ColorMode::Rgb),
+            },
+            AppSpec {
+                name: "buttons_2",
+                app: buttons_hooks::app,
                 cfg: Config::default().with_color_mode(ColorMode::Rgb),
             },
             AppSpec {

@@ -26,7 +26,7 @@ use crate::capabilities::detect as detect_capabilities;
 use crate::capabilities::termwiz_capabilities;
 use crate::config::{Config, RenderingMode};
 use crate::geometry::Rect;
-use crate::hooks::{map_code, map_modifiers, raw_input_from_termwiz, TuiInputBus};
+use crate::hooks::{map_code, map_modifiers, raw_input_from_termwiz, TuiInputBus, ViewportBus};
 use crate::layout::resolve_document;
 use crate::scene::CellMetrics;
 use crate::surface::Surface;
@@ -79,6 +79,7 @@ pub enum InputEvent {
 pub(crate) struct DioxusRenderer {
     pub(crate) doc: DioxusDocument,
     pub(crate) input_bus: TuiInputBus,
+    pub(crate) viewport_bus: ViewportBus,
     #[cfg(all(feature = "hot-reload", debug_assertions))]
     pub(crate) hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<dioxus_hot_reload::HotReloadMsg>,
 }
@@ -124,9 +125,11 @@ impl DioxusRenderer {
         let (event_tx, event_rx) = channel();
         let ctx = TuiContext::new(event_tx.clone());
         let input_bus = TuiInputBus::new();
+        let viewport_bus = ViewportBus::new();
         let vdom = vdom
             .with_root_context(ctx)
-            .with_root_context(input_bus.clone());
+            .with_root_context(input_bus.clone())
+            .with_root_context(viewport_bus.clone());
 
         let mut doc = Self::build_document(vdom, viewport);
         doc.initial_build();
@@ -135,6 +138,7 @@ impl DioxusRenderer {
             Self {
                 doc,
                 input_bus,
+                viewport_bus,
                 #[cfg(all(feature = "hot-reload", debug_assertions))]
                 hot_reload_rx: {
                     let (hot_reload_tx, hot_reload_rx) =
@@ -330,6 +334,11 @@ async fn run_tui_renderer(
     let mut last_pixel_scale: f32 = 1.0;
     #[cfg(not(feature = "blitz"))]
     let last_pixel_scale: f32 = 1.0;
+    let mut last_cell_metrics = CellMetrics {
+        cell_w_px: 8.0,
+        cell_h_px: 16.0,
+    };
+    let mut input_state = InputState::default();
     let mut last_images: Option<std::collections::VecDeque<PlacedImage>> = None;
 
     renderer.update();
@@ -357,6 +366,8 @@ async fn run_tui_renderer(
                     last_area,
                     last_pixel_viewport,
                     last_pixel_scale,
+                    last_cell_metrics,
+                    &mut input_state,
                 ) {
                     break;
                 }
@@ -376,6 +387,8 @@ async fn run_tui_renderer(
                         last_area,
                         last_pixel_viewport,
                         last_pixel_scale,
+                        last_cell_metrics,
+                        &mut input_state,
                     ) {
                         return Ok(());
                     }
@@ -387,6 +400,8 @@ async fn run_tui_renderer(
 
         if let Some(term) = &mut terminal {
             let (area, metrics) = terminal_size(term)?;
+            last_cell_metrics = metrics;
+            renderer.viewport_bus.publish(area);
 
             #[cfg(feature = "blitz")]
             if cfg.rendering_mode == RenderingMode::BlitzTerminal {
@@ -554,6 +569,12 @@ async fn run_tui_renderer(
     Ok(())
 }
 
+#[derive(Default)]
+struct InputState {
+    last_buttons: MouseEventButtons,
+    last_button: MouseEventButton,
+}
+
 fn handle_termwiz_input(
     term_evt: TzInputEvent,
     renderer: &mut DioxusRenderer,
@@ -561,6 +582,8 @@ fn handle_termwiz_input(
     last_area: Option<Rect>,
     last_pixel_viewport: Option<Rect>,
     pixel_scale: f32,
+    cell_metrics: CellMetrics,
+    input_state: &mut InputState,
 ) -> bool {
     let ctrl_c = matches!(&term_evt, TzInputEvent::Key(key) if matches!(key.key, KeyCode::Char('c' | 'C')) && key.modifiers.contains(TzModifiers::CTRL) && cfg.ctrl_c_quit);
     if ctrl_c {
@@ -573,12 +596,12 @@ fn handle_termwiz_input(
         renderer.input_bus.publish(event);
     }
 
-    if let Some(ui_event) = ui_event_from_termwiz(&term_evt, pixel_scale) {
+    if let Some(ui_event) = ui_event_from_termwiz(&term_evt, pixel_scale, cell_metrics, input_state) {
         renderer.doc.handle_ui_event(ui_event);
         return false;
     }
 
-    if let Some((x, y)) = mouse_position_from_termwiz(&term_evt, pixel_scale) {
+    if let Some((x, y)) = mouse_position_from_termwiz(&term_evt, pixel_scale, cell_metrics) {
         if let Some(target) = target_from_hit(&renderer.doc, x, y) {
             for evt in raw_inputs {
                 if evt.name == "wheel" {
@@ -591,7 +614,12 @@ fn handle_termwiz_input(
     false
 }
 
-fn ui_event_from_termwiz(evt: &TzInputEvent, pixel_scale: f32) -> Option<UiEvent> {
+fn ui_event_from_termwiz(
+    evt: &TzInputEvent,
+    pixel_scale: f32,
+    cell_metrics: CellMetrics,
+    input_state: &mut InputState,
+) -> Option<UiEvent> {
     match evt {
         TzInputEvent::Key(key) => {
             let (key_val, code) = map_code(key);
@@ -612,16 +640,18 @@ fn ui_event_from_termwiz(evt: &TzInputEvent, pixel_scale: f32) -> Option<UiEvent
             }))
         }
         TzInputEvent::Mouse(mouse) => ui_event_from_mouse(
-            mouse.x as f32,
-            mouse.y as f32,
+            mouse.x as f32 * cell_metrics.cell_w_px,
+            mouse.y as f32 * cell_metrics.cell_h_px,
             mouse.mouse_buttons.clone(),
             mouse.modifiers,
+            input_state,
         ),
         TzInputEvent::PixelMouse(mouse) => ui_event_from_mouse(
-            mouse.x_pixels as f32 * pixel_scale,
-            mouse.y_pixels as f32 * pixel_scale,
+            scale_pixels(mouse.x_pixels, pixel_scale),
+            scale_pixels(mouse.y_pixels, pixel_scale),
             mouse.mouse_buttons.clone(),
             mouse.modifiers,
+            input_state,
         ),
         _ => None,
     }
@@ -632,6 +662,7 @@ fn ui_event_from_mouse(
     y: f32,
     buttons: termwiz::input::MouseButtons,
     mods: termwiz::input::Modifiers,
+    input_state: &mut InputState,
 ) -> Option<UiEvent> {
     if buttons.contains(termwiz::input::MouseButtons::VERT_WHEEL)
         || buttons.contains(termwiz::input::MouseButtons::HORZ_WHEEL)
@@ -642,7 +673,8 @@ fn ui_event_from_mouse(
     let button = mouse_button_from_termwiz(&buttons);
     let buttons = mouse_buttons_from_termwiz(&buttons);
     let modifiers = map_modifiers(mods);
-    let event = BlitzMouseButtonEvent {
+
+    let mut event = BlitzMouseButtonEvent {
         x,
         y,
         button,
@@ -651,10 +683,22 @@ fn ui_event_from_mouse(
     };
 
     if buttons == MouseEventButtons::None {
-        Some(UiEvent::MouseMove(event))
-    } else {
-        Some(UiEvent::MouseDown(event))
+        if input_state.last_buttons != MouseEventButtons::None {
+            event.button = input_state.last_button;
+            input_state.last_buttons = MouseEventButtons::None;
+            return Some(UiEvent::MouseUp(event));
+        }
+        return Some(UiEvent::MouseMove(event));
     }
+
+    if input_state.last_buttons == MouseEventButtons::None {
+        input_state.last_button = button;
+        input_state.last_buttons = buttons;
+        return Some(UiEvent::MouseDown(event));
+    }
+
+    input_state.last_buttons = buttons;
+    Some(UiEvent::MouseMove(event))
 }
 
 fn mouse_button_from_termwiz(buttons: &termwiz::input::MouseButtons) -> MouseEventButton {
@@ -683,15 +727,27 @@ fn mouse_buttons_from_termwiz(buttons: &termwiz::input::MouseButtons) -> MouseEv
     mapped
 }
 
-fn mouse_position_from_termwiz(evt: &TzInputEvent, pixel_scale: f32) -> Option<(f32, f32)> {
+fn mouse_position_from_termwiz(
+    evt: &TzInputEvent,
+    pixel_scale: f32,
+    cell_metrics: CellMetrics,
+) -> Option<(f32, f32)> {
     match evt {
-        TzInputEvent::Mouse(mouse) => Some((mouse.x as f32, mouse.y as f32)),
+        TzInputEvent::Mouse(mouse) => Some((
+            mouse.x as f32 * cell_metrics.cell_w_px,
+            mouse.y as f32 * cell_metrics.cell_h_px,
+        )),
         TzInputEvent::PixelMouse(mouse) => Some((
-            mouse.x_pixels as f32 * pixel_scale,
-            mouse.y_pixels as f32 * pixel_scale,
+            scale_pixels(mouse.x_pixels, pixel_scale),
+            scale_pixels(mouse.y_pixels, pixel_scale),
         )),
         _ => None,
     }
+}
+
+fn scale_pixels(value: u16, pixel_scale: f32) -> f32 {
+    let scale = if pixel_scale > 0.0 { pixel_scale } else { 1.0 };
+    (value as f32) / scale
 }
 
 fn target_from_hit(doc: &DioxusDocument, x: f32, y: f32) -> Option<ElementId> {

@@ -31,6 +31,7 @@ import_example!(widgets_example, "/examples/catalog/widgets.rs");
 import_example!(list_example, "/examples/catalog/list.rs");
 import_example!(border_example, "/examples/catalog/border.rs");
 import_example!(buttons_example, "/examples/catalog/buttons.rs");
+import_example!(buttons_hooks_example, "/examples/catalog/buttons_hooks.rs");
 import_example!(color_test_example, "/examples/catalog/color_test.rs");
 import_example!(hover_example, "/examples/catalog/hover.rs");
 import_example!(flex_example, "/examples/catalog/flex.rs");
@@ -69,6 +70,7 @@ fn all_examples_render_non_empty() {
         ("list", list_example::make_app, None),
         ("border", border_example::make_app, None),
         ("buttons", buttons_example::make_app, None),
+        ("buttons_2", buttons_hooks_example::make_app, None),
         ("color_test", color_test_example::make_app, None),
         ("hover", hover_example::make_app, None),
         ("flex", flex_example::make_app, None),

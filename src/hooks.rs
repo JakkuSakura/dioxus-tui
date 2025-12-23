@@ -53,6 +53,33 @@ impl TuiInputBus {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct ViewportBus {
+    listeners: Rc<RefCell<Vec<Option<Rc<dyn Fn(Rect)>>>>>,
+}
+
+impl ViewportBus {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn subscribe(&self, listener: Rc<dyn Fn(Rect)>) -> ViewportSubscription {
+        let mut listeners = self.listeners.borrow_mut();
+        let id = listeners.len();
+        listeners.push(Some(listener));
+        Rc::new(ViewportSubscriptionInner {
+            id,
+            listeners: Rc::downgrade(&self.listeners),
+        })
+    }
+
+    pub fn publish(&self, rect: Rect) {
+        for listener in self.listeners.borrow().iter().flatten() {
+            listener(rect);
+        }
+    }
+}
+
 pub(crate) struct InputSubscriptionInner {
     id: usize,
     listeners: Weak<RefCell<Vec<Option<Rc<dyn Fn(RawInputEvent)>>>>>,
@@ -68,7 +95,23 @@ impl Drop for InputSubscriptionInner {
     }
 }
 
+pub(crate) struct ViewportSubscriptionInner {
+    id: usize,
+    listeners: Weak<RefCell<Vec<Option<Rc<dyn Fn(Rect)>>>>>,
+}
+
+impl Drop for ViewportSubscriptionInner {
+    fn drop(&mut self) {
+        if let Some(listeners) = self.listeners.upgrade() {
+            if let Some(slot) = listeners.borrow_mut().get_mut(self.id) {
+                *slot = None;
+            }
+        }
+    }
+}
+
 pub type InputSubscription = Rc<InputSubscriptionInner>;
+pub type ViewportSubscription = Rc<ViewportSubscriptionInner>;
 
 impl EventData {
     pub fn into_platform_event(self, _bubbles: bool) -> Box<dyn Any> {
@@ -379,6 +422,18 @@ pub fn use_wheel_input() -> Signal<Option<SerializedWheelData>> {
             if let EventData::Wheel(data) = event.data {
                 *signal.write_unchecked() = Some(data);
             }
+        }))
+    });
+    signal
+}
+
+pub fn use_viewport() -> Signal<Rect> {
+    let bus = use_context::<ViewportBus>();
+    let signal = use_signal(|| Rect::new(0, 0, 0, 0));
+    let _subscription = use_hook(|| {
+        let signal = signal.clone();
+        bus.subscribe(Rc::new(move |rect| {
+            *signal.write_unchecked() = rect;
         }))
     });
     signal
