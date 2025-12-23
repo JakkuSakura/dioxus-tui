@@ -2,16 +2,23 @@ use anyhow::Result;
 use dioxus_tui::capabilities::detect;
 use std::io::{self, Write};
 use termwiz::input::{InputEvent, KeyCode, Modifiers};
+use termwiz::surface::Change;
 use termwiz::terminal::{new_terminal, Terminal as _};
 
 struct TerminalGuard<T: termwiz::terminal::Terminal> {
     term: T,
+    pixel_mouse_enabled: bool,
 }
 
 impl<T: termwiz::terminal::Terminal> TerminalGuard<T> {
     fn new(mut term: T) -> Result<Self> {
         term.set_raw_mode()?;
-        Ok(Self { term })
+        term.render(&[Change::Text("\x1b[?1016h".to_string())])?;
+        term.flush()?;
+        Ok(Self {
+            term,
+            pixel_mouse_enabled: true,
+        })
     }
 
     fn term_mut(&mut self) -> &mut T {
@@ -21,6 +28,12 @@ impl<T: termwiz::terminal::Terminal> TerminalGuard<T> {
 
 impl<T: termwiz::terminal::Terminal> Drop for TerminalGuard<T> {
     fn drop(&mut self) {
+        if self.pixel_mouse_enabled {
+            let _ = self
+                .term
+                .render(&[Change::Text("\x1b[?1016l".to_string())]);
+            let _ = self.term.flush();
+        }
         let _ = self.term.set_cooked_mode();
     }
 }
