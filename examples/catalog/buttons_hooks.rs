@@ -9,9 +9,9 @@ use crate::catalog::ExampleFrame;
 const GRID: usize = 8;
 
 #[component]
-fn GridCell(x: usize, y: usize, toggled: bool, hovered: bool) -> Element {
+fn GridCell(x: usize, y: usize, toggled: bool) -> Element {
     let hue = ((x + 1) * (y + 1)) as u32 % 255;
-    let saturation = if toggled { 50 } else { 25 } + if hovered { 50 } else { 25 };
+    let saturation = if toggled { 75 } else { 50 };
     let brightness = saturation / 2;
     let color = format!("hsl({hue}, {saturation}%, {brightness}%)");
 
@@ -34,8 +34,8 @@ pub fn app() -> Element {
     let viewport = use_viewport();
 
     let mut selected = use_signal(|| None::<(usize, usize)>);
-    let mut hovered = use_signal(|| None::<(usize, usize)>);
     let mut toggles = use_signal(|| vec![vec![false; GRID]; GRID]);
+    let mut mouse_down = use_signal(|| false);
 
     use_effect(move || {
         let Some(event) = raw_input.read().clone() else {
@@ -44,6 +44,10 @@ pub fn app() -> Element {
         let EventData::Mouse(mouse) = event.data else {
             return;
         };
+        if event.name != "mousedown" {
+            mouse_down.set(false);
+            return;
+        }
         let view = viewport.read().clone();
         if view.width == 0 || view.height == 0 {
             return;
@@ -57,9 +61,8 @@ pub fn app() -> Element {
             return;
         }
         let idx = (x as usize, y as usize);
-        hovered.set(Some(idx));
-
-        if event.name == "mousedown" {
+        if !mouse_down() {
+            mouse_down.set(true);
             selected.set(Some(idx));
             let mut data = toggles.write();
             data[idx.1][idx.0] = !data[idx.1][idx.0];
@@ -104,7 +107,6 @@ pub fn app() -> Element {
                                 x,
                                 y,
                                 toggled: toggles.read()[y][x],
-                                hovered: hovered().is_some_and(|(hx, hy)| hx == x && hy == y),
                             }
                         }
                     }

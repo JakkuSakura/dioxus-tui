@@ -26,6 +26,7 @@ macro_rules! import_example {
 }
 
 import_example!(dashboard_example, "/examples/catalog/dashboard.rs");
+import_example!(btop_example, "/examples/catalog/btop.rs");
 import_example!(text_example, "/examples/catalog/text.rs");
 import_example!(widgets_example, "/examples/catalog/widgets.rs");
 import_example!(list_example, "/examples/catalog/list.rs");
@@ -65,6 +66,7 @@ fn render_app(app: fn() -> Element, width: u16, height: u16, ctx: Option<usize>)
 fn all_examples_render_non_empty() {
     let examples: &[(&str, fn() -> Element, Option<usize>)] = &[
         ("dashboard", dashboard_example::make_app, None),
+        ("btop", btop_example::make_app, None),
         ("text", text_example::make_app, None),
         ("widgets", widgets_example::make_app, None),
         ("list", list_example::make_app, None),

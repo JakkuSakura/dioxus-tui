@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
+use dioxus::prelude::HasKeyboardData;
 use dioxus_html::input_data::keyboard_types::Code;
-use dioxus_tui::TuiContext;
+use dioxus_tui::{TuiContext, use_keyboard_input};
 
 #[component]
 pub fn ExampleFrame(
@@ -9,9 +10,22 @@ pub fn ExampleFrame(
     children: Element,
 ) -> Element {
     let tui: TuiContext = consume_context();
+    let tui_effect = tui.clone();
 
     let mut focused = use_signal(|| false);
     let mut last_key = use_signal(|| String::new());
+    let key_input = use_keyboard_input();
+
+    use_effect(move || {
+        let Some(data) = key_input.read().clone() else {
+            return;
+        };
+        last_key.set(format!("{:?}", data.code()));
+        match data.code() {
+            Code::KeyQ | Code::Escape => tui_effect.quit(),
+            _ => {}
+        }
+    });
 
     rsx! {
         div {
@@ -60,4 +74,3 @@ pub fn ExampleFrame(
         }
     }
 }
-

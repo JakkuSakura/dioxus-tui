@@ -4,7 +4,7 @@ use crate::error::Result;
 use blitz_dom::{Document as _, Node};
 use blitz_traits::shell::{ColorScheme, Viewport};
 use blitz_traits::events::{BlitzKeyEvent, BlitzMouseButtonEvent, KeyState, MouseEventButton, MouseEventButtons, UiEvent};
-use dioxus_core::{ComponentFunction, ElementId, Event, VirtualDom};
+use dioxus_core::{ComponentFunction, ElementId, Event, Runtime, RuntimeGuard, VirtualDom};
 use dioxus_html::PlatformEventData;
 use dioxus_html::input_data::keyboard_types::Location;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
@@ -80,6 +80,7 @@ pub(crate) struct DioxusRenderer {
     pub(crate) doc: DioxusDocument,
     pub(crate) input_bus: TuiInputBus,
     pub(crate) viewport_bus: ViewportBus,
+    pub(crate) runtime: std::rc::Rc<Runtime>,
     #[cfg(all(feature = "hot-reload", debug_assertions))]
     pub(crate) hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<dioxus_hot_reload::HotReloadMsg>,
 }
@@ -133,12 +134,14 @@ impl DioxusRenderer {
 
         let mut doc = Self::build_document(vdom, viewport);
         doc.initial_build();
+        let runtime = doc.vdom.runtime();
 
         (
             Self {
                 doc,
                 input_bus,
                 viewport_bus,
+                runtime,
                 #[cfg(all(feature = "hot-reload", debug_assertions))]
                 hot_reload_rx: {
                     let (hot_reload_tx, hot_reload_rx) =
@@ -592,13 +595,30 @@ fn handle_termwiz_input(
     let viewport = last_area.unwrap_or_else(|| Rect::new(0, 0, 0, 0));
     let pixel_viewport = last_pixel_viewport;
     let raw_inputs = raw_input_from_termwiz(&term_evt, viewport, pixel_viewport);
-    for event in raw_inputs.iter().cloned() {
-        renderer.input_bus.publish(event);
+    {
+        let _guard = RuntimeGuard::new(renderer.runtime.clone());
+        for event in raw_inputs.iter().cloned() {
+            renderer.input_bus.publish(event);
+        }
+    }
+
+    let mut focus_hit: Option<(f32, f32)> = None;
+    if mouse_press_from_termwiz(&term_evt) {
+        focus_hit = mouse_position_from_termwiz(&term_evt, pixel_scale, cell_metrics);
     }
 
     if let Some(ui_event) = ui_event_from_termwiz(&term_evt, pixel_scale, cell_metrics, input_state) {
         renderer.doc.handle_ui_event(ui_event);
-        return false;
+    }
+
+    if let Some((x, y)) = focus_hit {
+        if let Some(hit) = renderer.doc.inner.hit(x, y) {
+            if let Some(node) = renderer.doc.inner.get_node(hit.node_id) {
+                if node.is_focussable() {
+                    let _ = renderer.doc.inner.set_focus_to(hit.node_id);
+                }
+            }
+        }
     }
 
     if let Some((x, y)) = mouse_position_from_termwiz(&term_evt, pixel_scale, cell_metrics) {
@@ -743,6 +763,24 @@ fn mouse_position_from_termwiz(
         )),
         _ => None,
     }
+}
+
+fn mouse_press_from_termwiz(evt: &TzInputEvent) -> bool {
+    let buttons = match evt {
+        TzInputEvent::Mouse(mouse) => &mouse.mouse_buttons,
+        TzInputEvent::PixelMouse(mouse) => &mouse.mouse_buttons,
+        _ => return false,
+    };
+
+    if buttons.contains(termwiz::input::MouseButtons::VERT_WHEEL)
+        || buttons.contains(termwiz::input::MouseButtons::HORZ_WHEEL)
+    {
+        return false;
+    }
+
+    buttons.contains(termwiz::input::MouseButtons::LEFT)
+        || buttons.contains(termwiz::input::MouseButtons::RIGHT)
+        || buttons.contains(termwiz::input::MouseButtons::MIDDLE)
 }
 
 fn scale_pixels(value: u16, pixel_scale: f32) -> f32 {
