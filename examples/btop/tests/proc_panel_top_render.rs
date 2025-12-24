@@ -14,7 +14,7 @@ fn proc_panel_top_renders_snapshot() {
         .to_string();
 
     let block = proc_panel_top::render(&MOCK_DATA.proc);
-    let actual = block.lines.join("\n");
+    let actual = block.lines().join("\n");
 
     assert_eq!(actual, snapshot, "proc panel top snapshot mismatch");
 }

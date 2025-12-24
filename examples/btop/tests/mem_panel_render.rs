@@ -14,7 +14,7 @@ fn mem_panel_renders_snapshot() {
         .to_string();
 
     let block = mem_panel::render(&MOCK_DATA.mem);
-    let actual = block.lines.join("\n");
+    let actual = block.lines().join("\n");
 
     assert_eq!(actual, snapshot, "mem panel snapshot mismatch");
 }

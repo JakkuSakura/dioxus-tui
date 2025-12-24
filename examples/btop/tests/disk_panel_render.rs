@@ -14,7 +14,7 @@ fn disk_panel_renders_snapshot() {
         .to_string();
 
     let block = disk_panel::render(&MOCK_DATA.disk);
-    let actual = block.lines.join("\n");
+    let actual = block.lines().join("\n");
 
     assert_eq!(actual, snapshot, "disk panel snapshot mismatch");
 }

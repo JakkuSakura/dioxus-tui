@@ -14,7 +14,7 @@ fn net_panel_renders_snapshot() {
         .to_string();
 
     let block = net_panel::render(&MOCK_DATA.net);
-    let actual = block.lines.join("\n");
+    let actual = block.lines().join("\n");
 
     assert_eq!(actual, snapshot, "net panel snapshot mismatch");
 }

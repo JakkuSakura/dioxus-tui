@@ -247,7 +247,11 @@ fn paint_inline_text(
 ) {
     let mut cursor_x = bounds.x;
     let mut cursor_y = bounds.y;
-    let end_y = bounds.y.saturating_add(bounds.height);
+    let end_y = if inherited.pre_full_width {
+        surface.height()
+    } else {
+        bounds.y.saturating_add(bounds.height)
+    };
 
     for child_id in node.children.iter().copied() {
         if cursor_y >= end_y {

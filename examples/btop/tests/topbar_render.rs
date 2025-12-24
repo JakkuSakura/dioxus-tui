@@ -14,7 +14,7 @@ fn topbar_renders_snapshot() {
         .to_string();
 
     let block = topbar::render(&MOCK_DATA.topbar);
-    let actual = block.lines.join("\n");
+    let actual = block.lines().join("\n");
 
     assert_eq!(actual, snapshot, "topbar snapshot mismatch");
 }

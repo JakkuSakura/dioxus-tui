@@ -14,7 +14,7 @@ fn cpu_panel_renders_snapshot() {
         .to_string();
 
     let block = cpu_panel::render(&MOCK_DATA.cpu);
-    let actual = block.lines.join("\n");
+    let actual = block.lines().join("\n");
 
     assert_eq!(actual, snapshot, "cpu panel snapshot mismatch");
 }

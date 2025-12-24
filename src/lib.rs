@@ -3,6 +3,7 @@
 #![doc(html_favicon_url = "https://avatars.githubusercontent.com/u/79236386")]
 
 pub mod capabilities;
+pub mod builders;
 mod blitz;
 mod cell_render;
 mod config;
