@@ -1,7 +1,7 @@
 use dioxus_tui::{ColorMode, Config, RenderRequest};
-use dioxus_tui_btop::btop;
+use dioxus_tui_btop::app;
 
 fn main() {
     let cfg = Config::default().with_color_mode(ColorMode::Rgb);
-    dioxus_tui::render(RenderRequest::new(btop::app).with_config(cfg)).unwrap();
+    dioxus_tui::render(RenderRequest::new(app::app).with_config(cfg)).unwrap();
 }

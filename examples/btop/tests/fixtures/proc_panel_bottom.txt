@@ -1,0 +1,8 @@
+│    6746 pve-lxc- /usr/lib/x86_64-linux root   3.0M ⣀⣀⣀⣀⣀  0.0  │
+│    6766 zed      /usr/sbin/zed -F      root   3.1M ⣀⣀⣀⣀⣀  0.0  │
+│    4026 dmeventd /usr/sbin/dmeventd -f root    24M ⣀⣀⣀⣀⣀  0.0  │
+│    6866 lxcfs    /usr/bin/lxcfs /var/l root     0B ⣀⣀⣀⣀⣀  0.0  │
+│ 3081602 pvefw-lo /usr/sbin/pvefw-logge root     0B ⣀⣀⣀⣀⣀  0.0  │
+│ 3549518 btop     btop                  jakku  6.0M ⣀⣀⣀⣀⣀  0.0  │
+│    7818 pveproxy pveproxy              www-+  168M ⣀⣀⣀⣀⣀  0.0 ↓│
+╰┘↑ select ↓└┘info ↵└┘terminate└┘kill└┘signals└──────────┘9/4384└╯

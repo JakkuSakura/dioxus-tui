@@ -19,6 +19,7 @@ mod quadrants;
 mod readme_hello_world;
 mod tabview;
 mod task;
+mod textarea;
 mod text;
 mod widgets;
 
@@ -109,6 +110,11 @@ pub fn apps() -> &'static [AppSpec] {
             AppSpec {
                 name: "tabview",
                 app: tabview::app,
+                cfg: Config::default().with_color_mode(ColorMode::Rgb),
+            },
+            AppSpec {
+                name: "textarea",
+                app: textarea::app,
                 cfg: Config::default().with_color_mode(ColorMode::Rgb),
             },
             AppSpec {

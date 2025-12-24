@@ -176,6 +176,37 @@ impl Surface {
         }
     }
 
+    pub fn set_glyph_styled(
+        &mut self,
+        x: u16,
+        y: u16,
+        ch: char,
+        fg: Option<ColorAttribute>,
+        bg: Option<ColorAttribute>,
+        intensity: Intensity,
+        underline: Underline,
+        italic: bool,
+        blink: Blink,
+    ) {
+        if x >= self.width || y >= self.height {
+            return;
+        }
+        let idx = y as usize * self.width as usize + x as usize;
+        if let Some(slot) = self.content.get_mut(idx) {
+            slot.ch = ch;
+            if let Some(fg) = fg {
+                slot.fg = Some(fg);
+            }
+            if let Some(bg) = bg {
+                slot.bg = Some(bg);
+            }
+            slot.intensity = intensity;
+            slot.underline = underline;
+            slot.italic = italic;
+            slot.blink = blink;
+        }
+    }
+
     pub fn lines(&self) -> Vec<String> {
         let width = self.width as usize;
         self.content

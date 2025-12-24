@@ -64,6 +64,8 @@ struct TextStyle {
     underline: Underline,
     italic: bool,
     blink: Blink,
+    preserve_whitespace: bool,
+    pre_full_width: bool,
 }
 
 impl Default for TextStyle {
@@ -75,6 +77,8 @@ impl Default for TextStyle {
             underline: Underline::None,
             italic: false,
             blink: Blink::None,
+            preserve_whitespace: false,
+            pre_full_width: false,
         }
     }
 }
@@ -96,6 +100,8 @@ impl TextStyle {
             },
             italic: self.italic || other.italic,
             blink: if other.blink != Blink::None { other.blink } else { self.blink },
+            preserve_whitespace: self.preserve_whitespace || other.preserve_whitespace,
+            pre_full_width: self.pre_full_width || other.pre_full_width,
         }
     }
 }
@@ -403,6 +409,23 @@ fn is_blockish(node: &Node) -> bool {
     )
 }
 
+fn parse_inline_style_value<'a>(style: &'a str, key: &str) -> Option<&'a str> {
+    let key = key.trim().to_ascii_lowercase();
+    for decl in style.split(';') {
+        let decl = decl.trim();
+        if decl.is_empty() {
+            continue;
+        }
+        let mut parts = decl.splitn(2, ':');
+        let k = parts.next()?.trim().to_ascii_lowercase();
+        let v = parts.next()?.trim();
+        if k == key {
+            return Some(v);
+        }
+    }
+    None
+}
+
 fn paint_img(
     surface: &mut Surface,
     images: &mut VecDeque<PlacedImage>,
@@ -441,34 +464,15 @@ fn paint_img(
         s.parse::<u16>().ok()
     }
 
-    fn parse_inline_style_dim<'a>(style: &'a str, key: &str) -> Option<&'a str> {
-        // Very small, permissive parser for `style="..."`.
-        // Looks for `key: value;` (case-insensitive on the key).
-        let key = key.trim().to_ascii_lowercase();
-        for decl in style.split(';') {
-            let decl = decl.trim();
-            if decl.is_empty() {
-                continue;
-            }
-            let mut parts = decl.splitn(2, ':');
-            let k = parts.next()?.trim().to_ascii_lowercase();
-            let v = parts.next()?.trim();
-            if k == key {
-                return Some(v);
-            }
-        }
-        None
-    }
-
     // Blitz/Taffy doesn't reliably size replaced elements (`img`).
     // Treat explicit `width`/`height` attributes as authoritative sizing hints
     // for both inline and sampled render paths.
     let style = node.attr(local_name!("style"));
     let width_style_cells = style
-        .and_then(|s| parse_inline_style_dim(s, "width"))
+        .and_then(|s| parse_inline_style_value(s, "width"))
         .and_then(|v| parse_dim_cells(v, metrics.cell_w_px));
     let height_style_cells = style
-        .and_then(|s| parse_inline_style_dim(s, "height"))
+        .and_then(|s| parse_inline_style_value(s, "height"))
         .and_then(|v| parse_dim_cells(v, metrics.cell_h_px));
 
     // Dioxus treats `img.width`/`img.height` as HTML attributes, not CSS.
@@ -712,9 +716,13 @@ fn write_wrapped(
     text: &str,
     style: TextStyle,
 ) -> (u16, u16) {
+    if style.preserve_whitespace || text.contains('\n') {
+        return write_preformatted(surface, bounds, cursor, text, style);
+    }
+
     let (mut x, mut y) = cursor;
-    let end_x = bounds.x.saturating_add(bounds.width);
-    let end_y = bounds.y.saturating_add(bounds.height);
+    let end_x = surface.width();
+    let end_y = surface.height();
 
     if bounds.width == 0 || bounds.height == 0 {
         return (x, y);
@@ -848,6 +856,92 @@ fn write_wrapped(
     (x, y)
 }
 
+fn write_preformatted(
+    surface: &mut Surface,
+    bounds: Rect,
+    cursor: (u16, u16),
+    text: &str,
+    style: TextStyle,
+) -> (u16, u16) {
+    let (mut x, mut y) = cursor;
+    let (start_x, _start_y) = if style.pre_full_width {
+        (0, 0)
+    } else {
+        (bounds.x, bounds.y)
+    };
+    let end_x = if style.pre_full_width {
+        surface.width()
+    } else {
+        bounds.x.saturating_add(bounds.width)
+    };
+    let end_y = if style.pre_full_width {
+        surface.height()
+    } else {
+        bounds.y.saturating_add(bounds.height)
+    };
+
+    if bounds.width == 0 || bounds.height == 0 {
+        return (x, y);
+    }
+
+    let mut write_char = |ch: char, x: &mut u16, y: &mut u16| {
+        if *y >= end_y {
+            return;
+        }
+        let ch_width = 1u16;
+        if x.saturating_add(ch_width) > end_x {
+            *x = start_x;
+            *y = y.saturating_add(1);
+            if *y >= end_y {
+                return;
+            }
+        }
+        surface.set_glyph_styled(
+            *x,
+            *y,
+            ch,
+            style.fg,
+            style.bg,
+            style.intensity,
+            style.underline,
+            style.italic,
+            style.blink,
+        );
+        *x = x.saturating_add(ch_width);
+    };
+
+    for ch in text.chars() {
+        if y >= end_y {
+            break;
+        }
+
+        if ch == '\n' {
+            x = start_x;
+            y = y.saturating_add(1);
+            continue;
+        }
+
+        if ch == '\t' {
+            for _ in 0..4 {
+                write_char(' ', &mut x, &mut y);
+                if y >= end_y {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        if ch.is_whitespace() {
+            write_char(' ', &mut x, &mut y);
+            continue;
+        }
+
+        write_char(ch, &mut x, &mut y);
+    }
+
+    (x, y)
+}
+
 fn style_overrides(node: &Node, color_mode: ColorMode, truecolor: bool) -> TextStyle {
     let mut out = TextStyle::default();
 
@@ -892,6 +986,26 @@ fn style_overrides(node: &Node, color_mode: ColorMode, truecolor: bool) -> TextS
     }
     if node.data.is_element_with_tag_name(&local_name!("blink")) {
         out.blink = Blink::Slow;
+    }
+
+    if node.data.is_element_with_tag_name(&local_name!("pre")) {
+        out.preserve_whitespace = true;
+    }
+    if let Some(style) = attr_value(node, "style")
+        .and_then(|s| parse_inline_style_value(s, "white-space"))
+    {
+        let value = style.trim().to_ascii_lowercase();
+        if value.starts_with("pre") {
+            out.preserve_whitespace = true;
+        }
+    }
+    if let Some(flag) = attr_value(node, "data-pre") {
+        if flag == "true" || flag == "1" {
+            out.preserve_whitespace = true;
+        } else if flag == "full" {
+            out.preserve_whitespace = true;
+            out.pre_full_width = true;
+        }
     }
 
     // If we don't have an explicit palette index override, allow CSS colors to set fg/bg.

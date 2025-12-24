@@ -2,7 +2,7 @@ use std::any::Any;
 
 use dioxus::prelude::*;
 use dioxus_tui::{ColorMode, Config, RawVirtualDom, Rect, Surface};
-use dioxus_tui_btop::btop;
+use dioxus_tui_btop::app;
 
 const SNAPSHOT_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -19,24 +19,52 @@ fn render_app(app: fn() -> Element, width: u16, height: u16) -> Surface {
     dioxus_tui::render_surface_raw(raw, cfg, area).expect("render")
 }
 
-#[test]
-fn btop_renders_core_sections() {
-    let surface = render_app(btop::app, 120, 50);
-    let lines = surface.lines();
-    let actual = lines.join("\n");
+fn fixture_dims(contents: &str) -> (u16, u16) {
+    let lines: Vec<&str> = contents.trim_end_matches('\n').lines().collect();
+    let width = lines
+        .iter()
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(0) as u16;
+    let height = lines.len() as u16;
+    (width, height)
+}
 
-    if std::env::var("UPDATE_SNAPSHOT").is_ok() {
-        if let Some(parent) = std::path::Path::new(SNAPSHOT_PATH).parent() {
-            std::fs::create_dir_all(parent).expect("create snapshot directory");
-        }
-        std::fs::write(SNAPSHOT_PATH, &actual).expect("write snapshot");
-        return;
+fn normalize_expected(contents: &str, width: u16, height: u16) -> String {
+    let mut lines: Vec<String> = contents
+        .trim_end_matches('\n')
+        .lines()
+        .map(|line| {
+            let len = line.chars().count() as u16;
+            if len >= width {
+                line.to_string()
+            } else {
+                format!("{line}{}", " ".repeat((width - len) as usize))
+            }
+        })
+        .collect();
+
+    while lines.len() < height as usize {
+        lines.push(" ".repeat(width as usize));
     }
 
-    let expected = std::fs::read_to_string(SNAPSHOT_PATH)
+    lines.join("\n")
+}
+
+#[test]
+fn btop_renders_full_screen() {
+    let snapshot = std::fs::read_to_string(SNAPSHOT_PATH)
         .expect("read snapshot")
         .trim_end_matches('\n')
         .to_string();
+    let (width, height) = fixture_dims(&snapshot);
+
+    let expected = normalize_expected(&snapshot, width, height);
+    let composed = app::render_screen_text();
+    assert_eq!(composed, expected, "composed screen mismatch");
+
+    let surface = render_app(app::app, width, height);
+    let actual = surface.lines().join("\n");
 
     assert_eq!(actual, expected, "btop snapshot mismatch");
 }

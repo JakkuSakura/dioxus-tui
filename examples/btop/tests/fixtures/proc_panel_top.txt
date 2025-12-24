@@ -1,0 +1,11 @@
+╭─┐⁴proc┌┐filter┌─────────┐per-core┌┐reverse┌┐tree┌┐< threads >┌─╮
+│    Pid: Program: Command:              User:  MemB       Cpu% ↑│
+│    9050 kvm      /usr/bin/kvm -id 102  root    66G ⣀⣀⣀⣀⣀  0.2 █│
+│    6762 tailscal /usr/sbin/tailscaled  root    12M ⣀⣀⣀⣀⣀  0.0  │
+│    9719 kvm      /usr/bin/kvm -id 105  root   6.8G ⡀⣀⣀⣀⣀  0.0  │
+│  222345 kvm      /usr/bin/kvm -id 106  root   5.2G ⣀⣀⣀⣀⣀  0.0  │
+│    9438 kvm      /usr/bin/kvm -id 103  root    12G ⣀⣀⣀⣀⣀  0.1  │
+│    9610 kvm      /usr/bin/kvm -id 104  root   1.9G ⣀⣀⣀⣀⣀  0.0  │
+│    7893 kvm      /usr/bin/kvm -id 100  root    16G ⣀⢀⣀⣀⣀  0.0  │
+│    6750 rrdcache /usr/bin/rrdcached -g root   3.0M ⣀⣀⣀⣀⣀  0.0  │
+│    7533 pmxcfs   /usr/bin/pmxcfs       root   269M ⣀⣀⣀⣀⣀  0.0  │
