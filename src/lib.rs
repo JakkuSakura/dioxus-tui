@@ -4,6 +4,7 @@
 
 pub mod capabilities;
 pub mod builders;
+pub mod draw;
 mod blitz;
 mod cell_render;
 mod config;
@@ -34,6 +35,7 @@ pub use hooks::{
     use_raw_input, use_viewport, use_wheel_input,
 };
 pub use render::TuiContext;
+pub use draw::{on_draw, CustomDrawMode, DrawContext, OnDraw};
 pub use scene::{CellMetrics, InlineImage, TerminalScene};
 pub use surface::Surface;
 

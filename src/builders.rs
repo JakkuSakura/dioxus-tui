@@ -41,6 +41,61 @@ impl Style {
         }
         parts.join(" ")
     }
+
+    fn to_cell_style(
+        &self,
+        ctx: &crate::draw::DrawContext,
+    ) -> (
+        Option<termwiz::color::ColorAttribute>,
+        Option<termwiz::color::ColorAttribute>,
+        termwiz::cell::Intensity,
+        termwiz::cell::Underline,
+        bool,
+        termwiz::cell::Blink,
+    ) {
+        let fg = self
+            .fg
+            .as_deref()
+            .and_then(parse_hex_color)
+            .map(|(r, g, b)| crate::draw::rgb_to_attr(r, g, b, ctx.color_mode, ctx.truecolor));
+        let bg = self
+            .bg
+            .as_deref()
+            .and_then(parse_hex_color)
+            .map(|(r, g, b)| crate::draw::rgb_to_attr(r, g, b, ctx.color_mode, ctx.truecolor));
+
+        let intensity = if self.bold {
+            termwiz::cell::Intensity::Bold
+        } else if self.dim {
+            termwiz::cell::Intensity::Half
+        } else {
+            termwiz::cell::Intensity::Normal
+        };
+        let underline = if self.underline {
+            termwiz::cell::Underline::Single
+        } else {
+            termwiz::cell::Underline::None
+        };
+        let blink = if self.blink {
+            termwiz::cell::Blink::Slow
+        } else {
+            termwiz::cell::Blink::None
+        };
+
+        (fg, bg, intensity, underline, self.italic, blink)
+    }
+}
+
+fn parse_hex_color(value: &str) -> Option<(u8, u8, u8)> {
+    let value = value.trim();
+    let hex = value.strip_prefix('#')?;
+    if hex.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some((r, g, b))
 }
 
 #[derive(Clone)]
@@ -107,6 +162,7 @@ impl LineBuilder {
     }
 }
 
+#[derive(Clone)]
 pub struct RectBuilder {
     width: usize,
     height: usize,
@@ -124,6 +180,14 @@ impl RectBuilder {
 
     pub fn line_mut(&mut self, y: usize) -> Option<&mut LineBuilder> {
         self.lines.get_mut(y)
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
     }
 
     pub fn set_str(&mut self, x: usize, y: usize, text: &str) {
@@ -198,6 +262,39 @@ impl RectBuilder {
                 width: "{self.width}ch",
                 height: "{self.height}ch",
                 {spans}
+            }
+        }
+    }
+
+    pub fn draw_to(&self, ctx: &mut crate::draw::DrawContext) {
+        let rect = ctx.rect;
+        let width = rect.width as usize;
+        let height = rect.height as usize;
+
+        for (row_idx, line) in self.lines.iter().enumerate() {
+            if row_idx >= height {
+                break;
+            }
+            for span in line.spans() {
+                let (fg, bg, intensity, underline, italic, blink) = span.style.to_cell_style(ctx);
+                for (idx, ch) in span.text.chars().enumerate() {
+                    let x = rect.x as usize + span.x + idx;
+                    let y = rect.y as usize + row_idx;
+                    if x >= rect.x as usize + width || y >= rect.y as usize + height {
+                        continue;
+                    }
+                    ctx.surface.set_glyph_styled(
+                        x as u16,
+                        y as u16,
+                        ch,
+                        fg,
+                        bg,
+                        intensity,
+                        underline,
+                        italic,
+                        blink,
+                    );
+                }
             }
         }
     }

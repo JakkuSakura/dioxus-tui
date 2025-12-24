@@ -25,6 +25,7 @@ use crate::capabilities::{DetectedCapabilities, TerminalCapabilities};
 use crate::capabilities::detect as detect_capabilities;
 use crate::capabilities::termwiz_capabilities;
 use crate::config::{Config, RenderingMode};
+use crate::draw::{poll_vdom_with_on_draw, DrawState};
 use crate::geometry::Rect;
 use crate::hooks::{map_code, map_modifiers, raw_input_from_termwiz, TuiInputBus, ViewportBus};
 use crate::layout::resolve_document;
@@ -81,6 +82,7 @@ pub(crate) struct DioxusRenderer {
     pub(crate) input_bus: TuiInputBus,
     pub(crate) viewport_bus: ViewportBus,
     pub(crate) runtime: std::rc::Rc<Runtime>,
+    pub(crate) draw_state: DrawState,
     #[cfg(all(feature = "hot-reload", debug_assertions))]
     pub(crate) hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<dioxus_hot_reload::HotReloadMsg>,
 }
@@ -133,7 +135,15 @@ impl DioxusRenderer {
             .with_root_context(viewport_bus.clone());
 
         let mut doc = Self::build_document(vdom, viewport);
-        doc.initial_build();
+        let mut draw_state = DrawState::default();
+        {
+            let mut writer = dioxus_native_dom::mutation_writer::MutationWriter::new(
+                &mut doc.inner,
+                &mut doc.vdom_state,
+            );
+            let mut writer = crate::draw::OnDrawWriter::new(writer, &mut draw_state);
+            doc.vdom.rebuild(&mut writer);
+        }
         let runtime = doc.vdom.runtime();
 
         (
@@ -142,6 +152,7 @@ impl DioxusRenderer {
                 input_bus,
                 viewport_bus,
                 runtime,
+                draw_state,
                 #[cfg(all(feature = "hot-reload", debug_assertions))]
                 hot_reload_rx: {
                     let (hot_reload_tx, hot_reload_rx) =
@@ -168,7 +179,12 @@ impl DioxusRenderer {
     }
 
     pub(crate) fn update(&mut self) {
-        while self.doc.poll(None) {}
+        while poll_vdom_with_on_draw(
+            &mut self.doc.vdom,
+            &mut self.doc.inner,
+            &mut self.doc.vdom_state,
+            &mut self.draw_state,
+        ) {}
     }
 
     fn handle_event(&mut self, id: ElementId, event: &str, value: Box<dyn Any>, bubbles: bool) {
@@ -242,6 +258,8 @@ where
         cfg.palette_roles,
         cfg.color_mode,
         detected.terminal.truecolor,
+        Some(&renderer.draw_state),
+        cfg.custom_draw_mode,
         cfg.image_policy,
         cfg.image_downgrade,
         detected.terminal.iterm2_images,
@@ -522,6 +540,8 @@ async fn run_tui_renderer(
                     cfg.palette_roles,
                     cfg.color_mode,
                     capabilities.truecolor,
+                    Some(&renderer.draw_state),
+                    cfg.custom_draw_mode,
                     cfg.image_policy,
                     cfg.image_downgrade,
                     capabilities.iterm2_images,

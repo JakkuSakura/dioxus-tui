@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use dioxus::prelude::*;
-use dioxus_tui::{ColorMode, Config, RawVirtualDom, Rect, Surface};
+use dioxus_tui::{ColorMode, Config, CustomDrawMode, RawVirtualDom, Rect, Surface};
 use dioxus_tui_btop::app;
 
 const SNAPSHOT_PATH: &str = concat!(
@@ -10,7 +10,9 @@ const SNAPSHOT_PATH: &str = concat!(
 );
 
 fn render_app(app: fn() -> Element, width: u16, height: u16) -> Surface {
-    let cfg = Config::default().with_color_mode(ColorMode::Rgb);
+    let cfg = Config::default()
+        .with_color_mode(ColorMode::Rgb)
+        .with_custom_draw_mode(CustomDrawMode::Native);
     let area = Rect::new(0, 0, width, height);
 
     let contexts: Vec<Box<dyn Fn() -> Box<dyn Any> + Send + Sync>> = Vec::new();

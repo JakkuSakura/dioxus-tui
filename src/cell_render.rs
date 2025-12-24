@@ -23,6 +23,8 @@ pub fn paint_surface(
     palette_roles: PaletteRoles,
     color_mode: ColorMode,
     truecolor: bool,
+    draw_state: Option<&crate::draw::DrawState>,
+    draw_mode: crate::draw::CustomDrawMode,
     image_policy: ImagePolicy,
     image_downgrade: ImageDowngrade,
     inline_images_supported: bool,
@@ -48,6 +50,9 @@ pub fn paint_surface(
         truecolor,
         fallback_fg,
         TextStyle::default(),
+        draw_state,
+        draw_mode,
+        palette_roles,
         image_policy,
         image_downgrade,
         inline_images_supported,
@@ -117,6 +122,9 @@ fn paint_node(
     truecolor: bool,
     fallback_fg: ColorAttribute,
     inherited: TextStyle,
+    draw_state: Option<&crate::draw::DrawState>,
+    draw_mode: crate::draw::CustomDrawMode,
+    palette_roles: PaletteRoles,
     image_policy: ImagePolicy,
     image_downgrade: ImageDowngrade,
     inline_images_supported: bool,
@@ -125,6 +133,25 @@ fn paint_node(
         blitz_dom::node::NodeData::Element(_) | blitz_dom::node::NodeData::AnonymousBlock(_) => {
             let local_style = style_overrides(node, color_mode, truecolor);
             let node_style = inherited.merged(local_style);
+
+            if draw_mode == crate::draw::CustomDrawMode::Native {
+                if let Some(draw_state) = draw_state {
+                    if let Some(cb) = draw_state.get(node.id) {
+                        let rect = node_rect(doc, node, area, metrics);
+                        if rect.width > 0 && rect.height > 0 {
+                            let mut ctx = crate::draw::DrawContext {
+                                surface,
+                                rect,
+                                color_mode,
+                                truecolor,
+                                palette_roles,
+                            };
+                            cb(&mut ctx);
+                        }
+                        return Ok(());
+                    }
+                }
+            }
 
             if node.data.is_element_with_tag_name(&local_name!("img")) {
                 let rect = node_rect(doc, node, area, metrics);
@@ -201,6 +228,9 @@ fn paint_node(
                         truecolor,
                         fallback_fg,
                         node_style,
+                        draw_state,
+                        draw_mode,
+                        palette_roles,
                         image_policy,
                         image_downgrade,
                         inline_images_supported,
@@ -223,6 +253,9 @@ fn paint_node(
                         truecolor,
                         fallback_fg,
                         inherited,
+                        draw_state,
+                        draw_mode,
+                        palette_roles,
                         image_policy,
                         image_downgrade,
                         inline_images_supported,

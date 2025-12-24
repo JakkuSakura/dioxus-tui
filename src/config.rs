@@ -17,6 +17,9 @@ pub struct Config {
     /// are unsupported.
     pub(crate) image_downgrade: ImageDowngrade,
 
+    /// Controls whether custom draw callbacks render HTML nodes or native terminal cells.
+    pub(crate) custom_draw_mode: crate::draw::CustomDrawMode,
+
     /// HiDPI supersampling factor for `RenderingMode::BlitzTerminal`.
     ///
     /// `1` disables supersampling. `2` renders at 2x resolution and then fits into the original
@@ -73,6 +76,13 @@ impl Config {
         }
     }
 
+    pub fn with_custom_draw_mode(self, custom_draw_mode: crate::draw::CustomDrawMode) -> Self {
+        Self {
+            custom_draw_mode,
+            ..self
+        }
+    }
+
     pub fn with_blitz_hidpi_scale(self, scale: u8) -> Self {
         Self {
             blitz_hidpi_scale: scale.max(1),
@@ -91,6 +101,7 @@ impl Default for Config {
             palette_roles: PaletteRoles::default(),
             image_policy: ImagePolicy::Inline,
             image_downgrade: ImageDowngrade::Sampling,
+            custom_draw_mode: crate::draw::CustomDrawMode::Html,
             blitz_hidpi_scale: 1,
         }
     }
