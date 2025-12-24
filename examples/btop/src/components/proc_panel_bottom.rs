@@ -24,12 +24,13 @@ fn row_line(line: &mut LineBuilder, row: &ProcRow, border: &Style, width: usize)
 }
 
 fn footer_line(line: &mut LineBuilder, border: &Style, width: usize) {
-    let footer = "╰┘↑ select ↓└┘info ↵└┘terminate└┘kill└┘signals└──────────┘9/4384└╯";
-    if width >= BASE_WIDTH {
-        line.set_str_styled(0, footer, border.clone());
-    } else {
-        line.set_str_styled(0, footer, border.clone());
-    }
+    let left = "╰┘↑ select ↓└┘info ↵└┘terminate└┘kill└┘signals└";
+    let right = "┘9/4384└╯";
+    let dash_len = width
+        .saturating_sub(left.chars().count() + right.chars().count())
+        .max(1);
+    let footer = format!("{left}{}{right}", "─".repeat(dash_len));
+    line.set_str_styled(0, &footer, border.clone());
 }
 
 fn blank_row(line: &mut LineBuilder, border: &Style, width: usize) {

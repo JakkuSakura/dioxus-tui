@@ -29,7 +29,13 @@ pub fn render_with_width(data: &CpuData, width: usize) -> RectBuilder {
     let border = theme::fg(theme::CPU_BOX);
     let outer_left = 0;
     let outer_right = width - 1;
-    let inner_right = (width.saturating_sub(2)).min(118);
+    let inner_right = width.saturating_sub(2);
+    let extra = width.saturating_sub(BASE_WIDTH);
+    let right_corner_pos = width.saturating_sub(3);
+    let freq_len = data.freq.chars().count();
+    let freq_start = right_corner_pos.saturating_sub(freq_len);
+    let bar_start = 65;
+    let bar_len = freq_start.saturating_sub(bar_start + 2);
 
     // Line 0
     if let Some(line) = rect.line_mut(0) {
@@ -41,9 +47,9 @@ pub fn render_with_width(data: &CpuData, width: usize) -> RectBuilder {
             &format!("{}-", data.model),
             theme::fg_bold(theme::TITLE),
         );
-        line.set_str_styled(65, &format!("┌{}┐", bar_repeat('─', 43)), border.clone());
-        line.set_str_styled(110, data.freq, theme::fg(theme::TITLE));
-        line.set_str_styled(117, "┌╮", border.clone());
+        line.set_str_styled(bar_start, &format!("┌{}┐", bar_repeat('─', bar_len)), border.clone());
+        line.set_str_styled(freq_start, data.freq, theme::fg(theme::TITLE));
+        line.set_str_styled(right_corner_pos, "┌╮", border.clone());
     }
 
     // Line 1
@@ -53,19 +59,23 @@ pub fn render_with_width(data: &CpuData, width: usize) -> RectBuilder {
         line.set_str_styled(inner_right, "│", border.clone());
         line.set_str_styled(outer_right, "│", border.clone());
         line.set_str_styled(INNER_LEFT + 1, "CPU ", theme::fg_bold(theme::TITLE));
-        line.set_str_styled(INNER_LEFT + 5, &bar_repeat('■', 48), theme::fg(theme::CPU_MID));
         line.set_str_styled(
-            INNER_LEFT + 56,
+            INNER_LEFT + 5,
+            &bar_repeat('■', 48 + extra),
+            theme::fg(theme::CPU_MID),
+        );
+        line.set_str_styled(
+            INNER_LEFT + 56 + extra,
             &format!("{}%", data.total_percent),
             theme::fg_bold(theme::TITLE),
         );
         line.set_str_styled(
-            INNER_LEFT + 59,
+            INNER_LEFT + 59 + extra,
             "⣀⣀⣀⣀⣀",
             theme::fg(theme::GRAPH_TEXT),
         );
         line.set_str_styled(
-            INNER_LEFT + 66,
+            INNER_LEFT + 66 + extra,
             &format!("{:>2}°C", data.temp_c),
             theme::fg(theme::TEMP_MID),
         );

@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_html::input_data::keyboard_types::Code;
-use dioxus_tui::{on_draw, use_viewport, DrawContext, TuiContext};
+use dioxus_tui::{on_draw, DrawContext, TuiContext};
 
 use crate::components::{cpu_panel, disk_panel, mem_panel, net_panel, proc_panel_bottom, proc_panel_top, topbar};
 use crate::data::MOCK_DATA;
@@ -51,10 +51,6 @@ pub fn render_screen_text() -> String {
 #[component]
 pub fn App() -> Element {
     let tui: TuiContext = consume_context();
-    let viewport = use_viewport();
-    let viewport = viewport.read();
-    let width = viewport.width.max(1) as usize;
-    let height = viewport.height.max(1) as usize;
 
     let topbar_data = MOCK_DATA.topbar;
     let cpu_data = MOCK_DATA.cpu;
@@ -71,19 +67,16 @@ pub fn App() -> Element {
     let net_html = net_panel::render(&net_data).rect.render(0, 0);
     let proc_bottom_html = proc_panel_bottom::render(&proc_data).rect.render(0, 0);
 
+    let root_style = "width: 100%; height: 100%; display: flex; flex-direction: column;".to_string();
+
     rsx! {
         div {
-            width: "{width}ch",
-            height: "{height}ch",
+            style: "{root_style}",
             background_color: theme::MAIN_BG,
             color: theme::MAIN_FG,
-            font_size: "16px",
-            line_height: "16px",
             padding: "0",
             margin: "0",
             box_sizing: "border-box",
-            display: "flex",
-            flex_direction: "column",
 
             tabindex: "0",
             onkeydown: move |e| match e.code() {
@@ -92,12 +85,7 @@ pub fn App() -> Element {
             },
 
             div {
-                height: "1ch",
-                flex_basis: "1ch",
-                flex_grow: "0",
-                flex_shrink: "0",
-                width: "100%",
-                position: "relative",
+                style: "flex: 1 0 0; min-height: 1ch; width: 100%; position: relative;",
                 "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
                     let rect = topbar::render_with_width(&topbar_data, ctx.rect.width as usize);
                     rect.draw_to(ctx);
@@ -106,12 +94,7 @@ pub fn App() -> Element {
             }
 
             div {
-                height: "8ch",
-                flex_basis: "8ch",
-                flex_grow: "0",
-                flex_shrink: "0",
-                width: "100%",
-                position: "relative",
+                style: "flex: 8 0 0; min-height: 8ch; width: 100%; position: relative;",
                 "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
                     let rect = cpu_panel::render_with_width(&cpu_data, ctx.rect.width as usize);
                     rect.draw_to(ctx);
@@ -120,21 +103,10 @@ pub fn App() -> Element {
             }
 
             div {
-                height: "11ch",
-                flex_basis: "11ch",
-                flex_grow: "0",
-                flex_shrink: "0",
-                width: "100%",
-                display: "flex",
-                flex_direction: "row",
-                align_items: "stretch",
-                min_height: "0px",
+                style: "flex: 11 0 0; min-height: 11ch; width: 100%; display: flex; flex-direction: row;",
 
                 div {
-                    width: "28ch",
-                    flex_basis: "28ch",
-                    height: "11ch",
-                    position: "relative",
+                    style: "flex: 28 0 0; min-width: 10ch; position: relative; height: 100%;",
                     "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
                         let rect = mem_panel::render_with_size(
                             &mem_data,
@@ -147,10 +119,7 @@ pub fn App() -> Element {
                 }
 
                 div {
-                    width: "26ch",
-                    flex_basis: "26ch",
-                    height: "11ch",
-                    position: "relative",
+                    style: "flex: 26 0 0; min-width: 10ch; position: relative; height: 100%;",
                     "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
                         let rect = disk_panel::render_with_size(
                             &disk_data,
@@ -163,11 +132,7 @@ pub fn App() -> Element {
                 }
 
                 div {
-                    flex_grow: "1",
-                    flex_shrink: "1",
-                    min_width: "0px",
-                    height: "11ch",
-                    position: "relative",
+                    style: "flex: 66 1 0; min-width: 0ch; position: relative; height: 100%;",
                     "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
                         let rect = proc_panel_top::render_with_size(
                             &proc_data,
@@ -181,19 +146,10 @@ pub fn App() -> Element {
             }
 
             div {
-                width: "100%",
-                flex_grow: "1",
-                flex_shrink: "1",
-                min_height: "0px",
-                display: "flex",
-                flex_direction: "row",
-                align_items: "flex-start",
+                style: "flex: 8 1 0; min-height: 8ch; width: 100%; display: flex; flex-direction: row;",
 
                 div {
-                    width: "54ch",
-                    flex_basis: "54ch",
-                    height: "8ch",
-                    position: "relative",
+                    style: "flex: 54 0 0; min-width: 12ch; position: relative; height: 100%;",
                     "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
                         let rect = net_panel::render_with_size(
                             &net_data,
@@ -206,11 +162,7 @@ pub fn App() -> Element {
                 }
 
                 div {
-                    flex_grow: "1",
-                    flex_shrink: "1",
-                    min_width: "0px",
-                    height: "100%",
-                    position: "relative",
+                    style: "flex: 66 1 0; min-width: 0ch; height: 100%; position: relative;",
                     "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
                         let rect = proc_panel_bottom::render_with_size(
                             &proc_data,

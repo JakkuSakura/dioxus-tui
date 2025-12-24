@@ -8,57 +8,64 @@ use crate::theme;
 const BASE_WIDTH: usize = 28;
 const BASE_HEIGHT: usize = 11;
 
-fn line_total(line: &mut LineBuilder, data: &MemData, border: &Style) {
+fn line_total(line: &mut LineBuilder, data: &MemData, border: &Style, right_edge: usize) {
     line.set_str_styled(0, "│", border.clone());
     line.set_str_styled(2, "Total:", theme::fg(theme::MAIN_FG));
     line.set_str_styled(18, data.total_gib, theme::fg(theme::TITLE));
     line.set_str_styled(22, "GiB", theme::fg(theme::MAIN_FG));
-    line.set_str_styled(26, "├─", border.clone());
+    line.set_str_styled(right_edge, "├─", border.clone());
 }
 
-fn line_used(line: &mut LineBuilder, data: &MemData, border: &Style) {
+fn line_used(line: &mut LineBuilder, data: &MemData, border: &Style, right_edge: usize) {
     line.set_str_styled(0, "├─Used:", border.clone());
     line.set_str_styled(7, &bar_repeat('─', 11), border.clone());
     line.set_str_styled(18, data.used_gib, theme::fg(theme::TITLE));
     line.set_str_styled(21, "─", border.clone());
     line.set_str_styled(22, "GiB", theme::fg(theme::MAIN_FG));
-    line.set_str_styled(25, "─┤", border.clone());
+    line.set_str_styled(right_edge - 1, "─┤", border.clone());
 }
 
-fn line_bar(line: &mut LineBuilder, ch: char, percent: u8, color: &str, border: &Style) {
+fn line_bar(
+    line: &mut LineBuilder,
+    ch: char,
+    percent: u8,
+    color: &str,
+    border: &Style,
+    right_edge: usize,
+) {
     line.set_str_styled(0, "│", border.clone());
     line.set_str_styled(1, " ", theme::fg(theme::MAIN_FG));
     line.set_str_styled(2, &bar_repeat(ch, 19), theme::fg(color));
     line.set_str_styled(22, &format!("{:>2}%", percent), theme::fg(theme::TITLE));
     line.set_str_styled(25, " ", theme::fg(theme::MAIN_FG));
-    line.set_str_styled(26, "│", border.clone());
+    line.set_str_styled(right_edge, "│", border.clone());
 }
 
-fn line_available(line: &mut LineBuilder, data: &MemData, border: &Style) {
+fn line_available(line: &mut LineBuilder, data: &MemData, border: &Style, right_edge: usize) {
     line.set_str_styled(0, "├─Available:", border.clone());
     line.set_str_styled(12, &bar_repeat('─', 6), border.clone());
     line.set_str_styled(18, data.available_gib, theme::fg(theme::TITLE));
     line.set_str_styled(21, "─", border.clone());
     line.set_str_styled(22, "GiB", theme::fg(theme::MAIN_FG));
-    line.set_str_styled(25, "─├─", border.clone());
+    line.set_str_styled(right_edge - 1, "─├─", border.clone());
 }
 
-fn line_cached(line: &mut LineBuilder, data: &MemData, border: &Style) {
+fn line_cached(line: &mut LineBuilder, data: &MemData, border: &Style, right_edge: usize) {
     line.set_str_styled(0, "├─Cached:", border.clone());
     line.set_str_styled(9, &bar_repeat('─', 9), border.clone());
     line.set_str_styled(18, data.cached_gib, theme::fg(theme::TITLE));
     line.set_str_styled(21, "─", border.clone());
     line.set_str_styled(22, "GiB", theme::fg(theme::MAIN_FG));
-    line.set_str_styled(25, "─├─", border.clone());
+    line.set_str_styled(right_edge - 1, "─├─", border.clone());
 }
 
-fn line_free(line: &mut LineBuilder, data: &MemData, border: &Style) {
+fn line_free(line: &mut LineBuilder, data: &MemData, border: &Style, right_edge: usize) {
     line.set_str_styled(0, "├─Free:", border.clone());
     line.set_str_styled(7, &bar_repeat('─', 10), border.clone());
     line.set_str_styled(17, data.free_gib, theme::fg(theme::TITLE));
     line.set_str_styled(21, "─", border.clone());
     line.set_str_styled(22, "GiB", theme::fg(theme::MAIN_FG));
-    line.set_str_styled(25, "─├─", border.clone());
+    line.set_str_styled(right_edge - 1, "─├─", border.clone());
 }
 
 pub fn render_with_size(data: &MemData, width: usize, height: usize) -> RectBuilder {
@@ -66,47 +73,50 @@ pub fn render_with_size(data: &MemData, width: usize, height: usize) -> RectBuil
     let height = height.max(BASE_HEIGHT);
     let mut rect = RectBuilder::new(width, height);
     let border = theme::fg(theme::MEM_BOX);
+    let right_edge = width.saturating_sub(2);
 
     if let Some(line) = rect.line_mut(0) {
         line.set_str_styled(0, "╭─┐²", border.clone());
         line.set_str_styled(4, "mem", theme::fg_bold(theme::TITLE));
         line.set_str_styled(7, "┌", border.clone());
-        line.set_str_styled(8, &bar_repeat('─', 18), border.clone());
-        line.set_str_styled(26, "┬─", border.clone());
+        let dash_len = right_edge.saturating_sub(8);
+        line.set_str_styled(8, &bar_repeat('─', dash_len), border.clone());
+        line.set_str_styled(right_edge, "┬─", border.clone());
     }
 
     if let Some(line) = rect.line_mut(1) {
-        line_total(line, data, &border);
+        line_total(line, data, &border, right_edge);
     }
     if let Some(line) = rect.line_mut(2) {
-        line_used(line, data, &border);
+        line_used(line, data, &border, right_edge);
     }
     if let Some(line) = rect.line_mut(3) {
-        line_bar(line, '⣤', data.used_pct, theme::USED_MID, &border);
+        line_bar(line, '⣤', data.used_pct, theme::USED_MID, &border, right_edge);
     }
     if let Some(line) = rect.line_mut(4) {
-        line_available(line, data, &border);
+        line_available(line, data, &border, right_edge);
     }
     if let Some(line) = rect.line_mut(5) {
-        line_bar(line, '⣶', data.available_pct, theme::AVAILABLE_MID, &border);
+        line_bar(line, '⣶', data.available_pct, theme::AVAILABLE_MID, &border, right_edge);
     }
     if let Some(line) = rect.line_mut(6) {
-        line_cached(line, data, &border);
+        line_cached(line, data, &border, right_edge);
     }
     if let Some(line) = rect.line_mut(7) {
-        line_bar(line, '⣤', data.cached_pct, theme::CACHED_MID, &border);
+        line_bar(line, '⣤', data.cached_pct, theme::CACHED_MID, &border, right_edge);
     }
     if let Some(line) = rect.line_mut(8) {
-        line_free(line, data, &border);
+        line_free(line, data, &border, right_edge);
     }
     if let Some(line) = rect.line_mut(9) {
-        line_bar(line, '⣀', data.free_pct, theme::FREE_MID, &border);
+        line_bar(line, '⣀', data.free_pct, theme::FREE_MID, &border, right_edge);
     }
 
     if let Some(line) = rect.line_mut(10) {
         line.set_str_styled(0, "╰", border.clone());
-        line.set_str_styled(1, &bar_repeat('─', 25), border.clone());
-        line.set_str_styled(26, "┴─", border.clone());
+        let dash_len = right_edge.saturating_sub(1);
+        line.set_str_styled(1, &bar_repeat('─', dash_len), border.clone());
+        line.set_str_styled(right_edge, "┴─", border.clone());
     }
 
     rect

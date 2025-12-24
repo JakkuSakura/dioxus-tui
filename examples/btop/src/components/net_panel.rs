@@ -38,6 +38,7 @@ pub fn render_with_size(data: &NetData, width: usize, height: usize) -> RectBuil
             &format!("│▼ {} ({})││", data.down_rate, data.down_rate_mib),
             theme::fg(theme::TITLE),
         );
+        line.set_str_styled(right, "│", border.clone());
     }
 
     if let Some(line) = rect.line_mut(3) {
@@ -48,6 +49,7 @@ pub fn render_with_size(data: &NetData, width: usize, height: usize) -> RectBuil
             &format!("│▼ Total:         {}││", data.down_total),
             theme::fg(theme::MAIN_FG),
         );
+        line.set_str_styled(right, "│", border.clone());
     }
 
     if let Some(line) = rect.line_mut(4) {
@@ -58,6 +60,7 @@ pub fn render_with_size(data: &NetData, width: usize, height: usize) -> RectBuil
             &format!("│▲ {}  ({})││", data.up_rate, data.up_rate_mib),
             theme::fg(theme::TITLE),
         );
+        line.set_str_styled(right, "│", border.clone());
     }
 
     if let Some(line) = rect.line_mut(5) {
@@ -68,6 +71,7 @@ pub fn render_with_size(data: &NetData, width: usize, height: usize) -> RectBuil
             &format!("│▲ Total:          {}││", data.up_total),
             theme::fg(theme::MAIN_FG),
         );
+        line.set_str_styled(right, "│", border.clone());
     }
 
     if let Some(line) = rect.line_mut(6) {

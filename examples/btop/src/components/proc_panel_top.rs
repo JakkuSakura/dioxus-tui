@@ -7,14 +7,19 @@ use crate::theme;
 const BASE_WIDTH: usize = 66;
 const BASE_HEIGHT: usize = 11;
 
-fn header_row(line: &mut LineBuilder, border: &Style) {
+fn header_row(line: &mut LineBuilder, border: &Style, width: usize) {
     line.set_str_styled(0, "╭─┐⁴", border.clone());
     line.set_str_styled(4, "proc", theme::fg_bold(theme::TITLE));
-    line.set_str_styled(
-        8,
-        "┌┐filter┌─────────┐per-core┌┐reverse┌┐tree┌┐< threads >┌─╮",
-        border.clone(),
-    );
+    let prefix = "┌┐filter┌─────────┐per-core┌┐reverse┌┐tree┌┐< threads >┌";
+    let prefix_len = 8 + prefix.chars().count();
+    line.set_str_styled(8, prefix, border.clone());
+    if width > prefix_len + 1 {
+        let dash_len = width.saturating_sub(prefix_len + 1);
+        line.set_str_styled(prefix_len, &"─".repeat(dash_len), border.clone());
+        line.set_str_styled(width - 1, "╮", border.clone());
+    } else {
+        line.set_str_styled(prefix_len, "╮", border.clone());
+    }
 }
 
 fn columns_row(line: &mut LineBuilder, border: &Style, width: usize) {
@@ -57,7 +62,7 @@ pub fn render_with_size(data: &ProcData, width: usize, height: usize) -> RectBui
     let border = theme::fg(theme::PROC_BOX);
 
     if let Some(line) = rect.line_mut(0) {
-        header_row(line, &border);
+        header_row(line, &border, width);
     }
     if let Some(line) = rect.line_mut(1) {
         columns_row(line, &border, width);
