@@ -44,16 +44,15 @@ pub fn render_with_size(data: &ProcData, width: usize, height: usize) -> RectBui
     let mut rect = RectBuilder::new(width, height);
     let border = theme::fg(theme::PROC_BOX);
 
-    let body_rows = height.saturating_sub(1).min(data.rows_bottom.len());
+    let body_rows = height.saturating_sub(1);
     for idx in 0..body_rows {
         if let Some(line) = rect.line_mut(idx) {
-            row_line(line, &data.rows_bottom[idx], &border, width);
-        }
-    }
-
-    for idx in body_rows..height.saturating_sub(1) {
-        if let Some(line) = rect.line_mut(idx) {
-            blank_row(line, &border, width);
+            if data.rows_bottom.is_empty() {
+                blank_row(line, &border, width);
+            } else {
+                let row = &data.rows_bottom[idx % data.rows_bottom.len()];
+                row_line(line, row, &border, width);
+            }
         }
     }
 

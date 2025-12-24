@@ -70,3 +70,14 @@ fn btop_renders_full_screen() {
 
     assert_eq!(actual, expected, "btop snapshot mismatch");
 }
+
+#[test]
+fn btop_fills_taller_screen() {
+    let width = 120;
+    let height = 40;
+    let surface = render_app(app::app, width, height);
+    for (idx, line) in surface.lines().iter().enumerate() {
+        let is_blank = line.chars().all(|ch| ch == ' ');
+        assert!(!is_blank, "blank row at {idx}");
+    }
+}

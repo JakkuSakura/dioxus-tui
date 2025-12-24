@@ -85,7 +85,7 @@ pub fn App() -> Element {
             },
 
             div {
-                style: "flex: 1 0 0; min-height: 1ch; width: 100%; position: relative;",
+                style: "flex: 0 0 1ch; height: 1ch; width: 100%; position: relative;",
                 "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
                     let rect = topbar::render_with_width(&topbar_data, ctx.rect.width as usize);
                     rect.draw_to(ctx);
@@ -96,7 +96,11 @@ pub fn App() -> Element {
             div {
                 style: "flex: 8 0 0; min-height: 8ch; width: 100%; position: relative;",
                 "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
-                    let rect = cpu_panel::render_with_width(&cpu_data, ctx.rect.width as usize);
+                    let rect = cpu_panel::render_with_size(
+                        &cpu_data,
+                        ctx.rect.width as usize,
+                        ctx.rect.height as usize,
+                    );
                     rect.draw_to(ctx);
                 }),
                 {cpu_html}

@@ -74,6 +74,7 @@ pub fn render_with_size(data: &MemData, width: usize, height: usize) -> RectBuil
     let mut rect = RectBuilder::new(width, height);
     let border = theme::fg(theme::MEM_BOX);
     let right_edge = width.saturating_sub(2);
+    let footer_y = height.saturating_sub(1);
 
     if let Some(line) = rect.line_mut(0) {
         line.set_str_styled(0, "╭─┐²", border.clone());
@@ -112,7 +113,20 @@ pub fn render_with_size(data: &MemData, width: usize, height: usize) -> RectBuil
         line_bar(line, '⣀', data.free_pct, theme::FREE_MID, &border, right_edge);
     }
 
-    if let Some(line) = rect.line_mut(10) {
+    let extra_start = BASE_HEIGHT.saturating_sub(1);
+    for y in extra_start..footer_y {
+        if let Some(line) = rect.line_mut(y) {
+            let (ch, pct, color) = match (y - extra_start) % 4 {
+                0 => ('⣤', data.used_pct, theme::USED_MID),
+                1 => ('⣶', data.available_pct, theme::AVAILABLE_MID),
+                2 => ('⣤', data.cached_pct, theme::CACHED_MID),
+                _ => ('⣀', data.free_pct, theme::FREE_MID),
+            };
+            line_bar(line, ch, pct, color, &border, right_edge);
+        }
+    }
+
+    if let Some(line) = rect.line_mut(footer_y) {
         line.set_str_styled(0, "╰", border.clone());
         let dash_len = right_edge.saturating_sub(1);
         line.set_str_styled(1, &bar_repeat('─', dash_len), border.clone());

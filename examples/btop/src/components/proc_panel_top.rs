@@ -68,16 +68,15 @@ pub fn render_with_size(data: &ProcData, width: usize, height: usize) -> RectBui
         columns_row(line, &border, width);
     }
 
-    let rows = height.saturating_sub(2).min(data.rows_top.len());
+    let rows = height.saturating_sub(2);
     for idx in 0..rows {
         if let Some(line) = rect.line_mut(2 + idx) {
-            row_line(line, &data.rows_top[idx], &border, width);
-        }
-    }
-
-    for idx in (2 + rows)..height {
-        if let Some(line) = rect.line_mut(idx) {
-            blank_row(line, &border, width);
+            if data.rows_top.is_empty() {
+                blank_row(line, &border, width);
+            } else {
+                let row = &data.rows_top[idx % data.rows_top.len()];
+                row_line(line, row, &border, width);
+            }
         }
     }
 

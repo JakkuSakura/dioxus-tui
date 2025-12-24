@@ -14,6 +14,7 @@ pub fn render_with_size(data: &NetData, width: usize, height: usize) -> RectBuil
     let mut rect = RectBuilder::new(width, height);
     let border = theme::fg(theme::NET_BOX);
     let right = width - 1;
+    let footer_y = height.saturating_sub(2);
 
     if let Some(line) = rect.line_mut(0) {
         line.set_str_styled(0, "╭─┐³", border.clone());
@@ -74,14 +75,30 @@ pub fn render_with_size(data: &NetData, width: usize, height: usize) -> RectBuil
         line.set_str_styled(right, "│", border.clone());
     }
 
-    if let Some(line) = rect.line_mut(6) {
+    let extra_start = 6;
+    if footer_y > extra_start {
+        for y in extra_start..footer_y {
+            if let Some(line) = rect.line_mut(y) {
+                line.set_str_styled(0, "│", border.clone());
+                let (graph, color) = match (y - extra_start) % 3 {
+                    0 => (data.graph_mid, theme::DOWNLOAD_MID),
+                    1 => (data.graph_solid, theme::DOWNLOAD_MID),
+                    _ => (data.graph_bottom, theme::UPLOAD_MID),
+                };
+                line.set_str_styled(1, graph, theme::fg(color));
+                line.set_str_styled(right, "│", border.clone());
+            }
+        }
+    }
+
+    if let Some(line) = rect.line_mut(footer_y) {
         line.set_str_styled(0, "│", border.clone());
         line.set_str_styled(1, data.graph_footer, theme::fg(theme::UPLOAD_MID));
         line.set_str_styled(26, "╰─┘upload└────────────────╯", border.clone());
         line.set_str_styled(right, "│", border.clone());
     }
 
-    if let Some(line) = rect.line_mut(7) {
+    if let Some(line) = rect.line_mut(height.saturating_sub(1)) {
         line.set_str_styled(0, "╰", border.clone());
         line.set_str_styled(1, &bar_repeat('─', width.saturating_sub(2)), border.clone());
         line.set_str_styled(right, "╯", border.clone());
