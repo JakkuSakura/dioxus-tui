@@ -10,13 +10,13 @@ keywords = ["dom", "ui", "gui", "react", "terminal"]
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-dioxus = { version = "0.7.1" }
-dioxus-core = { version = "0.7.1", features = ["serialize"] }
-dioxus-html = { version = "0.7.1" }
-dioxus-core-types = "0.7.1"
+dioxus = { version = "0.7.2" }
+dioxus-core = { version = "0.7.2", features = ["serialize"] }
+dioxus-html = { version = "0.7.2" }
+dioxus-core-types = "0.7.2"
 keyboard-types = "0.7"
 dioxus-hot-reload = { version = "0.6.0-alpha.2", optional = true }
-dioxus-native = { version = "0.7.1", optional = true }
+dioxus-native = { version = "0.7.2", optional = true }
 
 tokio = { version = "1.36", features = ["full"] }
 futures = "0.3.30"
@@ -28,7 +28,7 @@ bevy_ecs = { version = "0.11", default-features = false }
 blitz-dom = { version = "0.2.2", default-features = false, features = ["system_fonts"] }
 blitz-traits = { version = "0.2.0" }
 blitz-paint = { version = "0.2.1", default-features = false, optional = true }
-dioxus-native-dom = "0.7.1"
+dioxus-native-dom = "0.7.2"
 anyrender = "0.6"
 anyrender_vello_cpu = { version = "0.8.1", optional = true }
 png = "0.17"
@@ -46,7 +46,7 @@ smol_str = "0.2"
 libc = "0.2"
 
 [dev-dependencies]
-dioxus = { version = "0.7.1" }
+dioxus = { version = "0.7.2" }
 tokio = { version = "1.36", features = ["full"] }
 criterion = "0.8.0"
 clap = { version = "4.5", features = ["derive"] }
