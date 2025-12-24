@@ -5,7 +5,8 @@ use crate::data::DiskData;
 use crate::render::bar_repeat;
 use crate::theme;
 
-const WIDTH: usize = 26;
+const BASE_WIDTH: usize = 26;
+const BASE_HEIGHT: usize = 11;
 
 fn line_root(line: &mut LineBuilder, data: &DiskData, border: &Style) {
     line.set_str_styled(0, "root", theme::fg(theme::TITLE));
@@ -82,8 +83,10 @@ fn line_io(line: &mut LineBuilder, border: &Style) {
     line.set_str_styled(25, "│", border.clone());
 }
 
-pub fn render(data: &DiskData) -> ComponentBlock {
-    let mut rect = RectBuilder::new(WIDTH, 11);
+pub fn render_with_size(data: &DiskData, width: usize, height: usize) -> RectBuilder {
+    let width = width.max(BASE_WIDTH);
+    let height = height.max(BASE_HEIGHT);
+    let mut rect = RectBuilder::new(width, height);
     let border = theme::fg(theme::MEM_BOX);
 
     if let Some(line) = rect.line_mut(0) {
@@ -127,9 +130,13 @@ pub fn render(data: &DiskData) -> ComponentBlock {
         line.set_str_styled(25, "╯", border.clone());
     }
 
+    rect
+}
+
+pub fn render(data: &DiskData) -> ComponentBlock {
     ComponentBlock {
         x: 28,
         y: 9,
-        rect,
+        rect: render_with_size(data, BASE_WIDTH, BASE_HEIGHT),
     }
 }

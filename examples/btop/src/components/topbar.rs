@@ -5,6 +5,9 @@ use crate::data::TopbarData;
 use crate::render::{bar_repeat, pad_right};
 use crate::theme;
 
+const BASE_WIDTH: usize = 120;
+const HEIGHT: usize = 1;
+
 fn tab_style(tab: &str, active: &str) -> dioxus_tui::builders::Style {
     if tab == active {
         let mut style = theme::fg_bg(theme::SELECTED_FG, theme::SELECTED_BG);
@@ -15,8 +18,8 @@ fn tab_style(tab: &str, active: &str) -> dioxus_tui::builders::Style {
     }
 }
 
-pub fn render(data: &TopbarData) -> ComponentBlock {
-    let mut rect = RectBuilder::new(120, 1);
+pub fn render_with_width(data: &TopbarData, width: usize) -> RectBuilder {
+    let mut rect = RectBuilder::new(width, HEIGHT);
     let line = rect.line_mut(0).expect("topbar line");
     let border = theme::fg(theme::DIV_LINE);
 
@@ -72,5 +75,13 @@ pub fn render(data: &TopbarData) -> ComponentBlock {
 
     line.set_str_styled(x, " +┌─╮", border);
 
-    ComponentBlock { x: 0, y: 0, rect }
+    rect
+}
+
+pub fn render(data: &TopbarData) -> ComponentBlock {
+    ComponentBlock {
+        x: 0,
+        y: 0,
+        rect: render_with_width(data, BASE_WIDTH),
+    }
 }

@@ -23,7 +23,6 @@ pub fn paint_surface(
     palette_roles: PaletteRoles,
     color_mode: ColorMode,
     truecolor: bool,
-    draw_state: Option<&crate::draw::DrawState>,
     draw_mode: crate::draw::CustomDrawMode,
     image_policy: ImagePolicy,
     image_downgrade: ImageDowngrade,
@@ -50,7 +49,6 @@ pub fn paint_surface(
         truecolor,
         fallback_fg,
         TextStyle::default(),
-        draw_state,
         draw_mode,
         palette_roles,
         image_policy,
@@ -122,7 +120,6 @@ fn paint_node(
     truecolor: bool,
     fallback_fg: ColorAttribute,
     inherited: TextStyle,
-    draw_state: Option<&crate::draw::DrawState>,
     draw_mode: crate::draw::CustomDrawMode,
     palette_roles: PaletteRoles,
     image_policy: ImagePolicy,
@@ -135,8 +132,8 @@ fn paint_node(
             let node_style = inherited.merged(local_style);
 
             if draw_mode == crate::draw::CustomDrawMode::Native {
-                if let Some(draw_state) = draw_state {
-                    if let Some(cb) = draw_state.get(node.id) {
+                if let Some(draw_id) = attr_value(node, "data-draw-id") {
+                    if let Some(cb) = crate::draw::lookup_draw(draw_id) {
                         let rect = node_rect(doc, node, area, metrics);
                         if rect.width > 0 && rect.height > 0 {
                             let mut ctx = crate::draw::DrawContext {
@@ -228,7 +225,6 @@ fn paint_node(
                         truecolor,
                         fallback_fg,
                         node_style,
-                        draw_state,
                         draw_mode,
                         palette_roles,
                         image_policy,
@@ -253,7 +249,6 @@ fn paint_node(
                         truecolor,
                         fallback_fg,
                         inherited,
-                        draw_state,
                         draw_mode,
                         palette_roles,
                         image_policy,

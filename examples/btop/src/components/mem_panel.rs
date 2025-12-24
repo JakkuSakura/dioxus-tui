@@ -5,7 +5,8 @@ use crate::data::MemData;
 use crate::render::bar_repeat;
 use crate::theme;
 
-const WIDTH: usize = 28;
+const BASE_WIDTH: usize = 28;
+const BASE_HEIGHT: usize = 11;
 
 fn line_total(line: &mut LineBuilder, data: &MemData, border: &Style) {
     line.set_str_styled(0, "│", border.clone());
@@ -60,8 +61,10 @@ fn line_free(line: &mut LineBuilder, data: &MemData, border: &Style) {
     line.set_str_styled(25, "─├─", border.clone());
 }
 
-pub fn render(data: &MemData) -> ComponentBlock {
-    let mut rect = RectBuilder::new(WIDTH, 11);
+pub fn render_with_size(data: &MemData, width: usize, height: usize) -> RectBuilder {
+    let width = width.max(BASE_WIDTH);
+    let height = height.max(BASE_HEIGHT);
+    let mut rect = RectBuilder::new(width, height);
     let border = theme::fg(theme::MEM_BOX);
 
     if let Some(line) = rect.line_mut(0) {
@@ -106,9 +109,13 @@ pub fn render(data: &MemData) -> ComponentBlock {
         line.set_str_styled(26, "┴─", border.clone());
     }
 
+    rect
+}
+
+pub fn render(data: &MemData) -> ComponentBlock {
     ComponentBlock {
         x: 0,
         y: 9,
-        rect,
+        rect: render_with_size(data, BASE_WIDTH, BASE_HEIGHT),
     }
 }

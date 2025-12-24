@@ -5,11 +5,15 @@ use crate::data::NetData;
 use crate::render::bar_repeat;
 use crate::theme;
 
-const WIDTH: usize = 54;
+const BASE_WIDTH: usize = 54;
+const BASE_HEIGHT: usize = 8;
 
-pub fn render(data: &NetData) -> ComponentBlock {
-    let mut rect = RectBuilder::new(WIDTH, 8);
+pub fn render_with_size(data: &NetData, width: usize, height: usize) -> RectBuilder {
+    let width = width.max(2);
+    let height = height.max(BASE_HEIGHT);
+    let mut rect = RectBuilder::new(width, height);
     let border = theme::fg(theme::NET_BOX);
+    let right = width - 1;
 
     if let Some(line) = rect.line_mut(0) {
         line.set_str_styled(0, "╭─┐³", border.clone());
@@ -23,7 +27,7 @@ pub fn render(data: &NetData) -> ComponentBlock {
         line.set_str_styled(0, "│", border.clone());
         line.set_str_styled(1, data.graph_top, theme::fg(theme::DOWNLOAD_MID));
         line.set_str_styled(26, "╭─┐download┌──────────────╮", border.clone());
-        line.set_str_styled(53, "│", border.clone());
+        line.set_str_styled(right, "│", border.clone());
     }
 
     if let Some(line) = rect.line_mut(2) {
@@ -70,18 +74,22 @@ pub fn render(data: &NetData) -> ComponentBlock {
         line.set_str_styled(0, "│", border.clone());
         line.set_str_styled(1, data.graph_footer, theme::fg(theme::UPLOAD_MID));
         line.set_str_styled(26, "╰─┘upload└────────────────╯", border.clone());
-        line.set_str_styled(53, "│", border.clone());
+        line.set_str_styled(right, "│", border.clone());
     }
 
     if let Some(line) = rect.line_mut(7) {
         line.set_str_styled(0, "╰", border.clone());
-        line.set_str_styled(1, &bar_repeat('─', WIDTH - 2), border.clone());
-        line.set_str_styled(WIDTH - 1, "╯", border.clone());
+        line.set_str_styled(1, &bar_repeat('─', width.saturating_sub(2)), border.clone());
+        line.set_str_styled(right, "╯", border.clone());
     }
 
+    rect
+}
+
+pub fn render(data: &NetData) -> ComponentBlock {
     ComponentBlock {
         x: 0,
         y: 20,
-        rect,
+        rect: render_with_size(data, BASE_WIDTH, BASE_HEIGHT),
     }
 }

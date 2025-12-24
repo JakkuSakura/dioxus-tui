@@ -124,7 +124,6 @@ where
         crop_cfg.palette_roles,
         crop_cfg.color_mode,
         term_caps.truecolor,
-        Some(&renderer.draw_state),
         crop_cfg.custom_draw_mode,
         crop_cfg.image_policy,
         crop_cfg.image_downgrade,
