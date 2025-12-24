@@ -4,7 +4,6 @@ use std::sync::OnceLock;
 
 mod all_terminal_events;
 mod border;
-mod btop;
 mod frame;
 mod buttons;
 mod buttons_hooks;
@@ -41,11 +40,6 @@ pub fn apps() -> &'static [AppSpec] {
                 cfg: Config::default()
                     .with_color_mode(ColorMode::Ansi)
                     .with_image_policy(ImagePolicy::Inline),
-            },
-            AppSpec {
-                name: "btop",
-                app: btop::app,
-                cfg: Config::default().with_color_mode(ColorMode::Rgb),
             },
             AppSpec {
                 name: "text",

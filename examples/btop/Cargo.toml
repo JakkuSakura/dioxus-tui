@@ -1,0 +1,9 @@
+[package]
+name = "dioxus-tui-btop"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dioxus = "0.7.1"
+dioxus-html = "0.7.1"
+dioxus-tui = { path = "../.." }
