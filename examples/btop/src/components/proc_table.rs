@@ -14,7 +14,17 @@ pub struct ProcColumns {
     pub tail: usize,
 }
 
-fn pad_or_trim(text: &str, width: usize) -> String {
+fn pad_right(text: &str, width: usize) -> String {
+    let mut out = String::new();
+    out.push_str(text);
+    let len = out.chars().count();
+    if len < width {
+        out.push_str(&" ".repeat(width - len));
+    }
+    out
+}
+
+fn trim_and_pad(text: &str, width: usize) -> String {
     let mut out = String::new();
     for ch in text.chars().take(width) {
         out.push(ch);
@@ -102,22 +112,23 @@ pub fn format_header(columns: ProcColumns, width: usize) -> String {
     if width <= 2 {
         return String::new();
     }
+    let cmd_width = command_width(columns, width);
     let mut line = String::new();
     line.push(' ');
-    line.push_str(&pad_or_trim("Pid:", columns.pid));
+    line.push_str(&pad_right("Pid:", columns.pid));
     line.push(' ');
-    line.push_str(&pad_or_trim("Program:", columns.name));
+    line.push_str(&pad_right("Program:", columns.name));
     line.push(' ');
-    line.push_str(&pad_or_trim("Command:", columns.cmd));
+    line.push_str(&trim_and_pad("Command:", cmd_width));
     line.push(' ');
-    line.push_str(&pad_or_trim("User:", columns.user));
+    line.push_str(&pad_right("User:", columns.user));
     line.push(' ');
-    line.push_str(&pad_or_trim("MemB", columns.mem));
+    line.push_str(&pad_right("MemB", columns.mem));
     line.push(' ');
-    line.push_str(&pad_or_trim("Cpu%", columns.cpu));
+    line.push_str(&pad_right("Cpu%", columns.cpu));
     line.push(' ');
-    line.push_str(&pad_or_trim("↑", columns.tail));
-    pad_or_trim(&line, width.saturating_sub(2))
+    line.push_str(&pad_right("↑", columns.tail));
+    trim_and_pad(&line, width.saturating_sub(2))
 }
 
 pub fn format_row(row: &ProcRow, columns: ProcColumns, width: usize) -> String {
@@ -125,22 +136,38 @@ pub fn format_row(row: &ProcRow, columns: ProcColumns, width: usize) -> String {
         return String::new();
     }
     let pid = format!("{:>7}", row.pid);
+    let cmd_width = command_width(columns, width);
     let mut line = String::new();
     line.push(' ');
-    line.push_str(&pad_or_trim(&pid, columns.pid));
+    line.push_str(&pad_right(&pid, columns.pid));
     line.push(' ');
-    line.push_str(&pad_or_trim(row.name, columns.name));
+    line.push_str(&pad_right(row.name, columns.name));
     line.push(' ');
-    line.push_str(&pad_or_trim(row.cmd, columns.cmd));
+    line.push_str(&trim_and_pad(row.cmd, cmd_width));
     line.push(' ');
-    line.push_str(&pad_or_trim(row.user, columns.user));
+    line.push_str(&pad_right(row.user, columns.user));
     line.push(' ');
-    line.push_str(&pad_or_trim(row.mem, columns.mem));
+    line.push_str(&pad_right(row.mem, columns.mem));
     line.push(' ');
-    line.push_str(&pad_or_trim(row.bar, columns.bar));
+    line.push_str(&pad_right(row.bar, columns.bar));
     line.push(' ');
-    line.push_str(&pad_or_trim(row.cpu, columns.cpu));
+    line.push_str(&pad_right(row.cpu, columns.cpu));
     line.push(' ');
-    line.push_str(&pad_or_trim(row.tail, columns.tail));
-    pad_or_trim(&line, width.saturating_sub(2))
+    line.push_str(&pad_right(row.tail, columns.tail));
+    trim_and_pad(&line, width.saturating_sub(2))
+}
+
+fn command_width(columns: ProcColumns, width: usize) -> usize {
+    let usable = width.saturating_sub(2);
+    let gaps = 7;
+    let fixed = columns.pid
+        + columns.name
+        + columns.user
+        + columns.mem
+        + columns.bar
+        + columns.cpu
+        + columns.tail
+        + gaps;
+    let remaining = usable.saturating_sub(fixed).max(1);
+    remaining.max(1)
 }

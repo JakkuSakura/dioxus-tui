@@ -196,7 +196,7 @@ pub static PROC_TOP: [ProcRow; 9] = [
     ProcRow {
         pid: 9050,
         name: "kvm",
-        cmd: "/usr/bin/kvm -id 102",
+        cmd: "/usr/bin/kvm -id 102 -name vm-102 -smp 32 -m 65536",
         user: "root",
         mem: "66G",
         cpu: "0.2",
@@ -206,7 +206,7 @@ pub static PROC_TOP: [ProcRow; 9] = [
     ProcRow {
         pid: 6762,
         name: "tailscal",
-        cmd: "/usr/sbin/tailscaled",
+        cmd: "/usr/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state",
         user: "root",
         mem: "12M",
         cpu: "0.0",
@@ -216,7 +216,7 @@ pub static PROC_TOP: [ProcRow; 9] = [
     ProcRow {
         pid: 9719,
         name: "kvm",
-        cmd: "/usr/bin/kvm -id 105",
+        cmd: "/usr/bin/kvm -id 105 -name vm-105 -smp 24 -m 32768",
         user: "root",
         mem: "6.8G",
         cpu: "0.0",
@@ -226,7 +226,7 @@ pub static PROC_TOP: [ProcRow; 9] = [
     ProcRow {
         pid: 222345,
         name: "kvm",
-        cmd: "/usr/bin/kvm -id 106",
+        cmd: "/usr/bin/kvm -id 106 -name vm-106 -smp 16 -m 32768",
         user: "root",
         mem: "5.2G",
         cpu: "0.0",
@@ -236,7 +236,7 @@ pub static PROC_TOP: [ProcRow; 9] = [
     ProcRow {
         pid: 9438,
         name: "kvm",
-        cmd: "/usr/bin/kvm -id 103",
+        cmd: "/usr/bin/kvm -id 103 -name vm-103 -smp 20 -m 49152",
         user: "root",
         mem: "12G",
         cpu: "0.1",
@@ -246,7 +246,7 @@ pub static PROC_TOP: [ProcRow; 9] = [
     ProcRow {
         pid: 9610,
         name: "kvm",
-        cmd: "/usr/bin/kvm -id 104",
+        cmd: "/usr/bin/kvm -id 104 -name vm-104 -smp 12 -m 16384",
         user: "root",
         mem: "1.9G",
         cpu: "0.0",
@@ -256,7 +256,7 @@ pub static PROC_TOP: [ProcRow; 9] = [
     ProcRow {
         pid: 7893,
         name: "kvm",
-        cmd: "/usr/bin/kvm -id 100",
+        cmd: "/usr/bin/kvm -id 100 -name vm-100 -smp 32 -m 65536",
         user: "root",
         mem: "16G",
         cpu: "0.0",
@@ -266,7 +266,7 @@ pub static PROC_TOP: [ProcRow; 9] = [
     ProcRow {
         pid: 6750,
         name: "rrdcache",
-        cmd: "/usr/bin/rrdcached -g",
+        cmd: "/usr/bin/rrdcached -g -l unix:/var/run/rrdcached.sock",
         user: "root",
         mem: "3.0M",
         cpu: "0.0",
@@ -276,7 +276,7 @@ pub static PROC_TOP: [ProcRow; 9] = [
     ProcRow {
         pid: 7533,
         name: "pmxcfs",
-        cmd: "/usr/bin/pmxcfs",
+        cmd: "/usr/bin/pmxcfs -l /var/lib/pve-cluster/",
         user: "root",
         mem: "269M",
         cpu: "0.0",
@@ -289,7 +289,7 @@ pub static PROC_BOTTOM: [ProcRow; 7] = [
     ProcRow {
         pid: 6746,
         name: "pve-lxc-",
-        cmd: "/usr/lib/x86_64-linux",
+        cmd: "/usr/lib/x86_64-linux-gnu/pve-lxc-syscalld",
         user: "root",
         mem: "3.0M",
         cpu: "0.0",
@@ -299,7 +299,7 @@ pub static PROC_BOTTOM: [ProcRow; 7] = [
     ProcRow {
         pid: 6766,
         name: "zed",
-        cmd: "/usr/sbin/zed -F",
+        cmd: "/usr/sbin/zed -F -d -s -I 10",
         user: "root",
         mem: "3.1M",
         cpu: "0.0",
@@ -309,7 +309,7 @@ pub static PROC_BOTTOM: [ProcRow; 7] = [
     ProcRow {
         pid: 4026,
         name: "dmeventd",
-        cmd: "/usr/sbin/dmeventd -f",
+        cmd: "/usr/sbin/dmeventd -f -i 5",
         user: "root",
         mem: "24M",
         cpu: "0.0",
@@ -319,7 +319,7 @@ pub static PROC_BOTTOM: [ProcRow; 7] = [
     ProcRow {
         pid: 6866,
         name: "lxcfs",
-        cmd: "/usr/bin/lxcfs /var/l",
+        cmd: "/usr/bin/lxcfs /var/lib/lxcfs -o allow_other",
         user: "root",
         mem: "0B",
         cpu: "0.0",
@@ -329,7 +329,7 @@ pub static PROC_BOTTOM: [ProcRow; 7] = [
     ProcRow {
         pid: 3081602,
         name: "pvefw-lo",
-        cmd: "/usr/sbin/pvefw-logge",
+        cmd: "/usr/sbin/pvefw-logger -a -d -s /var/log/pve/firewall.log",
         user: "root",
         mem: "0B",
         cpu: "0.0",
@@ -339,7 +339,7 @@ pub static PROC_BOTTOM: [ProcRow; 7] = [
     ProcRow {
         pid: 3549518,
         name: "btop",
-        cmd: "btop",
+        cmd: "btop --utf-force --utf-only --color-theme=default",
         user: "jakku",
         mem: "6.0M",
         cpu: "0.0",
@@ -349,7 +349,7 @@ pub static PROC_BOTTOM: [ProcRow; 7] = [
     ProcRow {
         pid: 7818,
         name: "pveproxy",
-        cmd: "pveproxy",
+        cmd: "pveproxy --service pveproxy --maxworkers 4",
         user: "www-+",
         mem: "168M",
         cpu: "0.0",
