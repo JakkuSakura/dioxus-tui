@@ -712,8 +712,8 @@ fn handle_termwiz_input(
         }
     }
 
-    let event_position = mouse_position_from_termwiz(&term_evt, pixel_scale, cell_metrics);
-    if let Some((x, y)) = event_position {
+    let event_hit_position = mouse_position_from_termwiz(&term_evt, pixel_scale, cell_metrics);
+    if let Some((x, y)) = cursor_position_from_termwiz(&term_evt) {
         let mut state = cursor_state.borrow_mut();
         if state.mode == CursorMode::FollowMouse {
             state.unit = match term_evt {
@@ -723,7 +723,11 @@ fn handle_termwiz_input(
             state.position = Some((x, y));
         }
     }
-    let cursor_position = cursor_state.borrow().position.or(event_position);
+    let cursor_position = cursor_state
+        .borrow()
+        .position
+        .and_then(|pos| cursor_hit_position(pos, cursor_state.borrow().unit, cell_metrics))
+        .or(event_hit_position);
 
     let mut focus_hit: Option<(f32, f32)> = None;
     if mouse_press_from_termwiz(&term_evt) {
@@ -894,6 +898,38 @@ fn mouse_position_from_termwiz(
             scale_pixels(mouse.y_pixels, pixel_scale),
         )),
         _ => None,
+    }
+}
+
+fn cursor_position_from_termwiz(evt: &TzInputEvent) -> Option<(f32, f32)> {
+    match evt {
+        TzInputEvent::Mouse(mouse) => Some((mouse.x as f32, mouse.y as f32)),
+        TzInputEvent::PixelMouse(mouse) => Some((mouse.x_pixels as f32, mouse.y_pixels as f32)),
+        _ => None,
+    }
+}
+
+fn cursor_hit_position(
+    position: (f32, f32),
+    unit: CursorUnit,
+    cell_metrics: CellMetrics,
+) -> Option<(f32, f32)> {
+    let (x, y) = position;
+    match unit {
+        CursorUnit::Cell => {
+            let cell_w = if cell_metrics.cell_w_px > 0.0 {
+                cell_metrics.cell_w_px
+            } else {
+                1.0
+            };
+            let cell_h = if cell_metrics.cell_h_px > 0.0 {
+                cell_metrics.cell_h_px
+            } else {
+                1.0
+            };
+            Some((x * cell_w, y * cell_h))
+        }
+        CursorUnit::Pixel => Some((x, y)),
     }
 }
 
