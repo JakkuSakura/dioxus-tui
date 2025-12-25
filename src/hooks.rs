@@ -58,6 +58,80 @@ pub struct ViewportBus {
     listeners: Rc<RefCell<Vec<Option<Rc<dyn Fn(Rect)>>>>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursorStyle {
+    Block,
+    Underline,
+    Beam,
+    Crosshair,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursorUnit {
+    Cell,
+    Pixel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursorMode {
+    FollowMouse,
+    Manual,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CursorCommand {
+    Show,
+    Hide,
+    SetStyle(CursorStyle),
+    FollowMouse,
+    SetCellPosition(f32, f32),
+    SetPixelPosition(f32, f32),
+}
+
+#[derive(Clone, Default)]
+pub struct CursorBus {
+    listeners: Rc<RefCell<Vec<Option<Rc<dyn Fn(CursorCommand)>>>>>,
+}
+
+impl CursorBus {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn subscribe(&self, listener: Rc<dyn Fn(CursorCommand)>) -> CursorSubscription {
+        let mut listeners = self.listeners.borrow_mut();
+        let id = listeners.len();
+        listeners.push(Some(listener));
+        Rc::new(CursorSubscriptionInner {
+            id,
+            listeners: Rc::downgrade(&self.listeners),
+        })
+    }
+
+    pub fn publish(&self, event: CursorCommand) {
+        for listener in self.listeners.borrow().iter().flatten() {
+            listener(event);
+        }
+    }
+}
+
+pub(crate) type CursorSubscription = Rc<CursorSubscriptionInner>;
+
+pub(crate) struct CursorSubscriptionInner {
+    id: usize,
+    listeners: Weak<RefCell<Vec<Option<Rc<dyn Fn(CursorCommand)>>>>>,
+}
+
+impl Drop for CursorSubscriptionInner {
+    fn drop(&mut self) {
+        if let Some(listeners) = self.listeners.upgrade() {
+            if let Some(slot) = listeners.borrow_mut().get_mut(self.id) {
+                *slot = None;
+            }
+        }
+    }
+}
+
 impl ViewportBus {
     pub fn new() -> Self {
         Self::default()
@@ -600,6 +674,42 @@ pub fn use_viewport() -> Signal<Rect> {
         }))
     });
     signal
+}
+
+#[derive(Clone)]
+pub struct CursorHandle {
+    bus: CursorBus,
+}
+
+impl CursorHandle {
+    pub fn show(&self) {
+        self.bus.publish(CursorCommand::Show);
+    }
+
+    pub fn hide(&self) {
+        self.bus.publish(CursorCommand::Hide);
+    }
+
+    pub fn follow_mouse(&self) {
+        self.bus.publish(CursorCommand::FollowMouse);
+    }
+
+    pub fn set_style(&self, style: CursorStyle) {
+        self.bus.publish(CursorCommand::SetStyle(style));
+    }
+
+    pub fn set_cell_position(&self, x: f32, y: f32) {
+        self.bus.publish(CursorCommand::SetCellPosition(x, y));
+    }
+
+    pub fn set_pixel_position(&self, x: f32, y: f32) {
+        self.bus.publish(CursorCommand::SetPixelPosition(x, y));
+    }
+}
+
+pub fn use_cursor() -> CursorHandle {
+    let bus = use_context::<CursorBus>();
+    CursorHandle { bus }
 }
 
 fn wheel_delta(buttons: MouseButtons) -> (f64, f64) {

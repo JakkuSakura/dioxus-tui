@@ -32,8 +32,9 @@ pub use config::{ColorMode, Config, ImageDowngrade, ImagePolicy, PaletteEntry, P
 pub use error::Error;
 pub use geometry::{Alignment, Rect};
 pub use hooks::{
-    EventData, RawInputEvent, TuiInputBus, ViewportBus, use_keyboard_input, use_mouse_input,
-    use_raw_input, use_viewport, use_wheel_input,
+    CursorHandle, CursorMode, CursorStyle, CursorUnit, EventData, RawInputEvent, TuiInputBus,
+    ViewportBus, use_cursor, use_keyboard_input, use_mouse_input, use_raw_input, use_viewport,
+    use_wheel_input,
 };
 pub use render::TuiContext;
 pub use draw::{on_draw, CustomDrawMode, DrawContext};

@@ -1,4 +1,4 @@
-use std::{any::Any, rc::Rc};
+use std::{any::Any, cell::RefCell, rc::Rc};
 
 use crate::error::Result;
 use blitz_dom::{Document as _, Node};
@@ -12,7 +12,7 @@ use futures::{FutureExt, StreamExt};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use smol_str::SmolStr;
 use termwiz::{
-    color::ColorAttribute,
+    color::{ColorAttribute, SrgbaTuple},
     surface::{Change, Position},
     terminal::{buffered::BufferedTerminal, ScreenSize, Terminal},
 };
@@ -23,9 +23,12 @@ use termwiz::terminal::new_terminal;
 use crate::capabilities::{DetectedCapabilities, InlineImageProtocol, TerminalCapabilities};
 use crate::capabilities::detect as detect_capabilities;
 use crate::capabilities::termwiz_capabilities;
-use crate::config::{Config, RenderingMode};
+use crate::config::{ColorMode, Config, PaletteEntry, RenderingMode};
 use crate::geometry::Rect;
-use crate::hooks::{map_code, map_modifiers, raw_input_from_termwiz, RawMouseState, TuiInputBus, ViewportBus};
+use crate::hooks::{
+    CursorBus, CursorCommand, CursorMode, CursorStyle, CursorUnit, map_code, map_modifiers,
+    raw_input_from_termwiz, RawMouseState, TuiInputBus, ViewportBus,
+};
 use crate::layout::resolve_document;
 use crate::scene::CellMetrics;
 use crate::surface::Surface;
@@ -79,6 +82,7 @@ pub(crate) struct DioxusRenderer {
     pub(crate) doc: DioxusDocument,
     pub(crate) input_bus: TuiInputBus,
     pub(crate) viewport_bus: ViewportBus,
+    pub(crate) cursor_bus: CursorBus,
     pub(crate) runtime: std::rc::Rc<Runtime>,
     #[cfg(all(feature = "hot-reload", debug_assertions))]
     pub(crate) hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<dioxus_hot_reload::HotReloadMsg>,
@@ -126,10 +130,12 @@ impl DioxusRenderer {
         let ctx = TuiContext::new(event_tx.clone());
         let input_bus = TuiInputBus::new();
         let viewport_bus = ViewportBus::new();
+        let cursor_bus = CursorBus::new();
         let vdom = vdom
             .with_root_context(ctx)
             .with_root_context(input_bus.clone())
-            .with_root_context(viewport_bus.clone());
+            .with_root_context(viewport_bus.clone())
+            .with_root_context(cursor_bus.clone());
 
         let mut doc = Self::build_document(vdom, viewport);
         doc.initial_build();
@@ -140,6 +146,7 @@ impl DioxusRenderer {
                 doc,
                 input_bus,
                 viewport_bus,
+                cursor_bus,
                 runtime,
                 #[cfg(all(feature = "hot-reload", debug_assertions))]
                 hot_reload_rx: {
@@ -343,7 +350,33 @@ async fn run_tui_renderer(
     };
     let mut input_state = InputState::default();
     let mut raw_mouse_state = RawMouseState::default();
+    let cursor_state = Rc::new(RefCell::new(CursorState::default()));
     let mut last_images: Option<std::collections::VecDeque<PlacedImage>> = None;
+
+    let _cursor_subscription = {
+        let cursor_state = cursor_state.clone();
+        renderer.cursor_bus.subscribe(Rc::new(move |command| {
+            let mut state = cursor_state.borrow_mut();
+            match command {
+                CursorCommand::Show => state.visible = true,
+                CursorCommand::Hide => state.visible = false,
+                CursorCommand::SetStyle(style) => state.style = style,
+                CursorCommand::FollowMouse => state.mode = CursorMode::FollowMouse,
+                CursorCommand::SetCellPosition(x, y) => {
+                    state.mode = CursorMode::Manual;
+                    state.unit = CursorUnit::Cell;
+                    state.position = Some((x, y));
+                    state.visible = true;
+                }
+                CursorCommand::SetPixelPosition(x, y) => {
+                    state.mode = CursorMode::Manual;
+                    state.unit = CursorUnit::Pixel;
+                    state.position = Some((x, y));
+                    state.visible = true;
+                }
+            }
+        }))
+    };
 
     renderer.update();
 
@@ -376,6 +409,7 @@ async fn run_tui_renderer(
                         last_cell_metrics,
                         &mut input_state,
                         &mut raw_mouse_state,
+                        &cursor_state,
                     ) {
                         return Ok(());
                     }
@@ -398,6 +432,7 @@ async fn run_tui_renderer(
                             last_cell_metrics,
                             &mut input_state,
                             &mut raw_mouse_state,
+                            &cursor_state,
                         ) {
                             return Ok(());
                         }
@@ -569,6 +604,21 @@ async fn run_tui_renderer(
                         .collect();
                     debug!(?dump, "surface_dump");
                 }
+                #[cfg(feature = "blitz")]
+                let is_blitz_gui = cfg.rendering_mode == RenderingMode::BlitzGui;
+                #[cfg(not(feature = "blitz"))]
+                let is_blitz_gui = false;
+
+                if !is_blitz_gui {
+                    let cursor_snapshot = cursor_state.borrow().clone();
+                    apply_cursor_overlay(
+                        &mut surface,
+                        &cursor_snapshot,
+                        cfg,
+                        &capabilities,
+                        metrics,
+                    );
+                }
                 flush_surface(
                     term,
                     &surface,
@@ -615,6 +665,27 @@ struct InputState {
     last_button: MouseEventButton,
 }
 
+#[derive(Clone)]
+struct CursorState {
+    visible: bool,
+    style: CursorStyle,
+    mode: CursorMode,
+    unit: CursorUnit,
+    position: Option<(f32, f32)>,
+}
+
+impl Default for CursorState {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            style: CursorStyle::Block,
+            mode: CursorMode::FollowMouse,
+            unit: CursorUnit::Cell,
+            position: None,
+        }
+    }
+}
+
 fn handle_termwiz_input(
     term_evt: TzInputEvent,
     renderer: &mut DioxusRenderer,
@@ -625,6 +696,7 @@ fn handle_termwiz_input(
     cell_metrics: CellMetrics,
     input_state: &mut InputState,
     raw_mouse_state: &mut RawMouseState,
+    cursor_state: &RefCell<CursorState>,
 ) -> bool {
     let ctrl_c = matches!(&term_evt, TzInputEvent::Key(key) if matches!(key.key, KeyCode::Char('c' | 'C')) && key.modifiers.contains(TzModifiers::CTRL) && cfg.ctrl_c_quit);
     if ctrl_c {
@@ -640,9 +712,22 @@ fn handle_termwiz_input(
         }
     }
 
+    let event_position = mouse_position_from_termwiz(&term_evt, pixel_scale, cell_metrics);
+    if let Some((x, y)) = event_position {
+        let mut state = cursor_state.borrow_mut();
+        if state.mode == CursorMode::FollowMouse {
+            state.unit = match term_evt {
+                TzInputEvent::PixelMouse(_) => CursorUnit::Pixel,
+                _ => CursorUnit::Cell,
+            };
+            state.position = Some((x, y));
+        }
+    }
+    let cursor_position = cursor_state.borrow().position.or(event_position);
+
     let mut focus_hit: Option<(f32, f32)> = None;
     if mouse_press_from_termwiz(&term_evt) {
-        focus_hit = mouse_position_from_termwiz(&term_evt, pixel_scale, cell_metrics);
+        focus_hit = cursor_position;
     }
 
     if let Some(ui_event) = ui_event_from_termwiz(&term_evt, pixel_scale, cell_metrics, input_state) {
@@ -659,7 +744,7 @@ fn handle_termwiz_input(
         }
     }
 
-    if let Some((x, y)) = mouse_position_from_termwiz(&term_evt, pixel_scale, cell_metrics) {
+    if let Some((x, y)) = cursor_position {
         if let Some(target) = target_from_hit(&renderer.doc, x, y) {
             for evt in raw_inputs {
                 if evt.name == "wheel" || evt.name == "pixelwheel" {
@@ -833,6 +918,106 @@ fn mouse_press_from_termwiz(evt: &TzInputEvent) -> bool {
 fn scale_pixels(value: u16, pixel_scale: f32) -> f32 {
     let scale = if pixel_scale > 0.0 { pixel_scale } else { 1.0 };
     (value as f32) / scale
+}
+
+fn apply_cursor_overlay(
+    surface: &mut Surface,
+    cursor: &CursorState,
+    cfg: Config,
+    capabilities: &TerminalCapabilities,
+    cell_metrics: CellMetrics,
+) {
+    if !cursor.visible {
+        return;
+    }
+    let Some((x, y)) = cursor.position else {
+        return;
+    };
+
+    let (cell_x, cell_y) = match cursor.unit {
+        CursorUnit::Cell => (x.floor(), y.floor()),
+        CursorUnit::Pixel => {
+            let cell_w = if cell_metrics.cell_w_px > 0.0 {
+                cell_metrics.cell_w_px
+            } else {
+                1.0
+            };
+            let cell_h = if cell_metrics.cell_h_px > 0.0 {
+                cell_metrics.cell_h_px
+            } else {
+                1.0
+            };
+            ((x / cell_w).floor(), (y / cell_h).floor())
+        }
+    };
+
+    if cell_x < 0.0 || cell_y < 0.0 {
+        return;
+    }
+    let cell_x = cell_x as u16;
+    let cell_y = cell_y as u16;
+    if cell_x >= surface.width() || cell_y >= surface.height() {
+        return;
+    }
+
+    let idx = (cell_y as usize) * (surface.width() as usize) + (cell_x as usize);
+    let Some(cell) = surface.content.get_mut(idx) else {
+        return;
+    };
+
+    let accent = palette_entry_to_attr(cfg.palette_roles.accent, cfg.color_mode, capabilities.truecolor);
+    let style = if cursor.unit == CursorUnit::Pixel && cursor.style == CursorStyle::Block {
+        CursorStyle::Crosshair
+    } else {
+        cursor.style
+    };
+
+    match style {
+        CursorStyle::Block => {
+            cell.ch = ' ';
+            cell.bg = Some(accent);
+            cell.fg = None;
+        }
+        CursorStyle::Underline => {
+            cell.underline = termwiz::cell::Underline::Single;
+            cell.fg = Some(accent);
+        }
+        CursorStyle::Beam => {
+            cell.ch = '▏';
+            cell.fg = Some(accent);
+            cell.bg = None;
+        }
+        CursorStyle::Crosshair => {
+            cell.ch = '+';
+            cell.fg = Some(accent);
+            cell.bg = None;
+        }
+    }
+}
+
+fn palette_entry_to_attr(entry: PaletteEntry, color_mode: ColorMode, truecolor: bool) -> ColorAttribute {
+    match entry {
+        PaletteEntry::Ansi(idx) | PaletteEntry::Palette256(idx) => ColorAttribute::PaletteIndex(idx),
+        PaletteEntry::Rgb(r, g, b) => {
+            let srgb = SrgbaTuple::from((r, g, b));
+            let palette_idx_256 =
+                16 + 36 * (r as u16 / 51) as u8 + 6 * (g as u16 / 51) as u8 + (b as u16 / 51) as u8;
+            let base_idx = (if r >= 128 { 1 } else { 0 })
+                | (if g >= 128 { 2 } else { 0 })
+                | (if b >= 128 { 4 } else { 0 });
+            match color_mode {
+                ColorMode::BaseColors => ColorAttribute::PaletteIndex(base_idx),
+                ColorMode::Ansi => ColorAttribute::TrueColorWithPaletteFallback(srgb, palette_idx_256),
+                ColorMode::Rgb => {
+                    if truecolor {
+                        ColorAttribute::TrueColorWithDefaultFallback(srgb)
+                    } else {
+                        ColorAttribute::TrueColorWithPaletteFallback(srgb, palette_idx_256)
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn target_from_hit(doc: &DioxusDocument, x: f32, y: f32) -> Option<ElementId> {

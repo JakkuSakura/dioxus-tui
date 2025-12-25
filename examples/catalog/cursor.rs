@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use dioxus_html::input_data::keyboard_types::Code;
 use dioxus_html::point_interaction::InteractionLocation;
-use dioxus_tui::{EventData, TuiContext, use_raw_input};
+use dioxus_tui::{EventData, TuiContext, use_cursor, use_raw_input};
 
 use crate::catalog::ExampleFrame;
 
@@ -30,8 +30,15 @@ impl Default for CursorState {
 
 pub fn app() -> Element {
     let tui: TuiContext = consume_context();
+    let cursor_handle = use_cursor();
+    let cursor_handle_init = cursor_handle.clone();
     let raw_input = use_raw_input();
     let mut cursor = use_signal(CursorState::default);
+
+    use_effect(move || {
+        cursor_handle_init.show();
+        cursor_handle_init.follow_mouse();
+    });
 
     use_effect(move || {
         let Some(event) = raw_input.read().clone() else {
@@ -68,39 +75,6 @@ pub fn app() -> Element {
     });
 
     let state = cursor.read().clone();
-    let cursor_overlay = if state.visible {
-        if state.pixel_mode {
-            let left = state.render_left.clone();
-            let top = state.render_top.clone();
-            rsx! {
-                div {
-                    position: "absolute",
-                    left: "{left}",
-                    top: "{top}",
-                    width: "6px",
-                    height: "6px",
-                    background_color: "#7aa2f7",
-                    opacity: "0.85",
-                }
-            }
-        } else {
-            let left = state.render_left.clone();
-            let top = state.render_top.clone();
-            rsx! {
-                div {
-                    position: "absolute",
-                    left: "{left}",
-                    top: "{top}",
-                    width: "1ch",
-                    height: "1ch",
-                    background_color: "#7aa2f7",
-                    opacity: "0.65",
-                }
-            }
-        }
-    } else {
-        rsx! { div {} }
-    };
 
     rsx! {
         ExampleFrame {
@@ -158,7 +132,6 @@ pub fn app() -> Element {
                     }
                 }
 
-                {cursor_overlay}
             }
         }
     }
