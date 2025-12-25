@@ -890,12 +890,12 @@ fn mouse_position_from_termwiz(
 ) -> Option<(f32, f32)> {
     match evt {
         TzInputEvent::Mouse(mouse) => Some((
-            mouse.x as f32 * cell_metrics.cell_w_px,
-            mouse.y as f32 * cell_metrics.cell_h_px,
+            normalize_cell_coord(mouse.x) as f32 * cell_metrics.cell_w_px,
+            normalize_cell_coord(mouse.y) as f32 * cell_metrics.cell_h_px,
         )),
         TzInputEvent::PixelMouse(mouse) => Some((
-            scale_pixels(mouse.x_pixels, pixel_scale),
-            scale_pixels(mouse.y_pixels, pixel_scale),
+            scale_pixels(normalize_pixel_coord(mouse.x_pixels), pixel_scale),
+            scale_pixels(normalize_pixel_coord(mouse.y_pixels), pixel_scale),
         )),
         _ => None,
     }
@@ -903,8 +903,14 @@ fn mouse_position_from_termwiz(
 
 fn cursor_position_from_termwiz(evt: &TzInputEvent) -> Option<(f32, f32)> {
     match evt {
-        TzInputEvent::Mouse(mouse) => Some((mouse.x as f32, mouse.y as f32)),
-        TzInputEvent::PixelMouse(mouse) => Some((mouse.x_pixels as f32, mouse.y_pixels as f32)),
+        TzInputEvent::Mouse(mouse) => Some((
+            normalize_cell_coord(mouse.x) as f32,
+            normalize_cell_coord(mouse.y) as f32,
+        )),
+        TzInputEvent::PixelMouse(mouse) => Some((
+            normalize_pixel_coord(mouse.x_pixels) as f32,
+            normalize_pixel_coord(mouse.y_pixels) as f32,
+        )),
         _ => None,
     }
 }
@@ -931,6 +937,14 @@ fn cursor_hit_position(
         }
         CursorUnit::Pixel => Some((x, y)),
     }
+}
+
+fn normalize_cell_coord(value: u16) -> u16 {
+    value.saturating_sub(1)
+}
+
+fn normalize_pixel_coord(value: u16) -> u16 {
+    value.saturating_sub(1)
 }
 
 fn mouse_press_from_termwiz(evt: &TzInputEvent) -> bool {

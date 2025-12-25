@@ -419,7 +419,8 @@ fn map_mouse_input(
         || evt.mouse_buttons.contains(MouseButtons::HORZ_WHEEL)
     {
         let (delta_x, delta_y) = wheel_delta(evt.mouse_buttons.clone());
-        let (_, _, coords) = build_coords(evt.x, evt.y, viewport);
+        let (x, y) = normalize_cell_coords(evt.x, evt.y);
+        let (_, _, coords) = build_coords(x, y, viewport);
         let modifiers = map_modifiers(evt.modifiers);
         let point = SerializedPointInteraction::new(None, MouseButtonSet::empty(), coords, modifiers);
         let data = SerializedWheelData {
@@ -446,7 +447,8 @@ fn map_mouse_input(
     let modifiers = map_modifiers(evt.modifiers);
 
     for button in buttons_from_mask(released.clone()) {
-        let (_, _, coords) = build_coords(evt.x, evt.y, viewport);
+        let (x, y) = normalize_cell_coords(evt.x, evt.y);
+        let (_, _, coords) = build_coords(x, y, viewport);
         let data = SerializedMouseData::new(
             Some(button),
             to_button_set(Some(button)),
@@ -461,7 +463,8 @@ fn map_mouse_input(
     }
 
     for button in buttons_from_mask(added.clone()) {
-        let (_, _, coords) = build_coords(evt.x, evt.y, viewport);
+        let (x, y) = normalize_cell_coords(evt.x, evt.y);
+        let (_, _, coords) = build_coords(x, y, viewport);
         let data = SerializedMouseData::new(
             Some(button),
             to_button_set(Some(button)),
@@ -479,7 +482,8 @@ fn map_mouse_input(
         return events;
     }
 
-    let (_, _, coords) = build_coords(evt.x, evt.y, viewport);
+    let (x, y) = normalize_cell_coords(evt.x, evt.y);
+    let (_, _, coords) = build_coords(x, y, viewport);
     let data = SerializedMouseData::new(None, MouseButtonSet::empty(), coords, modifiers);
     vec![
         RawInputEvent {
@@ -520,7 +524,8 @@ fn map_pixel_mouse_input(
         || evt.mouse_buttons.contains(MouseButtons::HORZ_WHEEL)
     {
         let (delta_x, delta_y) = wheel_delta(evt.mouse_buttons.clone());
-        let (_, _, coords) = build_coords(evt.x_pixels, evt.y_pixels, viewport);
+        let (x, y) = normalize_pixel_coords(evt.x_pixels, evt.y_pixels);
+        let (_, _, coords) = build_coords(x, y, viewport);
         let modifiers = map_modifiers(evt.modifiers);
         let point = SerializedPointInteraction::new(None, MouseButtonSet::empty(), coords, modifiers);
         let data = SerializedWheelData {
@@ -547,7 +552,8 @@ fn map_pixel_mouse_input(
     let modifiers = map_modifiers(evt.modifiers);
 
     for button in buttons_from_mask(released.clone()) {
-        let (_, _, coords) = build_coords(evt.x_pixels, evt.y_pixels, viewport);
+        let (x, y) = normalize_pixel_coords(evt.x_pixels, evt.y_pixels);
+        let (_, _, coords) = build_coords(x, y, viewport);
         let data = SerializedMouseData::new(
             Some(button),
             to_button_set(Some(button)),
@@ -562,7 +568,8 @@ fn map_pixel_mouse_input(
     }
 
     for button in buttons_from_mask(added.clone()) {
-        let (_, _, coords) = build_coords(evt.x_pixels, evt.y_pixels, viewport);
+        let (x, y) = normalize_pixel_coords(evt.x_pixels, evt.y_pixels);
+        let (_, _, coords) = build_coords(x, y, viewport);
         let data = SerializedMouseData::new(
             Some(button),
             to_button_set(Some(button)),
@@ -580,7 +587,8 @@ fn map_pixel_mouse_input(
         return events;
     }
 
-    let (_, _, coords) = build_coords(evt.x_pixels, evt.y_pixels, viewport);
+    let (x, y) = normalize_pixel_coords(evt.x_pixels, evt.y_pixels);
+    let (_, _, coords) = build_coords(x, y, viewport);
     let data = SerializedMouseData::new(None, MouseButtonSet::empty(), coords, modifiers);
     vec![
         RawInputEvent {
@@ -608,6 +616,14 @@ fn buttons_from_mask(mask: MouseButtons) -> Vec<MouseButton> {
         buttons.push(MouseButton::Auxiliary);
     }
     buttons
+}
+
+fn normalize_cell_coords(x: u16, y: u16) -> (u16, u16) {
+    (x.saturating_sub(1), y.saturating_sub(1))
+}
+
+fn normalize_pixel_coords(x: u16, y: u16) -> (u16, u16) {
+    (x.saturating_sub(1), y.saturating_sub(1))
 }
 
 pub fn use_raw_input() -> Signal<Option<RawInputEvent>> {
