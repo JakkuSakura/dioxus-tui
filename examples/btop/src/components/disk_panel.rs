@@ -1,12 +1,9 @@
 use dioxus_tui::builders::{LineBuilder, RectBuilder, Style};
 
-use crate::components::ComponentBlock;
 use crate::data::DiskData;
 use crate::render::bar_repeat;
 use crate::theme;
 
-const BASE_WIDTH: usize = 26;
-const BASE_HEIGHT: usize = 11;
 
 fn line_root(line: &mut LineBuilder, data: &DiskData, border: &Style, right_edge: usize) {
     line.set_str_styled(0, "root", theme::fg(theme::TITLE));
@@ -84,8 +81,8 @@ fn line_io(line: &mut LineBuilder, border: &Style, right_edge: usize) {
 }
 
 pub fn render_with_size(data: &DiskData, width: usize, height: usize) -> RectBuilder {
-    let width = width.max(BASE_WIDTH);
-    let height = height.max(BASE_HEIGHT);
+    let width = width.max(26);
+    let height = height.max(11);
     let mut rect = RectBuilder::new(width, height);
     let border = theme::fg(theme::MEM_BOX);
     let right_edge = width.saturating_sub(1);
@@ -130,7 +127,7 @@ pub fn render_with_size(data: &DiskData, width: usize, height: usize) -> RectBui
         line_io(line, &border, right_edge);
     }
 
-    let extra_start = BASE_HEIGHT.saturating_sub(1);
+    let extra_start = 10;
     for y in extra_start..footer_y {
         if let Some(line) = rect.line_mut(y) {
             line_io(line, &border, right_edge);
@@ -143,12 +140,4 @@ pub fn render_with_size(data: &DiskData, width: usize, height: usize) -> RectBui
     }
 
     rect
-}
-
-pub fn render(data: &DiskData) -> ComponentBlock {
-    ComponentBlock {
-        x: 28,
-        y: 9,
-        rect: render_with_size(data, BASE_WIDTH, BASE_HEIGHT),
-    }
 }

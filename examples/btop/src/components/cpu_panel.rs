@@ -1,12 +1,9 @@
 use dioxus_tui::builders::RectBuilder;
 
-use crate::components::ComponentBlock;
 use crate::data::{CpuCoreData, CpuData};
 use crate::render::bar_repeat;
 use crate::theme;
 
-const BASE_WIDTH: usize = 120;
-const BASE_HEIGHT: usize = 8;
 const INNER_LEFT: usize = 48;
 
 fn core_cell(core: &CpuCoreData) -> String {
@@ -31,12 +28,20 @@ pub fn render_with_size(data: &CpuData, width: usize, height: usize) -> RectBuil
     let outer_left = 0;
     let outer_right = width - 1;
     let inner_right = width.saturating_sub(2);
-    let extra = width.saturating_sub(BASE_WIDTH);
     let right_corner_pos = width.saturating_sub(3);
     let freq_len = data.freq.chars().count();
     let freq_start = right_corner_pos.saturating_sub(freq_len);
     let bar_start = 65;
-    let bar_len = freq_start.saturating_sub(bar_start + 2);
+    let bar_len = freq_start.saturating_sub(bar_start + 2).max(1);
+    let bar_row_start = INNER_LEFT + 5;
+    let percent = format!("{}%", data.total_percent);
+    let graph = "⣀⣀⣀⣀⣀";
+    let temp = format!("{:>2}°C", data.temp_c);
+    let right_len = 1 + percent.chars().count() + 1 + graph.chars().count() + 1 + temp.chars().count();
+    let bar_row_len = inner_right.saturating_sub(bar_row_start + right_len).max(1);
+    let percent_pos = bar_row_start + bar_row_len + 1;
+    let graph_pos = percent_pos + percent.chars().count() + 1;
+    let temp_pos = graph_pos + graph.chars().count() + 1;
 
     // Line 0
     if let Some(line) = rect.line_mut(0) {
@@ -61,25 +66,13 @@ pub fn render_with_size(data: &CpuData, width: usize, height: usize) -> RectBuil
         line.set_str_styled(outer_right, "│", border.clone());
         line.set_str_styled(INNER_LEFT + 1, "CPU ", theme::fg_bold(theme::TITLE));
         line.set_str_styled(
-            INNER_LEFT + 5,
-            &bar_repeat('■', 48 + extra),
+            bar_row_start,
+            &bar_repeat('■', bar_row_len),
             theme::fg(theme::CPU_MID),
         );
-        line.set_str_styled(
-            INNER_LEFT + 56 + extra,
-            &format!("{}%", data.total_percent),
-            theme::fg_bold(theme::TITLE),
-        );
-        line.set_str_styled(
-            INNER_LEFT + 59 + extra,
-            "⣀⣀⣀⣀⣀",
-            theme::fg(theme::GRAPH_TEXT),
-        );
-        line.set_str_styled(
-            INNER_LEFT + 66 + extra,
-            &format!("{:>2}°C", data.temp_c),
-            theme::fg(theme::TEMP_MID),
-        );
+        line.set_str_styled(percent_pos, &percent, theme::fg_bold(theme::TITLE));
+        line.set_str_styled(graph_pos, graph, theme::fg(theme::GRAPH_TEXT));
+        line.set_str_styled(temp_pos, &temp, theme::fg(theme::TEMP_MID));
     }
 
     let core_rows = height.saturating_sub(4);
@@ -130,12 +123,4 @@ pub fn render_with_size(data: &CpuData, width: usize, height: usize) -> RectBuil
     }
 
     rect
-}
-
-pub fn render(data: &CpuData) -> ComponentBlock {
-    ComponentBlock {
-        x: 0,
-        y: 1,
-        rect: render_with_size(data, BASE_WIDTH, BASE_HEIGHT),
-    }
 }

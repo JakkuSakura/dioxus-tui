@@ -1,12 +1,9 @@
 use dioxus_tui::builders::{LineBuilder, RectBuilder, Style};
 
-use crate::components::ComponentBlock;
 use crate::data::MemData;
 use crate::render::bar_repeat;
 use crate::theme;
 
-const BASE_WIDTH: usize = 28;
-const BASE_HEIGHT: usize = 11;
 
 fn line_total(line: &mut LineBuilder, data: &MemData, border: &Style, right_edge: usize) {
     line.set_str_styled(0, "│", border.clone());
@@ -69,8 +66,8 @@ fn line_free(line: &mut LineBuilder, data: &MemData, border: &Style, right_edge:
 }
 
 pub fn render_with_size(data: &MemData, width: usize, height: usize) -> RectBuilder {
-    let width = width.max(BASE_WIDTH);
-    let height = height.max(BASE_HEIGHT);
+    let width = width.max(28);
+    let height = height.max(11);
     let mut rect = RectBuilder::new(width, height);
     let border = theme::fg(theme::MEM_BOX);
     let right_edge = width.saturating_sub(2);
@@ -113,7 +110,7 @@ pub fn render_with_size(data: &MemData, width: usize, height: usize) -> RectBuil
         line_bar(line, '⣀', data.free_pct, theme::FREE_MID, &border, right_edge);
     }
 
-    let extra_start = BASE_HEIGHT.saturating_sub(1);
+    let extra_start = 10;
     for y in extra_start..footer_y {
         if let Some(line) = rect.line_mut(y) {
             let (ch, pct, color) = match (y - extra_start) % 4 {
@@ -134,12 +131,4 @@ pub fn render_with_size(data: &MemData, width: usize, height: usize) -> RectBuil
     }
 
     rect
-}
-
-pub fn render(data: &MemData) -> ComponentBlock {
-    ComponentBlock {
-        x: 0,
-        y: 9,
-        rect: render_with_size(data, BASE_WIDTH, BASE_HEIGHT),
-    }
 }

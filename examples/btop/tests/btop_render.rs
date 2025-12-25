@@ -53,21 +53,6 @@ fn normalize_expected(contents: &str, width: u16, height: u16) -> String {
     lines.join("\n")
 }
 
-fn assert_lines_eq(actual: &str, expected: &str) {
-    let actual_lines: Vec<&str> = actual.lines().collect();
-    let expected_lines: Vec<&str> = expected.lines().collect();
-    let max = actual_lines.len().max(expected_lines.len());
-    for idx in 0..max {
-        let actual_line = actual_lines.get(idx).copied().unwrap_or("");
-        let expected_line = expected_lines.get(idx).copied().unwrap_or("");
-        if actual_line != expected_line {
-            panic!(
-                "line {idx} mismatch\nactual:   {actual_line}\nexpected: {expected_line}"
-            );
-        }
-    }
-}
-
 #[test]
 fn btop_renders_full_screen() {
     let snapshot = std::fs::read_to_string(SNAPSHOT_PATH)
@@ -83,7 +68,7 @@ fn btop_renders_full_screen() {
     let surface = render_app(app::app, width, height);
     let actual = surface.lines().join("\n");
 
-    assert_lines_eq(&actual, &expected);
+    assert_eq!(actual, expected, "btop snapshot mismatch");
 }
 
 #[test]

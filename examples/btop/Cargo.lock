@@ -1046,6 +1046,7 @@ dependencies = [
  "png",
  "smol_str",
  "stylo",
+ "taffy",
  "termwiz",
  "thiserror 1.0.69",
  "tokio",
