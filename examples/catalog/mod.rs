@@ -8,6 +8,7 @@ mod frame;
 mod buttons;
 mod buttons_hooks;
 mod color_test;
+mod cursor;
 mod dashboard;
 mod dioxus_basic;
 mod flex;
@@ -76,6 +77,13 @@ pub fn apps() -> &'static [AppSpec] {
                 name: "color_test",
                 app: color_test::app,
                 cfg: Config::default().with_color_mode(ColorMode::Rgb),
+            },
+            AppSpec {
+                name: "cursor",
+                app: cursor::app,
+                cfg: Config::default()
+                    .with_color_mode(ColorMode::Rgb)
+                    .with_sgr_pixel_mouse(true),
             },
             AppSpec {
                 name: "hover",

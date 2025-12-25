@@ -20,6 +20,9 @@ pub struct Config {
     /// Controls whether custom draw callbacks render HTML nodes or native terminal cells.
     pub(crate) custom_draw_mode: crate::draw::CustomDrawMode,
 
+    /// Enable SGR pixel mouse reporting when supported by the terminal.
+    pub(crate) sgr_pixel_mouse: bool,
+
     /// HiDPI supersampling factor for `RenderingMode::BlitzTerminal`.
     ///
     /// `1` disables supersampling. `2` renders at 2x resolution and then fits into the original
@@ -89,6 +92,13 @@ impl Config {
             ..self
         }
     }
+
+    pub fn with_sgr_pixel_mouse(self, enabled: bool) -> Self {
+        Self {
+            sgr_pixel_mouse: enabled,
+            ..self
+        }
+    }
 }
 
 impl Default for Config {
@@ -103,6 +113,7 @@ impl Default for Config {
             image_downgrade: ImageDowngrade::Sampling,
             custom_draw_mode: crate::draw::CustomDrawMode::Html,
             blitz_hidpi_scale: 1,
+            sgr_pixel_mouse: false,
         }
     }
 }

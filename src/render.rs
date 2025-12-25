@@ -335,7 +335,7 @@ async fn run_tui_renderer(
     #[cfg(feature = "blitz")]
     let mut last_pixel_viewport: Option<Rect> = None;
     #[cfg(not(feature = "blitz"))]
-    let last_pixel_viewport: Option<Rect> = None;
+    let mut last_pixel_viewport: Option<Rect> = None;
     #[cfg(feature = "blitz")]
     let mut last_pixel_scale: f32 = 1.0;
     #[cfg(not(feature = "blitz"))]
@@ -351,12 +351,14 @@ async fn run_tui_renderer(
 
     let mut paint_error: Option<crate::error::Error> = None;
 
-    #[cfg(feature = "blitz")]
     let mut pixel_mouse_enabled = false;
 
     if let Some(_term) = &mut terminal {
         #[cfg(feature = "blitz")]
-        if cfg.rendering_mode == RenderingMode::BlitzTerminal {
+        let enable_pixel_mouse = cfg.sgr_pixel_mouse || cfg.rendering_mode == RenderingMode::BlitzTerminal;
+        #[cfg(not(feature = "blitz"))]
+        let enable_pixel_mouse = cfg.sgr_pixel_mouse;
+        if enable_pixel_mouse {
             set_sgr_pixel_mouse(_term, true)?;
             pixel_mouse_enabled = true;
         }
@@ -408,6 +410,34 @@ async fn run_tui_renderer(
             let (area, metrics) = terminal_size(term)?;
             last_cell_metrics = metrics;
             renderer.viewport_bus.publish(area);
+
+            if cfg.sgr_pixel_mouse {
+                #[cfg(feature = "blitz")]
+                if cfg.rendering_mode == RenderingMode::BlitzTerminal {
+                    // BlitzTerminal sets pixel viewport based on the render surface.
+                    // Keep the existing value to avoid conflicting sizes.
+                } else {
+                    let ScreenSize { xpixel, ypixel, .. } = term.terminal().get_screen_size()?;
+                    if xpixel > 0 && ypixel > 0 {
+                        let pixel_w = (xpixel.min(u16::MAX as usize)) as u16;
+                        let pixel_h = (ypixel.min(u16::MAX as usize)) as u16;
+                        last_pixel_viewport = Some(Rect::new(0, 0, pixel_w, pixel_h));
+                    } else {
+                        last_pixel_viewport = None;
+                    }
+                }
+                #[cfg(not(feature = "blitz"))]
+                {
+                    let ScreenSize { xpixel, ypixel, .. } = term.terminal().get_screen_size()?;
+                    if xpixel > 0 && ypixel > 0 {
+                        let pixel_w = (xpixel.min(u16::MAX as usize)) as u16;
+                        let pixel_h = (ypixel.min(u16::MAX as usize)) as u16;
+                        last_pixel_viewport = Some(Rect::new(0, 0, pixel_w, pixel_h));
+                    } else {
+                        last_pixel_viewport = None;
+                    }
+                }
+            }
 
             #[cfg(feature = "blitz")]
             if cfg.rendering_mode == RenderingMode::BlitzTerminal {
@@ -560,7 +590,6 @@ async fn run_tui_renderer(
     }
 
     if let Some(term) = &mut terminal {
-        #[cfg(feature = "blitz")]
         if pixel_mouse_enabled {
             set_sgr_pixel_mouse(term, false)?;
         }
@@ -825,7 +854,6 @@ fn terminal_size<T: Terminal>(term: &mut BufferedTerminal<T>) -> Result<(Rect, C
     ))
 }
 
-#[cfg(feature = "blitz")]
 fn set_sgr_pixel_mouse<T: Terminal>(term: &mut BufferedTerminal<T>, enabled: bool) -> Result<()> {
     let suffix = if enabled { "h" } else { "l" };
     term.add_change(Change::Text(format!("\x1b[?1016{suffix}")));
