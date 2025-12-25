@@ -1,9 +1,7 @@
 use anyhow::Result;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use png::{ColorType, Decoder, Transformations};
-#[cfg(feature = "blitz")]
-use png::{BitDepth, Encoder};
+use png::{BitDepth, ColorType, Decoder, Encoder, Transformations};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -24,7 +22,6 @@ pub struct DecodedImage {
     pub rgba: Vec<u8>,
 }
 
-#[cfg(feature = "blitz")]
 pub(crate) fn rgba_to_png_bytes(data: &[u8], width: u32, height: u32) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
     {
