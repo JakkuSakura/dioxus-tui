@@ -221,14 +221,85 @@ pub(crate) fn map_code(key: &KeyEvent) -> (Key, Code) {
     match key.key {
         TermKeyCode::Char(c) => (Key::Character(c.to_string()), code_from_char(c)),
         TermKeyCode::Tab => (Key::Tab, Code::Tab),
+        TermKeyCode::Escape => (Key::Escape, Code::Escape),
         TermKeyCode::Enter => (Key::Enter, Code::Enter),
         TermKeyCode::Backspace => (Key::Backspace, Code::Backspace),
+        TermKeyCode::Insert => (Key::Insert, Code::Insert),
+        TermKeyCode::Delete => (Key::Delete, Code::Delete),
+        TermKeyCode::Home => (Key::Home, Code::Home),
+        TermKeyCode::End => (Key::End, Code::End),
+        TermKeyCode::PageUp => (Key::PageUp, Code::PageUp),
+        TermKeyCode::PageDown => (Key::PageDown, Code::PageDown),
         TermKeyCode::LeftArrow => (Key::ArrowLeft, Code::ArrowLeft),
         TermKeyCode::RightArrow => (Key::ArrowRight, Code::ArrowRight),
         TermKeyCode::UpArrow => (Key::ArrowUp, Code::ArrowUp),
         TermKeyCode::DownArrow => (Key::ArrowDown, Code::ArrowDown),
+        TermKeyCode::Function(n) => (
+            key_from_function(n).unwrap_or(Key::Unidentified),
+            code_from_function(n).unwrap_or(Code::Unidentified),
+        ),
         _ => (Key::Unidentified, Code::Unidentified),
     }
+}
+
+fn key_from_function(n: u8) -> Option<Key> {
+    Some(match n {
+        1 => Key::F1,
+        2 => Key::F2,
+        3 => Key::F3,
+        4 => Key::F4,
+        5 => Key::F5,
+        6 => Key::F6,
+        7 => Key::F7,
+        8 => Key::F8,
+        9 => Key::F9,
+        10 => Key::F10,
+        11 => Key::F11,
+        12 => Key::F12,
+        13 => Key::F13,
+        14 => Key::F14,
+        15 => Key::F15,
+        16 => Key::F16,
+        17 => Key::F17,
+        18 => Key::F18,
+        19 => Key::F19,
+        20 => Key::F20,
+        21 => Key::F21,
+        22 => Key::F22,
+        23 => Key::F23,
+        24 => Key::F24,
+        _ => return None,
+    })
+}
+
+fn code_from_function(n: u8) -> Option<Code> {
+    Some(match n {
+        1 => Code::F1,
+        2 => Code::F2,
+        3 => Code::F3,
+        4 => Code::F4,
+        5 => Code::F5,
+        6 => Code::F6,
+        7 => Code::F7,
+        8 => Code::F8,
+        9 => Code::F9,
+        10 => Code::F10,
+        11 => Code::F11,
+        12 => Code::F12,
+        13 => Code::F13,
+        14 => Code::F14,
+        15 => Code::F15,
+        16 => Code::F16,
+        17 => Code::F17,
+        18 => Code::F18,
+        19 => Code::F19,
+        20 => Code::F20,
+        21 => Code::F21,
+        22 => Code::F22,
+        23 => Code::F23,
+        24 => Code::F24,
+        _ => return None,
+    })
 }
 
 fn code_from_char(c: char) -> Code {
