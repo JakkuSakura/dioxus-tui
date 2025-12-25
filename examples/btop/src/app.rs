@@ -67,11 +67,9 @@ pub fn App() -> Element {
     let net_html = net_panel::render(&net_data).rect.render(0, 0);
     let proc_bottom_html = proc_panel_bottom::render(&proc_data).rect.render(0, 0);
 
-    let root_style = "width: 100%; height: 100%; display: flex; flex-direction: column;".to_string();
-
     rsx! {
         div {
-            style: "{root_style}",
+            style: "width: 100%; height: 100%; display: flex; flex-direction: column;",
             background_color: theme::MAIN_BG,
             color: theme::MAIN_FG,
             padding: "0",
@@ -85,97 +83,107 @@ pub fn App() -> Element {
             },
 
             div {
-                style: "flex: 0 0 1ch; height: 1ch; width: 100%; position: relative;",
+                style: "flex: 0 0 1ch; height: 1ch; width: 100%;",
                 "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
+                    if std::env::var("BTOP_DEBUG_LAYOUT").is_ok() {
+                        eprintln!("topbar rect: {:#?}", ctx.rect);
+                    }
                     let rect = topbar::render_with_width(&topbar_data, ctx.rect.width as usize);
                     rect.draw_to(ctx);
                 }),
-                {topbar_html}
+                div { style: "position: relative; width: 100%; height: 100%;", {topbar_html} }
             }
 
             div {
-                style: "flex: 8 0 0; min-height: 8ch; width: 100%; position: relative;",
-                "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
-                    let rect = cpu_panel::render_with_size(
-                        &cpu_data,
-                        ctx.rect.width as usize,
-                        ctx.rect.height as usize,
-                    );
-                    rect.draw_to(ctx);
-                }),
-                {cpu_html}
-            }
-
-            div {
-                style: "flex: 11 0 0; min-height: 11ch; width: 100%; display: flex; flex-direction: row;",
+                style: "flex: 1 1 0; min-height: 0; width: 100%; display: flex; flex-direction: column;",
 
                 div {
-                    style: "flex: 28 0 0; min-width: 10ch; position: relative; height: 100%;",
+                    style: "flex: 8 0 0; min-height: 8ch; width: 100%;",
                     "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
-                        let rect = mem_panel::render_with_size(
-                            &mem_data,
+                        if std::env::var("BTOP_DEBUG_LAYOUT").is_ok() {
+                            eprintln!("cpu rect: {:#?}", ctx.rect);
+                        }
+                        let rect = cpu_panel::render_with_size(
+                            &cpu_data,
                             ctx.rect.width as usize,
                             ctx.rect.height as usize,
                         );
                         rect.draw_to(ctx);
                     }),
-                    {mem_html}
+                    div { style: "position: relative; width: 100%; height: 100%;", {cpu_html} }
                 }
 
                 div {
-                    style: "flex: 26 0 0; min-width: 10ch; position: relative; height: 100%;",
-                    "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
-                        let rect = disk_panel::render_with_size(
-                            &disk_data,
-                            ctx.rect.width as usize,
-                            ctx.rect.height as usize,
-                        );
-                        rect.draw_to(ctx);
-                    }),
-                    {disk_html}
+                    style: "flex: 11 0 0; min-height: 11ch; width: 100%; display: flex; flex-direction: row;",
+
+                    div {
+                        style: "flex: 28 0 0; min-width: 10ch; height: 100%;",
+                        "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
+                            let rect = mem_panel::render_with_size(
+                                &mem_data,
+                                ctx.rect.width as usize,
+                                ctx.rect.height as usize,
+                            );
+                            rect.draw_to(ctx);
+                        }),
+                        div { style: "position: relative; width: 100%; height: 100%;", {mem_html} }
+                    }
+
+                    div {
+                        style: "flex: 26 0 0; min-width: 10ch; height: 100%;",
+                        "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
+                            let rect = disk_panel::render_with_size(
+                                &disk_data,
+                                ctx.rect.width as usize,
+                                ctx.rect.height as usize,
+                            );
+                            rect.draw_to(ctx);
+                        }),
+                        div { style: "position: relative; width: 100%; height: 100%;", {disk_html} }
+                    }
+
+                    div {
+                        style: "flex: 66 1 0; min-width: 0ch; height: 100%;",
+                        "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
+                            let rect = proc_panel_top::render_with_size(
+                                &proc_data,
+                                ctx.rect.width as usize,
+                                ctx.rect.height as usize,
+                            );
+                            rect.draw_to(ctx);
+                        }),
+                        div { style: "position: relative; width: 100%; height: 100%;", {proc_top_html} }
+                    }
                 }
 
                 div {
-                    style: "flex: 66 1 0; min-width: 0ch; position: relative; height: 100%;",
-                    "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
-                        let rect = proc_panel_top::render_with_size(
-                            &proc_data,
-                            ctx.rect.width as usize,
-                            ctx.rect.height as usize,
-                        );
-                        rect.draw_to(ctx);
-                    }),
-                    {proc_top_html}
-                }
-            }
+                    style: "flex: 8 1 0; min-height: 8ch; width: 100%; display: flex; flex-direction: row;",
 
-            div {
-                style: "flex: 8 1 0; min-height: 8ch; width: 100%; display: flex; flex-direction: row;",
+                    div {
+                        style: "flex: 54 0 0; min-width: 12ch; height: 100%;",
+                        "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
+                            let rect = net_panel::render_with_size(
+                                &net_data,
+                                ctx.rect.width as usize,
+                                ctx.rect.height as usize,
+                            );
+                            rect.draw_to(ctx);
+                        }),
+                        div { style: "position: relative; width: 100%; height: 100%;", {net_html} }
+                    }
 
-                div {
-                    style: "flex: 54 0 0; min-width: 12ch; position: relative; height: 100%;",
-                    "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
-                        let rect = net_panel::render_with_size(
-                            &net_data,
-                            ctx.rect.width as usize,
-                            ctx.rect.height as usize,
-                        );
-                        rect.draw_to(ctx);
-                    }),
-                    {net_html}
-                }
-
-                div {
-                    style: "flex: 66 1 0; min-width: 0ch; height: 100%; position: relative;",
-                    "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
-                        let rect = proc_panel_bottom::render_with_size(
-                            &proc_data,
-                            ctx.rect.width as usize,
-                            ctx.rect.height as usize,
-                        );
-                        rect.draw_to(ctx);
-                    }),
-                    {proc_bottom_html}
+                    div {
+                        style: "flex: 66 1 0; min-width: 0ch; height: 100%;",
+                        "data-draw-id": on_draw(move |ctx: &mut DrawContext| {
+                            let rect = proc_panel_bottom::render_with_size(
+                                &proc_data,
+                                ctx.rect.width as usize,
+                                ctx.rect.height as usize,
+                            );
+                            rect.draw_to(ctx);
+                        }),
+                        div { style: "position: relative; width: 100%; height: 100%;", {proc_bottom_html} }
+                    }
                 }
             }
         }
