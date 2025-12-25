@@ -25,7 +25,7 @@ use crate::capabilities::detect as detect_capabilities;
 use crate::capabilities::termwiz_capabilities;
 use crate::config::{Config, RenderingMode};
 use crate::geometry::Rect;
-use crate::hooks::{map_code, map_modifiers, raw_input_from_termwiz, TuiInputBus, ViewportBus};
+use crate::hooks::{map_code, map_modifiers, raw_input_from_termwiz, RawMouseState, TuiInputBus, ViewportBus};
 use crate::layout::resolve_document;
 use crate::scene::CellMetrics;
 use crate::surface::Surface;
@@ -342,6 +342,7 @@ async fn run_tui_renderer(
         cell_h_px: 16.0,
     };
     let mut input_state = InputState::default();
+    let mut raw_mouse_state = RawMouseState::default();
     let mut last_images: Option<std::collections::VecDeque<PlacedImage>> = None;
 
     renderer.update();
@@ -361,30 +362,10 @@ async fn run_tui_renderer(
         }
     }
 
-    loop {
-        if let Some(term) = &mut terminal {
-            if let Some(term_evt) = term.terminal().poll_input(Some(cfg.tick_rate))? {
-                if handle_termwiz_input(
-                    term_evt,
-                    &mut renderer,
-                    cfg,
-                    last_area,
-                    last_pixel_viewport,
-                    last_pixel_scale,
-                    last_cell_metrics,
-                    &mut input_state,
-                ) {
-                    break;
-                }
-            }
-        } else if cfg.tick_rate > std::time::Duration::ZERO {
-            sleep(cfg.tick_rate).await;
-        }
-
-        while let Some(evt) = raw_event_reciever.next().now_or_never().flatten() {
-            match evt {
-                InputEvent::Close => return Ok(()),
-                InputEvent::UserInput(term_evt) => {
+    let result = (async {
+        loop {
+            if let Some(term) = &mut terminal {
+                if let Some(term_evt) = term.terminal().poll_input(Some(cfg.tick_rate))? {
                     if handle_termwiz_input(
                         term_evt,
                         &mut renderer,
@@ -394,205 +375,238 @@ async fn run_tui_renderer(
                         last_pixel_scale,
                         last_cell_metrics,
                         &mut input_state,
+                        &mut raw_mouse_state,
                     ) {
                         return Ok(());
                     }
                 }
+            } else if cfg.tick_rate > std::time::Duration::ZERO {
+                sleep(cfg.tick_rate).await;
             }
-        }
 
-        renderer.update();
+            while let Some(evt) = raw_event_reciever.next().now_or_never().flatten() {
+                match evt {
+                    InputEvent::Close => return Ok(()),
+                    InputEvent::UserInput(term_evt) => {
+                        if handle_termwiz_input(
+                            term_evt,
+                            &mut renderer,
+                            cfg,
+                            last_area,
+                            last_pixel_viewport,
+                            last_pixel_scale,
+                            last_cell_metrics,
+                            &mut input_state,
+                            &mut raw_mouse_state,
+                        ) {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
 
-        if let Some(term) = &mut terminal {
-            let (area, metrics) = terminal_size(term)?;
-            last_cell_metrics = metrics;
-            renderer.viewport_bus.publish(area);
+            renderer.update();
 
-            if cfg.sgr_pixel_mouse {
+            if let Some(term) = &mut terminal {
+                let (area, metrics) = terminal_size(term)?;
+                last_cell_metrics = metrics;
+                renderer.viewport_bus.publish(area);
+
+                if cfg.sgr_pixel_mouse {
+                    #[cfg(feature = "blitz")]
+                    if cfg.rendering_mode == RenderingMode::BlitzTerminal {
+                        // BlitzTerminal sets pixel viewport based on the render surface.
+                        // Keep the existing value to avoid conflicting sizes.
+                    } else {
+                        let ScreenSize { xpixel, ypixel, .. } = term.terminal().get_screen_size()?;
+                        if xpixel > 0 && ypixel > 0 {
+                            let pixel_w = (xpixel.min(u16::MAX as usize)) as u16;
+                            let pixel_h = (ypixel.min(u16::MAX as usize)) as u16;
+                            last_pixel_viewport = Some(Rect::new(0, 0, pixel_w, pixel_h));
+                        } else {
+                            last_pixel_viewport = None;
+                        }
+                    }
+                    #[cfg(not(feature = "blitz"))]
+                    {
+                        let ScreenSize { xpixel, ypixel, .. } = term.terminal().get_screen_size()?;
+                        if xpixel > 0 && ypixel > 0 {
+                            let pixel_w = (xpixel.min(u16::MAX as usize)) as u16;
+                            let pixel_h = (ypixel.min(u16::MAX as usize)) as u16;
+                            last_pixel_viewport = Some(Rect::new(0, 0, pixel_w, pixel_h));
+                        } else {
+                            last_pixel_viewport = None;
+                        }
+                    }
+                }
+
                 #[cfg(feature = "blitz")]
                 if cfg.rendering_mode == RenderingMode::BlitzTerminal {
-                    // BlitzTerminal sets pixel viewport based on the render surface.
-                    // Keep the existing value to avoid conflicting sizes.
-                } else {
-                    let ScreenSize { xpixel, ypixel, .. } = term.terminal().get_screen_size()?;
-                    if xpixel > 0 && ypixel > 0 {
-                        let pixel_w = (xpixel.min(u16::MAX as usize)) as u16;
-                        let pixel_h = (ypixel.min(u16::MAX as usize)) as u16;
-                        last_pixel_viewport = Some(Rect::new(0, 0, pixel_w, pixel_h));
-                    } else {
-                        last_pixel_viewport = None;
+                    let ScreenSize {
+                        cols,
+                        rows,
+                        xpixel,
+                        ypixel,
+                    } = term.terminal().get_screen_size()?;
+                    if cols == 0 || rows == 0 {
+                        return Err(crate::error::Error::Other(anyhow::anyhow!(
+                            "terminal reported zero-sized cell grid"
+                        )));
+                    }
+                    if xpixel == 0 || ypixel == 0 {
+                        return Err(crate::error::Error::Other(anyhow::anyhow!(
+                            "terminal did not report pixel dimensions (xpixel/ypixel=0); cannot use BlitzTerminal"
+                        )));
+                    }
+
+                    let _cell_w_px = (xpixel as f32) / (cols as f32);
+                    let cell_h_px = (ypixel as f32) / (rows as f32);
+                    let supersample = cfg.blitz_hidpi_scale.max(1) as f32;
+                    last_pixel_scale = supersample;
+                    let render_w_px = ((xpixel as f32) * supersample).ceil().max(1.0) as u32;
+                    let render_h_px = ((ypixel as f32) * supersample).ceil().max(1.0) as u32;
+
+                    let pixel_w = (xpixel.min(u16::MAX as usize)) as u16;
+                    let pixel_h = (ypixel.min(u16::MAX as usize)) as u16;
+                    last_pixel_viewport = Some(Rect::new(0, 0, pixel_w, pixel_h));
+
+                    let viewport = Viewport::new(render_w_px, render_h_px, supersample, ColorScheme::Light);
+                    let font_px = (cell_h_px.round().max(1.0)) as u32;
+                    let extra_css = format!(
+                        ":root, html, body {{ font-family: monospace; font-size: {}px; line-height: {}px; }}",
+                        font_px, font_px
+                    );
+                    let _ = resolve_document_with_viewport_and_extra_css(
+                        &mut renderer.doc,
+                        viewport.clone(),
+                        Some(extra_css.as_str()),
+                    );
+
+                    // In launch mode, avoid expensive per-frame cropping. Render the full viewport.
+                    let cropped_cells = area.height;
+                    let cropped_px = render_h_px;
+
+                    let mut image_renderer = <anyrender_vello_cpu::VelloCpuImageRenderer as ImageRenderer>::new(
+                        render_w_px,
+                        render_h_px,
+                    );
+                    let mut rgba = Vec::new();
+                    image_renderer.render_to_vec(
+                        |scene| {
+                            paint_scene(
+                                scene,
+                                renderer.doc.inner.as_ref(),
+                                viewport.scale_f64(),
+                                render_w_px,
+                                render_h_px,
+                            );
+                        },
+                        &mut rgba,
+                    );
+                    if cropped_px < render_h_px {
+                        let bytes_per_row = (render_w_px as usize) * 4;
+                        let keep = (cropped_px as usize) * bytes_per_row;
+                        if keep < rgba.len() {
+                            rgba.truncate(keep);
+                        }
+                    }
+
+                    if matches!(capabilities.inline_protocol, InlineImageProtocol::None) {
+                        return Err(crate::error::Error::Other(anyhow::anyhow!(
+                            "BlitzTerminal launch currently requires inline image protocol support"
+                        )));
+                    }
+                    let png = crate::image::rgba_to_png_bytes(&rgba, render_w_px, cropped_px.min(render_h_px))?;
+                    let encoder = inline_encoder_for_caps(&capabilities).unwrap_or(rasteroid::InlineEncoder::Ascii);
+                    let mut payload = Vec::new();
+                    rasteroid::inline_an_image(&png, &mut payload, None, Some((0, 0)), &encoder)
+                        .map_err(|err| crate::error::Error::Other(anyhow::anyhow!("inline image error: {err}")))?;
+                    term.add_change(Change::ClearScreen(ColorAttribute::Default));
+                    term.add_change(Change::CursorPosition {
+                        x: Position::Absolute(0),
+                        y: Position::Absolute(0),
+                    });
+                    term.add_change(Change::Text(String::from_utf8_lossy(&payload).to_string()));
+                    term.add_change(Change::CursorPosition {
+                        x: Position::Absolute(0),
+                        y: Position::Absolute((cropped_cells as usize).min(area.height as usize - 1)),
+                    });
+                    term.flush()?;
+
+                    continue;
+                }
+
+                let mut surface = Surface::new(area.width, area.height);
+                let mut images = std::collections::VecDeque::<PlacedImage>::new();
+                last_area = Some(area);
+                if let Some(_root) = renderer.layout_root(area, metrics) {
+                    if let Err(err) = paint_surface(
+                        &mut surface,
+                        &mut images,
+                        renderer.doc.inner.as_ref(),
+                        area,
+                        metrics,
+                        cfg.palette_roles,
+                        cfg.color_mode,
+                        capabilities.truecolor,
+                        cfg.custom_draw_mode,
+                        cfg.image_policy,
+                        cfg.image_downgrade,
+                        capabilities.inline_images,
+                    ) {
+                        paint_error = Some(err);
+                        break;
                     }
                 }
-                #[cfg(not(feature = "blitz"))]
-                {
-                    let ScreenSize { xpixel, ypixel, .. } = term.terminal().get_screen_size()?;
-                    if xpixel > 0 && ypixel > 0 {
-                        let pixel_w = (xpixel.min(u16::MAX as usize)) as u16;
-                        let pixel_h = (ypixel.min(u16::MAX as usize)) as u16;
-                        last_pixel_viewport = Some(Rect::new(0, 0, pixel_w, pixel_h));
-                    } else {
-                        last_pixel_viewport = None;
-                    }
+                // Debug: dump first few lines of the surface for tracing.
+                if cfg!(debug_assertions) {
+                    let width = surface.width() as usize;
+                    let dump: Vec<String> = surface
+                        .content
+                        .chunks(width)
+                        .take(5)
+                        .map(|row| row.iter().map(|c| c.ch).collect())
+                        .collect();
+                    debug!(?dump, "surface_dump");
                 }
-            }
-
-            #[cfg(feature = "blitz")]
-            if cfg.rendering_mode == RenderingMode::BlitzTerminal {
-                let ScreenSize {
-                    cols,
-                    rows,
-                    xpixel,
-                    ypixel,
-                } = term.terminal().get_screen_size()?;
-                if cols == 0 || rows == 0 {
-                    return Err(crate::error::Error::Other(anyhow::anyhow!(
-                        "terminal reported zero-sized cell grid"
-                    )));
-                }
-                if xpixel == 0 || ypixel == 0 {
-                    return Err(crate::error::Error::Other(anyhow::anyhow!(
-                        "terminal did not report pixel dimensions (xpixel/ypixel=0); cannot use BlitzTerminal"
-                    )));
-                }
-
-                let _cell_w_px = (xpixel as f32) / (cols as f32);
-                let cell_h_px = (ypixel as f32) / (rows as f32);
-                let supersample = cfg.blitz_hidpi_scale.max(1) as f32;
-                last_pixel_scale = supersample;
-                let render_w_px = ((xpixel as f32) * supersample).ceil().max(1.0) as u32;
-                let render_h_px = ((ypixel as f32) * supersample).ceil().max(1.0) as u32;
-
-                let pixel_w = (xpixel.min(u16::MAX as usize)) as u16;
-                let pixel_h = (ypixel.min(u16::MAX as usize)) as u16;
-                last_pixel_viewport = Some(Rect::new(0, 0, pixel_w, pixel_h));
-
-                let viewport = Viewport::new(render_w_px, render_h_px, supersample, ColorScheme::Light);
-                let font_px = (cell_h_px.round().max(1.0)) as u32;
-                let extra_css = format!(
-                    ":root, html, body {{ font-family: monospace; font-size: {}px; line-height: {}px; }}",
-                    font_px, font_px
-                );
-                let _ = resolve_document_with_viewport_and_extra_css(
-                    &mut renderer.doc,
-                    viewport.clone(),
-                    Some(extra_css.as_str()),
-                );
-
-                // In launch mode, avoid expensive per-frame cropping. Render the full viewport.
-                let cropped_cells = area.height;
-                let cropped_px = render_h_px;
-
-                let mut image_renderer = <anyrender_vello_cpu::VelloCpuImageRenderer as ImageRenderer>::new(
-                    render_w_px,
-                    render_h_px,
-                );
-                let mut rgba = Vec::new();
-                image_renderer.render_to_vec(
-                    |scene| {
-                        paint_scene(
-                            scene,
-                            renderer.doc.inner.as_ref(),
-                            viewport.scale_f64(),
-                            render_w_px,
-                            render_h_px,
-                        );
-                    },
-                    &mut rgba,
-                );
-                if cropped_px < render_h_px {
-                    let bytes_per_row = (render_w_px as usize) * 4;
-                    let keep = (cropped_px as usize) * bytes_per_row;
-                    if keep < rgba.len() {
-                        rgba.truncate(keep);
-                    }
-                }
-
-                if matches!(capabilities.inline_protocol, InlineImageProtocol::None) {
-                    return Err(crate::error::Error::Other(anyhow::anyhow!(
-                        "BlitzTerminal launch currently requires inline image protocol support"
-                    )));
-                }
-                let png = crate::image::rgba_to_png_bytes(&rgba, render_w_px, cropped_px.min(render_h_px))?;
-                let encoder = inline_encoder_for_caps(&capabilities).unwrap_or(rasteroid::InlineEncoder::Ascii);
-                let mut payload = Vec::new();
-                rasteroid::inline_an_image(&png, &mut payload, None, Some((0, 0)), &encoder)
-                    .map_err(|err| crate::error::Error::Other(anyhow::anyhow!("inline image error: {err}")))?;
-                term.add_change(Change::ClearScreen(ColorAttribute::Default));
-                term.add_change(Change::CursorPosition {
-                    x: Position::Absolute(0),
-                    y: Position::Absolute(0),
-                });
-                term.add_change(Change::Text(String::from_utf8_lossy(&payload).to_string()));
-                term.add_change(Change::CursorPosition {
-                    x: Position::Absolute(0),
-                    y: Position::Absolute((cropped_cells as usize).min(area.height as usize - 1)),
-                });
-                term.flush()?;
-
-                continue;
-            }
-
-            let mut surface = Surface::new(area.width, area.height);
-            let mut images = std::collections::VecDeque::<PlacedImage>::new();
-            last_area = Some(area);
-            if let Some(_root) = renderer.layout_root(area, metrics) {
-                if let Err(err) = paint_surface(
-                    &mut surface,
-                    &mut images,
-                    renderer.doc.inner.as_ref(),
-                    area,
+                flush_surface(
+                    term,
+                    &surface,
+                    last_surface.as_ref(),
+                    &capabilities,
+                    &images,
+                    last_images.as_ref(),
                     metrics,
-                    cfg.palette_roles,
-                    cfg.color_mode,
-                    capabilities.truecolor,
-                    cfg.custom_draw_mode,
-                    cfg.image_policy,
-                    cfg.image_downgrade,
-                    capabilities.inline_images,
-                ) {
-                    paint_error = Some(err);
-                    break;
-                }
+                )?;
+                last_surface = Some(surface);
+                last_images = Some(images);
             }
-            // Debug: dump first few lines of the surface for tracing.
-            if cfg!(debug_assertions) {
-                let width = surface.width() as usize;
-                let dump: Vec<String> = surface
-                    .content
-                    .chunks(width)
-                    .take(5)
-                    .map(|row| row.iter().map(|c| c.ch).collect())
-                    .collect();
-                debug!(?dump, "surface_dump");
-            }
-            flush_surface(
-                term,
-                &surface,
-                last_surface.as_ref(),
-                &capabilities,
-                &images,
-                last_images.as_ref(),
-                metrics,
-            )?;
-            last_surface = Some(surface);
-            last_images = Some(images);
         }
-    }
 
-    if let Some(term) = &mut terminal {
-        if pixel_mouse_enabled {
-            set_sgr_pixel_mouse(term, false)?;
+        Ok(())
+    })
+    .await;
+
+    let cleanup_result = (|| -> Result<()> {
+        if let Some(term) = &mut terminal {
+            if pixel_mouse_enabled {
+                set_sgr_pixel_mouse(term, false)?;
+            }
+            term.terminal().exit_alternate_screen()?;
+            term.terminal().set_cooked_mode()?;
+            term.flush()?;
         }
-        term.terminal().exit_alternate_screen()?;
-        term.terminal().set_cooked_mode()?;
-        term.flush()?;
-    }
+        Ok(())
+    })();
 
     if let Some(err) = paint_error {
         return Err(err);
     }
 
-    Ok(())
+    match result {
+        Err(err) => Err(err),
+        Ok(()) => cleanup_result,
+    }
 }
 
 #[derive(Default)]
@@ -610,6 +624,7 @@ fn handle_termwiz_input(
     pixel_scale: f32,
     cell_metrics: CellMetrics,
     input_state: &mut InputState,
+    raw_mouse_state: &mut RawMouseState,
 ) -> bool {
     let ctrl_c = matches!(&term_evt, TzInputEvent::Key(key) if matches!(key.key, KeyCode::Char('c' | 'C')) && key.modifiers.contains(TzModifiers::CTRL) && cfg.ctrl_c_quit);
     if ctrl_c {
@@ -617,7 +632,7 @@ fn handle_termwiz_input(
     }
     let viewport = last_area.unwrap_or_else(|| Rect::new(0, 0, 0, 0));
     let pixel_viewport = last_pixel_viewport;
-    let raw_inputs = raw_input_from_termwiz(&term_evt, viewport, pixel_viewport);
+    let raw_inputs = raw_input_from_termwiz(&term_evt, viewport, pixel_viewport, raw_mouse_state);
     {
         let _guard = RuntimeGuard::new(renderer.runtime.clone());
         for event in raw_inputs.iter().cloned() {
@@ -647,7 +662,7 @@ fn handle_termwiz_input(
     if let Some((x, y)) = mouse_position_from_termwiz(&term_evt, pixel_scale, cell_metrics) {
         if let Some(target) = target_from_hit(&renderer.doc, x, y) {
             for evt in raw_inputs {
-                if evt.name == "wheel" {
+                if evt.name == "wheel" || evt.name == "pixelwheel" {
                     let runtime_event = evt.data.into_platform_event(evt.bubbles);
                     renderer.handle_event(target, evt.name, runtime_event, evt.bubbles);
                 }
@@ -713,9 +728,13 @@ fn ui_event_from_mouse(
         return None;
     }
 
-    let button = mouse_button_from_termwiz(&buttons);
     let buttons = mouse_buttons_from_termwiz(&buttons);
     let modifiers = map_modifiers(mods);
+    let button = if buttons == MouseEventButtons::None {
+        input_state.last_button
+    } else {
+        mouse_button_from_event_buttons(buttons)
+    };
 
     let mut event = BlitzMouseButtonEvent {
         x,
@@ -725,35 +744,28 @@ fn ui_event_from_mouse(
         mods: modifiers,
     };
 
-    if buttons == MouseEventButtons::None {
-        if input_state.last_buttons != MouseEventButtons::None {
-            event.button = input_state.last_button;
-            input_state.last_buttons = MouseEventButtons::None;
-            return Some(UiEvent::MouseUp(event));
-        }
-        return Some(UiEvent::MouseMove(event));
+    let released = input_state.last_buttons & !buttons;
+    if released != MouseEventButtons::None {
+        event.button = mouse_button_from_event_buttons(released);
+        input_state.last_button = event.button;
+        input_state.last_buttons = buttons;
+        return Some(UiEvent::MouseUp(event));
     }
 
-    if input_state.last_buttons == MouseEventButtons::None {
-        input_state.last_button = button;
+    let added = buttons & !input_state.last_buttons;
+    if added != MouseEventButtons::None {
+        event.button = mouse_button_from_event_buttons(added);
+        input_state.last_button = event.button;
         input_state.last_buttons = buttons;
         return Some(UiEvent::MouseDown(event));
     }
 
     input_state.last_buttons = buttons;
-    Some(UiEvent::MouseMove(event))
-}
-
-fn mouse_button_from_termwiz(buttons: &termwiz::input::MouseButtons) -> MouseEventButton {
-    if buttons.contains(termwiz::input::MouseButtons::LEFT) {
-        MouseEventButton::Main
-    } else if buttons.contains(termwiz::input::MouseButtons::RIGHT) {
-        MouseEventButton::Secondary
-    } else if buttons.contains(termwiz::input::MouseButtons::MIDDLE) {
-        MouseEventButton::Auxiliary
-    } else {
-        MouseEventButton::Main
+    if buttons == MouseEventButtons::None {
+        return Some(UiEvent::MouseMove(event));
     }
+
+    Some(UiEvent::MouseMove(event))
 }
 
 fn mouse_buttons_from_termwiz(buttons: &termwiz::input::MouseButtons) -> MouseEventButtons {
@@ -768,6 +780,18 @@ fn mouse_buttons_from_termwiz(buttons: &termwiz::input::MouseButtons) -> MouseEv
         mapped.insert(MouseEventButtons::Auxiliary);
     }
     mapped
+}
+
+fn mouse_button_from_event_buttons(buttons: MouseEventButtons) -> MouseEventButton {
+    if buttons.contains(MouseEventButtons::Primary) {
+        MouseEventButton::Main
+    } else if buttons.contains(MouseEventButtons::Secondary) {
+        MouseEventButton::Secondary
+    } else if buttons.contains(MouseEventButtons::Auxiliary) {
+        MouseEventButton::Auxiliary
+    } else {
+        MouseEventButton::Main
+    }
 }
 
 fn mouse_position_from_termwiz(
@@ -830,11 +854,17 @@ fn terminal_size<T: Terminal>(term: &mut BufferedTerminal<T>) -> Result<(Rect, C
     let ScreenSize {
         cols,
         rows,
-        ..
+        xpixel,
+        ypixel,
     } = term.terminal().get_screen_size()?;
-    // `xpixel/ypixel` is unreliable or unavailable on some terminals, and we don't
-    // strictly need it for cell-native rendering.
-    let (cell_w_px, cell_h_px) = (8.0, 16.0);
+    let (cell_w_px, cell_h_px) = if cols > 0 && rows > 0 && xpixel > 0 && ypixel > 0 {
+        (
+            (xpixel as f32) / (cols as f32),
+            (ypixel as f32) / (rows as f32),
+        )
+    } else {
+        (8.0, 16.0)
+    };
     Ok((
         Rect::new(0, 0, cols as u16, rows as u16),
         CellMetrics {

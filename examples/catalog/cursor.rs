@@ -1,24 +1,28 @@
 use dioxus::prelude::*;
 use dioxus_html::input_data::keyboard_types::Code;
 use dioxus_html::point_interaction::InteractionLocation;
-use dioxus_tui::{EventData, TuiContext, use_raw_input, use_viewport};
+use dioxus_tui::{EventData, TuiContext, use_raw_input};
 
 use crate::catalog::ExampleFrame;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct CursorState {
-    x: f64,
-    y: f64,
+    raw_x: f64,
+    raw_y: f64,
     pixel_mode: bool,
+    render_left: String,
+    render_top: String,
     visible: bool,
 }
 
 impl Default for CursorState {
     fn default() -> Self {
         Self {
-            x: 0.0,
-            y: 0.0,
+            raw_x: 0.0,
+            raw_y: 0.0,
             pixel_mode: false,
+            render_left: String::new(),
+            render_top: String::new(),
             visible: false,
         }
     }
@@ -27,7 +31,6 @@ impl Default for CursorState {
 pub fn app() -> Element {
     let tui: TuiContext = consume_context();
     let raw_input = use_raw_input();
-    let viewport = use_viewport();
     let mut cursor = use_signal(CursorState::default);
 
     use_effect(move || {
@@ -37,25 +40,38 @@ pub fn app() -> Element {
         let EventData::Mouse(mouse) = event.data else {
             return;
         };
-        if event.name != "mousemove" && event.name != "mouseenter" {
+        let is_pixel = event.name.starts_with("pixel");
+        if event.name != "mousemove"
+            && event.name != "mouseenter"
+            && event.name != "pixelmousemove"
+            && event.name != "pixelmouseenter"
+        {
             return;
         }
         let coords = mouse.client_coordinates();
-        let view = viewport.read().clone();
-        let pixel_mode = coords.x >= view.width as f64 || coords.y >= view.height as f64;
+        let (render_left, render_top) = if is_pixel {
+            (format!("{}px", coords.x), format!("{}px", coords.y))
+        } else {
+            (
+                format!("{}ch", coords.x.floor()),
+                format!("{}ch", coords.y.floor()),
+            )
+        };
         cursor.set(CursorState {
-            x: coords.x,
-            y: coords.y,
-            pixel_mode,
+            raw_x: coords.x,
+            raw_y: coords.y,
+            pixel_mode: is_pixel,
+            render_left,
+            render_top,
             visible: true,
         });
     });
 
-    let state = *cursor.read();
+    let state = cursor.read().clone();
     let cursor_overlay = if state.visible {
         if state.pixel_mode {
-            let left = format!("{}px", state.x);
-            let top = format!("{}px", state.y);
+            let left = state.render_left.clone();
+            let top = state.render_top.clone();
             rsx! {
                 div {
                     position: "absolute",
@@ -68,8 +84,8 @@ pub fn app() -> Element {
                 }
             }
         } else {
-            let left = format!("{}ch", state.x.floor());
-            let top = format!("{}ch", state.y.floor());
+            let left = state.render_left.clone();
+            let top = state.render_top.clone();
             rsx! {
                 div {
                     position: "absolute",
@@ -114,6 +130,32 @@ pub fn app() -> Element {
                     left: "0ch",
                     top: "0ch",
                     "Move the mouse to see the cursor."
+                }
+
+                if state.visible {
+                    div {
+                        padding: "0.5ch",
+                        position: "absolute",
+                        left: "0ch",
+                        top: "2.5ch",
+                        font_size: "0.9em",
+                        "raw: ",
+                        "{state.raw_x:.2}",
+                        ", ",
+                        "{state.raw_y:.2}",
+                        if state.pixel_mode { " (pixel)" } else { " (cell)" }
+                    }
+                    div {
+                        padding: "0.5ch",
+                        position: "absolute",
+                        left: "0ch",
+                        top: "3.8ch",
+                        font_size: "0.9em",
+                        "rendered: ",
+                        "{state.render_left}",
+                        ", ",
+                        "{state.render_top}",
+                    }
                 }
 
                 {cursor_overlay}

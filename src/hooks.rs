@@ -218,8 +218,10 @@ fn code_from_char(c: char) -> Code {
 
 #[cfg(test)]
 mod tests {
-    use super::code_from_char;
+    use super::*;
     use dioxus_html::input_data::keyboard_types::Code;
+    use dioxus_html::point_interaction::InteractionLocation;
+    use termwiz::input::{InputEvent, Modifiers, MouseButtons, MouseEvent, PixelMouseEvent};
 
     #[test]
     fn code_from_char_maps_common_ascii() {
@@ -228,6 +230,69 @@ mod tests {
         assert_eq!(code_from_char(' '), Code::Space);
         assert_eq!(code_from_char('7'), Code::Digit7);
         assert_eq!(code_from_char('['), Code::BracketLeft);
+    }
+
+    #[test]
+    fn cursor_position_maps_to_rendered_location() {
+        let viewport = Rect::new(0, 0, 80, 24);
+        let pixel_viewport = Some(Rect::new(0, 0, 640, 480));
+
+        let mut mouse_state = RawMouseState::default();
+        let events = raw_input_from_termwiz(
+            &InputEvent::Mouse(MouseEvent {
+                x: 12,
+                y: 7,
+                mouse_buttons: MouseButtons::NONE,
+                modifiers: Modifiers::NONE,
+            }),
+            viewport,
+            pixel_viewport,
+            &mut mouse_state,
+        );
+
+        let cell_event = events
+            .iter()
+            .find(|evt| evt.name == "mousemove")
+            .expect("mousemove event");
+
+        let EventData::Mouse(cell_mouse) = &cell_event.data else {
+            panic!("expected mouse data");
+        };
+        let coords = cell_mouse.client_coordinates();
+        assert_eq!(coords.x, 12.0);
+        assert_eq!(coords.y, 7.0);
+        let rendered_left = format!("{}ch", coords.x.floor());
+        let rendered_top = format!("{}ch", coords.y.floor());
+        assert_eq!(rendered_left, "12ch");
+        assert_eq!(rendered_top, "7ch");
+
+        let events = raw_input_from_termwiz(
+            &InputEvent::PixelMouse(PixelMouseEvent {
+                x_pixels: 33,
+                y_pixels: 44,
+                mouse_buttons: MouseButtons::NONE,
+                modifiers: Modifiers::NONE,
+            }),
+            viewport,
+            pixel_viewport,
+            &mut mouse_state,
+        );
+
+        let pixel_event = events
+            .iter()
+            .find(|evt| evt.name == "pixelmousemove")
+            .expect("pixelmousemove event");
+
+        let EventData::Mouse(pixel_mouse) = &pixel_event.data else {
+            panic!("expected pixel mouse data");
+        };
+        let coords = pixel_mouse.client_coordinates();
+        assert_eq!(coords.x, 33.0);
+        assert_eq!(coords.y, 44.0);
+        let rendered_left = format!("{}px", coords.x);
+        let rendered_top = format!("{}px", coords.y);
+        assert_eq!(rendered_left, "33px");
+        assert_eq!(rendered_top, "44px");
     }
 }
 
@@ -239,10 +304,16 @@ fn to_button_set(btn: Option<MouseButton>) -> MouseButtonSet {
     set
 }
 
+#[derive(Default)]
+pub struct RawMouseState {
+    last_buttons: MouseButtons,
+}
+
 pub fn raw_input_from_termwiz(
     evt: &InputEvent,
     viewport: Rect,
     pixel_viewport: Option<Rect>,
+    mouse_state: &mut RawMouseState,
 ) -> Vec<RawInputEvent> {
     match evt {
         InputEvent::Key(key) => {
@@ -256,16 +327,20 @@ pub fn raw_input_from_termwiz(
                 bubbles: true,
             }]
         }
-        InputEvent::Mouse(mouse_evt) => map_mouse_input(mouse_evt, viewport),
+        InputEvent::Mouse(mouse_evt) => map_mouse_input(mouse_evt, viewport, mouse_state),
         InputEvent::PixelMouse(mouse_evt) => {
-            let viewport = pixel_viewport.unwrap_or(viewport);
-            map_pixel_mouse_input(mouse_evt, viewport)
+            let viewport = pixel_viewport.unwrap_or(Rect::new(0, 0, 0, 0));
+            map_pixel_mouse_input(mouse_evt, viewport, mouse_state)
         }
         _ => Vec::new(),
     }
 }
 
-fn map_mouse_input(evt: &MouseEvent, viewport: Rect) -> Vec<RawInputEvent> {
+fn map_mouse_input(
+    evt: &MouseEvent,
+    viewport: Rect,
+    mouse_state: &mut RawMouseState,
+) -> Vec<RawInputEvent> {
     if evt.mouse_buttons.contains(MouseButtons::VERT_WHEEL)
         || evt.mouse_buttons.contains(MouseButtons::HORZ_WHEEL)
     {
@@ -287,39 +362,86 @@ fn map_mouse_input(evt: &MouseEvent, viewport: Rect) -> Vec<RawInputEvent> {
         }];
     }
 
-    let btn = button_from_mask(evt.mouse_buttons.clone());
-    let (pressed, button) = match btn {
-        Some(b) => (true, Some(b)),
-        None => (false, None),
-    };
+    let current_buttons = evt.mouse_buttons.clone();
+    let previous_buttons = mouse_state.last_buttons.clone();
+    let released = previous_buttons.clone() & !current_buttons.clone();
+    let added = current_buttons.clone() & !previous_buttons;
+    mouse_state.last_buttons = current_buttons;
 
-    let (_, _, coords) = build_coords(evt.x, evt.y, viewport);
+    let mut events = Vec::new();
     let modifiers = map_modifiers(evt.modifiers);
-    let data = SerializedMouseData::new(button, to_button_set(button), coords, modifiers);
 
-    if pressed {
-        vec![RawInputEvent {
+    for button in buttons_from_mask(released.clone()) {
+        let (_, _, coords) = build_coords(evt.x, evt.y, viewport);
+        let data = SerializedMouseData::new(
+            Some(button),
+            to_button_set(Some(button)),
+            coords,
+            modifiers,
+        );
+        events.push(RawInputEvent {
+            name: "mouseup",
+            data: EventData::Mouse(data),
+            bubbles: true,
+        });
+    }
+
+    for button in buttons_from_mask(added.clone()) {
+        let (_, _, coords) = build_coords(evt.x, evt.y, viewport);
+        let data = SerializedMouseData::new(
+            Some(button),
+            to_button_set(Some(button)),
+            coords,
+            modifiers,
+        );
+        events.push(RawInputEvent {
             name: "mousedown",
             data: EventData::Mouse(data),
             bubbles: true,
-        }]
-    } else {
-        vec![
-            RawInputEvent {
-                name: "mousemove",
-                data: EventData::Mouse(data.clone()),
-                bubbles: true,
-            },
-            RawInputEvent {
-                name: "mouseenter",
-                data: EventData::Mouse(data),
-                bubbles: true,
-            },
-        ]
+        });
     }
+
+    if !events.is_empty() {
+        return events;
+    }
+
+    let (_, _, coords) = build_coords(evt.x, evt.y, viewport);
+    let data = SerializedMouseData::new(None, MouseButtonSet::empty(), coords, modifiers);
+    vec![
+        RawInputEvent {
+            name: "mousemove",
+            data: EventData::Mouse(data.clone()),
+            bubbles: true,
+        },
+        RawInputEvent {
+            name: "mouseenter",
+            data: EventData::Mouse(data),
+            bubbles: true,
+        },
+    ]
 }
 
-fn map_pixel_mouse_input(evt: &termwiz::input::PixelMouseEvent, viewport: Rect) -> Vec<RawInputEvent> {
+fn map_pixel_mouse_input(
+    evt: &termwiz::input::PixelMouseEvent,
+    viewport: Rect,
+    mouse_state: &mut RawMouseState,
+) -> Vec<RawInputEvent> {
+    let fallback = Rect::new(
+        0,
+        0,
+        evt.x_pixels.saturating_add(1).max(1),
+        evt.y_pixels.saturating_add(1).max(1),
+    );
+    let viewport = if viewport.width == 0 || viewport.height == 0 {
+        fallback
+    } else {
+        Rect::new(
+            viewport.x,
+            viewport.y,
+            viewport.width.max(fallback.width),
+            viewport.height.max(fallback.height),
+        )
+    };
     if evt.mouse_buttons.contains(MouseButtons::VERT_WHEEL)
         || evt.mouse_buttons.contains(MouseButtons::HORZ_WHEEL)
     {
@@ -335,42 +457,83 @@ fn map_pixel_mouse_input(evt: &termwiz::input::PixelMouseEvent, viewport: Rect) 
             delta_z: 0.0,
         };
         return vec![RawInputEvent {
-            name: "wheel",
+            name: "pixelwheel",
             data: EventData::Wheel(data),
             bubbles: true,
         }];
     }
 
-    let btn = button_from_mask(evt.mouse_buttons.clone());
-    let (pressed, button) = match btn {
-        Some(b) => (true, Some(b)),
-        None => (false, None),
-    };
+    let current_buttons = evt.mouse_buttons.clone();
+    let previous_buttons = mouse_state.last_buttons.clone();
+    let released = previous_buttons.clone() & !current_buttons.clone();
+    let added = current_buttons.clone() & !previous_buttons;
+    mouse_state.last_buttons = current_buttons;
 
-    let (_, _, coords) = build_coords(evt.x_pixels, evt.y_pixels, viewport);
+    let mut events = Vec::new();
     let modifiers = map_modifiers(evt.modifiers);
-    let data = SerializedMouseData::new(button, to_button_set(button), coords, modifiers);
 
-    if pressed {
-        vec![RawInputEvent {
-            name: "mousedown",
+    for button in buttons_from_mask(released.clone()) {
+        let (_, _, coords) = build_coords(evt.x_pixels, evt.y_pixels, viewport);
+        let data = SerializedMouseData::new(
+            Some(button),
+            to_button_set(Some(button)),
+            coords,
+            modifiers,
+        );
+        events.push(RawInputEvent {
+            name: "pixelmouseup",
             data: EventData::Mouse(data),
             bubbles: true,
-        }]
-    } else {
-        vec![
-            RawInputEvent {
-                name: "mousemove",
-                data: EventData::Mouse(data.clone()),
-                bubbles: true,
-            },
-            RawInputEvent {
-                name: "mouseenter",
-                data: EventData::Mouse(data),
-                bubbles: true,
-            },
-        ]
+        });
     }
+
+    for button in buttons_from_mask(added.clone()) {
+        let (_, _, coords) = build_coords(evt.x_pixels, evt.y_pixels, viewport);
+        let data = SerializedMouseData::new(
+            Some(button),
+            to_button_set(Some(button)),
+            coords,
+            modifiers,
+        );
+        events.push(RawInputEvent {
+            name: "pixelmousedown",
+            data: EventData::Mouse(data),
+            bubbles: true,
+        });
+    }
+
+    if !events.is_empty() {
+        return events;
+    }
+
+    let (_, _, coords) = build_coords(evt.x_pixels, evt.y_pixels, viewport);
+    let data = SerializedMouseData::new(None, MouseButtonSet::empty(), coords, modifiers);
+    vec![
+        RawInputEvent {
+            name: "pixelmousemove",
+            data: EventData::Mouse(data.clone()),
+            bubbles: true,
+        },
+        RawInputEvent {
+            name: "pixelmouseenter",
+            data: EventData::Mouse(data),
+            bubbles: true,
+        },
+    ]
+}
+
+fn buttons_from_mask(mask: MouseButtons) -> Vec<MouseButton> {
+    let mut buttons = Vec::new();
+    if mask.contains(MouseButtons::LEFT) {
+        buttons.push(MouseButton::Primary);
+    }
+    if mask.contains(MouseButtons::RIGHT) {
+        buttons.push(MouseButton::Secondary);
+    }
+    if mask.contains(MouseButtons::MIDDLE) {
+        buttons.push(MouseButton::Auxiliary);
+    }
+    buttons
 }
 
 pub fn use_raw_input() -> Signal<Option<RawInputEvent>> {
@@ -451,18 +614,6 @@ fn wheel_delta(buttons: MouseButtons) -> (f64, f64) {
         (sign, 0.0)
     } else {
         (0.0, 0.0)
-    }
-}
-
-fn button_from_mask(mask: MouseButtons) -> Option<MouseButton> {
-    if mask.contains(MouseButtons::LEFT) {
-        Some(MouseButton::Primary)
-    } else if mask.contains(MouseButtons::RIGHT) {
-        Some(MouseButton::Secondary)
-    } else if mask.contains(MouseButtons::MIDDLE) {
-        Some(MouseButton::Auxiliary)
-    } else {
-        None
     }
 }
 
