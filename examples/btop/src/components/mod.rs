@@ -4,6 +4,7 @@ pub mod mem_panel;
 pub mod net_panel;
 pub mod proc_panel_bottom;
 pub mod proc_panel_top;
+pub mod proc_table;
 pub mod topbar;
 
 use dioxus::prelude::Element;

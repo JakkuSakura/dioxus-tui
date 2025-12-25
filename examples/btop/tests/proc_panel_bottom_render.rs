@@ -1,3 +1,5 @@
+mod util;
+
 use dioxus_tui_btop::components::proc_panel_bottom;
 use dioxus_tui_btop::data::MOCK_DATA;
 
@@ -13,8 +15,9 @@ fn proc_panel_bottom_renders_snapshot() {
         .trim_end_matches('\n')
         .to_string();
 
-    let block = proc_panel_bottom::render(&MOCK_DATA.proc);
-    let actual = block.lines().join("\n");
+    let (width, height) = util::fixture_dims(&snapshot);
+    let rect = proc_panel_bottom::render_with_size(&MOCK_DATA.proc, width as usize, height as usize);
+    let actual = rect.to_lines().join("\n");
 
     assert_eq!(actual, snapshot, "proc panel bottom snapshot mismatch");
 }

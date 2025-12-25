@@ -14,6 +14,7 @@ pub mod geometry;
 mod hooks;
 pub mod image;
 pub mod layout;
+pub mod layout_helpers;
 pub mod log;
 pub mod render;
 pub mod scene;

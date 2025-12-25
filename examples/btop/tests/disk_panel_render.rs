@@ -1,3 +1,5 @@
+mod util;
+
 use dioxus_tui_btop::components::disk_panel;
 use dioxus_tui_btop::data::MOCK_DATA;
 
@@ -13,8 +15,9 @@ fn disk_panel_renders_snapshot() {
         .trim_end_matches('\n')
         .to_string();
 
-    let block = disk_panel::render(&MOCK_DATA.disk);
-    let actual = block.lines().join("\n");
+    let (width, height) = util::fixture_dims(&snapshot);
+    let rect = disk_panel::render_with_size(&MOCK_DATA.disk, width as usize, height as usize);
+    let actual = rect.to_lines().join("\n");
 
     assert_eq!(actual, snapshot, "disk panel snapshot mismatch");
 }
