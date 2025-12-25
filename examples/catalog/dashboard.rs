@@ -260,10 +260,17 @@ fn CapabilitiesPanel() -> Element {
     };
 
     let terminal_caps = match &detected {
-        Ok(c) => format!(
-            "truecolor={}; iterm2={}; sixel={}; inline={} ",
-            c.terminal.truecolor, c.terminal.iterm2_images, c.terminal.sixel_images, c.terminal.inline_images
-        ),
+        Ok(c) => {
+            let protocol = match c.terminal.inline_protocol {
+                dioxus_tui::capabilities::InlineImageProtocol::Iterm2 => "iterm2",
+                dioxus_tui::capabilities::InlineImageProtocol::Sixel => "sixel",
+                dioxus_tui::capabilities::InlineImageProtocol::None => "none",
+            };
+            format!(
+                "truecolor={}; inline={}; protocol={}",
+                c.terminal.truecolor, c.terminal.inline_images, protocol
+            )
+        }
         Err(err) => format!("<detect failed: {err}>"),
     };
 
