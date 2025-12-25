@@ -72,11 +72,15 @@ fn main() -> anyhow::Result<()> {
 ## Images
 Run the dashboard example:
 
-```sh
+```shell
 TERM=wezterm cargo run --example render -- --rendering-mode=visual dashboard
 ```
 
 ![Screenshot](https://i.imgur.com/UigQy8M.png)
+```shell
+cd examples/btop && cargo run
+```
+![Screenshot](https://i.imgur.com/YMhZK8F.png)
 
 
 ### Inline `<img>` elements
