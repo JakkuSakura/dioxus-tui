@@ -12,19 +12,31 @@ pub struct DetectedCapabilities {
 pub struct TerminalCapabilities {
     pub truecolor: bool,
     pub inline_images: bool,
-    pub iterm2_images: bool,
-    pub sixel_images: bool,
+    pub inline_protocol: InlineImageProtocol,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InlineImageProtocol {
+    Iterm2,
+    Sixel,
+    None,
 }
 
 impl TerminalCapabilities {
     pub(crate) fn from_termwiz(caps: &Capabilities) -> Self {
         let iterm2_images = caps.iterm2_image();
         let sixel_images = caps.sixel();
+        let inline_protocol = if iterm2_images {
+            InlineImageProtocol::Iterm2
+        } else if sixel_images {
+            InlineImageProtocol::Sixel
+        } else {
+            InlineImageProtocol::None
+        };
         Self {
             truecolor: matches!(caps.color_level(), ColorLevel::TrueColor),
-            inline_images: iterm2_images || sixel_images,
-            iterm2_images,
-            sixel_images,
+            inline_images: !matches!(inline_protocol, InlineImageProtocol::None),
+            inline_protocol,
         }
     }
 }

@@ -7,18 +7,13 @@ use anyrender::ImageRenderer;
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus_core::ComponentFunction;
-use termwiz::render::terminfo::TerminfoRenderer;
-use termwiz::render::RenderTty;
-use termwiz::surface::Change;
-use termwiz::terminal::ScreenSize;
 use termwiz::terminal::Terminal as _;
-use termwiz::image::TextureCoordinate;
 
 use crate::capabilities::TerminalCapabilities;
 use crate::cell_render::paint_surface;
 use crate::config::{ColorMode, Config, ImagePolicy, RenderingMode};
 use crate::geometry::Rect;
-use crate::image::{encode_sixel_rgba, rgba_to_png_bytes};
+use crate::image::rgba_to_png_bytes;
 use crate::layout::resolve_document_with_viewport_and_extra_css;
 use crate::render::DioxusRenderer;
 use crate::surface::Surface;
@@ -181,36 +176,16 @@ where
     }
 
     let mut out = std::io::stdout().lock();
-    if term_caps.iterm2_images {
-        let png = rgba_to_png_bytes(&rgba, render_width_px, cropped_height_px.min(render_height_px))?;
-
-        let image = termwiz::surface::Image {
-            width: width_cells as usize,
-            height: cropped_height_cells as usize,
-            top_left: TextureCoordinate::new_f32(0.0, 0.0),
-            bottom_right: TextureCoordinate::new_f32(1.0, 1.0),
-            image: std::sync::Arc::new(termwiz::image::ImageData::with_data(
-                termwiz::image::ImageDataType::EncodedFile(png),
-            )),
-        };
-
-        let mut renderer = TerminfoRenderer::new(termwiz_caps);
-        let mut tty = StdoutRenderTty {
-            out: &mut out,
-            size: ScreenSize {
-                rows: height_cells as usize,
-                cols: width_cells as usize,
-                xpixel: size.xpixel,
-                ypixel: size.ypixel,
-            },
-        };
-        renderer.render_to(&[Change::Image(image)], &mut tty)?;
-    } else if term_caps.sixel_images {
-        let sixel = encode_sixel_rgba(&rgba, render_width_px, cropped_height_px.min(render_height_px));
-        out.write_all(sixel.as_bytes())?;
-    } else {
-        anyhow::bail!("BlitzTerminal requires iterm2 or sixel inline images");
-    }
+    let png = rgba_to_png_bytes(&rgba, render_width_px, cropped_height_px.min(render_height_px))?;
+    let encoder = match term_caps.inline_protocol {
+        crate::capabilities::InlineImageProtocol::Iterm2 => rasteroid::InlineEncoder::Iterm,
+        crate::capabilities::InlineImageProtocol::Sixel => rasteroid::InlineEncoder::Sixel,
+        crate::capabilities::InlineImageProtocol::None => {
+            anyhow::bail!("BlitzTerminal requires inline image protocol support")
+        }
+    };
+    rasteroid::inline_an_image(&png, &mut out, None, Some((0, 0)), &encoder)
+        .map_err(|err| anyhow::anyhow!("inline image error: {err}"))?;
 
     // If the terminal moved the cursor (default), it should already be below the image.
     // Add a single newline to ensure the prompt does not sit on the last row.
@@ -218,25 +193,4 @@ where
     out.flush()?;
 
     Ok(true)
-}
-
-struct StdoutRenderTty<'a> {
-    out: &'a mut dyn Write,
-    size: ScreenSize,
-}
-
-impl Write for StdoutRenderTty<'_> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.out.write(buf)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.out.flush()
-    }
-}
-
-impl RenderTty for StdoutRenderTty<'_> {
-    fn get_size_in_cells(&mut self) -> termwiz::Result<(usize, usize)> {
-        Ok((self.size.cols, self.size.rows))
-    }
 }

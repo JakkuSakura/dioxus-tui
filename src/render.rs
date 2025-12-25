@@ -13,7 +13,6 @@ use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use smol_str::SmolStr;
 use termwiz::{
     color::ColorAttribute,
-    image::TextureCoordinate,
     surface::{Change, Position},
     terminal::{buffered::BufferedTerminal, ScreenSize, Terminal},
 };
@@ -21,7 +20,7 @@ use tokio::time::sleep;
 use termwiz::input::{InputEvent as TzInputEvent, KeyCode, Modifiers as TzModifiers};
 use termwiz::terminal::new_terminal;
 
-use crate::capabilities::{DetectedCapabilities, TerminalCapabilities};
+use crate::capabilities::{DetectedCapabilities, InlineImageProtocol, TerminalCapabilities};
 use crate::capabilities::detect as detect_capabilities;
 use crate::capabilities::termwiz_capabilities;
 use crate::config::{Config, RenderingMode};
@@ -210,8 +209,7 @@ where
             terminal: TerminalCapabilities {
                 truecolor: false,
                 inline_images: false,
-                iterm2_images: false,
-                sixel_images: false,
+                inline_protocol: InlineImageProtocol::None,
             },
         },
     };
@@ -247,7 +245,7 @@ where
         cfg.custom_draw_mode,
         cfg.image_policy,
         cfg.image_downgrade,
-        detected.terminal.iterm2_images,
+        detected.terminal.inline_images,
     )?;
     Ok(RenderedFrame { surface, images })
 }
@@ -292,8 +290,7 @@ where
             terminal: TerminalCapabilities {
                 truecolor: false,
                 inline_images: false,
-                iterm2_images: false,
-                sixel_images: false,
+                inline_protocol: InlineImageProtocol::None,
             },
         },
     };
@@ -510,29 +507,22 @@ async fn run_tui_renderer(
                     }
                 }
 
-                if !capabilities.iterm2_images {
+                if matches!(capabilities.inline_protocol, InlineImageProtocol::None) {
                     return Err(crate::error::Error::Other(anyhow::anyhow!(
-                        "BlitzTerminal launch currently requires iterm2 image support"
+                        "BlitzTerminal launch currently requires inline image protocol support"
                     )));
                 }
                 let png = crate::image::rgba_to_png_bytes(&rgba, render_w_px, cropped_px.min(render_h_px))?;
-                let image = termwiz::surface::Image {
-                    width: area.width as usize,
-                    height: cropped_cells as usize,
-                    top_left: TextureCoordinate::new_f32(0.0, 0.0),
-                    bottom_right: TextureCoordinate::new_f32(1.0, 1.0),
-                    image: std::sync::Arc::new(termwiz::image::ImageData::with_data(
-                        termwiz::image::ImageDataType::EncodedFile(png),
-                    )),
-                };
-
-                // Full redraw each frame.
+                let encoder = inline_encoder_for_caps(&capabilities).unwrap_or(rasteroid::InlineEncoder::Ascii);
+                let mut payload = Vec::new();
+                rasteroid::inline_an_image(&png, &mut payload, None, Some((0, 0)), &encoder)
+                    .map_err(|err| crate::error::Error::Other(anyhow::anyhow!("inline image error: {err}")))?;
                 term.add_change(Change::ClearScreen(ColorAttribute::Default));
                 term.add_change(Change::CursorPosition {
                     x: Position::Absolute(0),
                     y: Position::Absolute(0),
                 });
-                term.add_change(Change::Image(image));
+                term.add_change(Change::Text(String::from_utf8_lossy(&payload).to_string()));
                 term.add_change(Change::CursorPosition {
                     x: Position::Absolute(0),
                     y: Position::Absolute((cropped_cells as usize).min(area.height as usize - 1)),
@@ -558,7 +548,7 @@ async fn run_tui_renderer(
                     cfg.custom_draw_mode,
                     cfg.image_policy,
                     cfg.image_downgrade,
-                    capabilities.iterm2_images,
+                    capabilities.inline_images,
                 ) {
                     paint_error = Some(err);
                     break;
@@ -1232,7 +1222,7 @@ pub(crate) fn frame_to_cropped_stream_changes(
     // Then, place images at the end so that no subsequent output overwrites them.
     let mut changes = surface_to_cropped_stream_changes(&frame.surface);
 
-    if frame.images.is_empty() || !caps.iterm2_images {
+    if frame.images.is_empty() || matches!(caps.inline_protocol, InlineImageProtocol::None) {
         return changes;
     }
 
@@ -1262,13 +1252,15 @@ pub(crate) fn frame_to_cropped_stream_changes(
         }
         let up = printed_rows.saturating_sub(y);
 
-        // Move to the image cell position relative to the end of output.
-        changes.push(Change::Text(format!("\x1b[{}A\r\x1b[{}C", up, img.x_cell)));
-        if let Ok(osc) = crate::image::iterm2_osc_for_placed_image(img, true, true) {
-            changes.push(Change::Text(osc));
+        let encoder = inline_encoder_for_caps(caps).unwrap_or(rasteroid::InlineEncoder::Ascii);
+        let mut payload = Vec::new();
+        if rasteroid::inline_an_image(&img.png, &mut payload, None, Some((img.x_cell, img.y_cell)), &encoder).is_ok() {
+            // Move to the image cell position relative to the end of output.
+            changes.push(Change::Text(format!("\x1b[{}A\r", up)));
+            changes.push(Change::Text(String::from_utf8_lossy(&payload).to_string()));
+            // Return back to the end of output.
+            changes.push(Change::Text(format!("\r\x1b[{}B", up)));
         }
-        // Return back to the end of output.
-        changes.push(Change::Text(format!("\r\x1b[{}B", up)));
     }
 
     changes
@@ -1296,7 +1288,7 @@ pub(crate) fn flush_surface<T: Terminal>(
     // If the image set changes, do a full redraw to avoid leaving stale image placements behind.
     let full_redraw = images_changed || prev.map(|p| p.dims() != surface.dims()).unwrap_or(true);
 
-    let masked = if caps.iterm2_images && !images.is_empty() {
+    let masked = if !matches!(caps.inline_protocol, InlineImageProtocol::None) && !images.is_empty() {
         Some(image_mask_intervals_by_row(
             images,
             surface.width() as usize,
@@ -1317,23 +1309,24 @@ pub(crate) fn flush_surface<T: Terminal>(
     }
 
     // Place images after text so they don't get overwritten by cleared cell regions.
-    if caps.iterm2_images && !images.is_empty() {
+    if let Some(encoder) = inline_encoder_for_caps(caps) {
         for img in images {
-            term.add_change(Change::CursorPosition {
-                x: Position::Absolute(img.x_cell as usize),
-                y: Position::Absolute(img.y_cell as usize),
-            });
-            term.add_change(Change::Image(termwiz::surface::Image {
-                width: img.width_cells as usize,
-                height: img.height_cells as usize,
-                top_left: TextureCoordinate::new_f32(0.0, 0.0),
-                bottom_right: TextureCoordinate::new_f32(1.0, 1.0),
-                image: img.image.clone(),
-            }));
+            let mut payload = Vec::new();
+            if rasteroid::inline_an_image(&img.png, &mut payload, None, Some((img.x_cell, img.y_cell)), &encoder).is_ok() {
+                term.add_change(Change::Text(String::from_utf8_lossy(&payload).to_string()));
+            }
         }
     }
 
     let _ = (metrics,);
     term.flush()?;
     Ok(())
+}
+
+fn inline_encoder_for_caps(caps: &TerminalCapabilities) -> Option<rasteroid::InlineEncoder> {
+    match caps.inline_protocol {
+        InlineImageProtocol::Iterm2 => Some(rasteroid::InlineEncoder::Iterm),
+        InlineImageProtocol::Sixel => Some(rasteroid::InlineEncoder::Sixel),
+        InlineImageProtocol::None => None,
+    }
 }
