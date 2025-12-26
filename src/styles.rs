@@ -24,7 +24,7 @@ body > main {
 
 /* Basic HTML display defaults (Blitz doesn't inject a full UA stylesheet). */
 div, p, pre, ul, ol, li, header, footer, section, article, nav, table, thead, tbody, tfoot, tr, td, th,
-span, a, strong, b, em, i, code, h1, h2, h3, h4, h5, h6 {
+textarea, span, a, strong, b, em, i, code, h1, h2, h3, h4, h5, h6 {
   display: block;
   line-height: 1;
 }

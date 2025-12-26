@@ -179,7 +179,7 @@ fn renders_textarea_multiline_cells() {
     fn app() -> Element {
         rsx! {
             main {
-                textarea { width: "100%", height: "100%", value: "Alpha\nBeta\nGamma" }
+                textarea { rows: "4", cols: "10", value: "Alpha\nBeta\nGamma" }
             }
         }
     }
