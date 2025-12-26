@@ -1,6 +1,6 @@
 use anyhow::Result;
-use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use png::{BitDepth, ColorType, Decoder, Encoder, Transformations};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -37,11 +37,12 @@ pub(crate) fn rgba_to_png_bytes(data: &[u8], width: u32, height: u32) -> Result<
 }
 
 fn decode_png_rgba(png_bytes: &[u8]) -> Result<DecodedImage> {
-    let mut decoder = Decoder::new(png_bytes);
+    let cursor = std::io::Cursor::new(png_bytes);
+    let mut decoder = Decoder::new(cursor);
     decoder.set_transformations(Transformations::EXPAND | Transformations::STRIP_16);
     let mut reader = decoder.read_info()?;
 
-    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let mut buf = vec![0u8; reader.output_buffer_size().unwrap()];
     let info = reader.next_frame(&mut buf)?;
     let bytes = &buf[..info.buffer_size()];
 
@@ -51,10 +52,7 @@ fn decode_png_rgba(png_bytes: &[u8]) -> Result<DecodedImage> {
             .chunks_exact(3)
             .flat_map(|rgb| [rgb[0], rgb[1], rgb[2], 255])
             .collect(),
-        ColorType::Grayscale => bytes
-            .iter()
-            .flat_map(|&v| [v, v, v, 255])
-            .collect(),
+        ColorType::Grayscale => bytes.iter().flat_map(|&v| [v, v, v, 255]).collect(),
         ColorType::GrayscaleAlpha => bytes
             .chunks_exact(2)
             .flat_map(|ga| [ga[0], ga[0], ga[0], ga[1]])

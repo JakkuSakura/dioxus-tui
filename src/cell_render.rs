@@ -2,14 +2,14 @@ use blitz_dom::{local_name, BaseDocument, Node};
 use termwiz::cell::{Blink, Intensity, Underline};
 use termwiz::color::{ColorAttribute, SrgbaTuple};
 
-use crate::config::{PaletteEntry, PaletteRoles};
 use crate::config::ColorMode;
+use crate::config::{ImageDowngrade, ImagePolicy};
+use crate::config::{PaletteEntry, PaletteRoles};
 use crate::geometry::Rect;
+use crate::image::{load_png_image, placed_image_from_png, PlacedImage};
 use crate::layout::node_rect;
 use crate::scene::CellMetrics;
 use crate::surface::Surface;
-use crate::config::{ImageDowngrade, ImagePolicy};
-use crate::image::{load_png_image, placed_image_from_png, PlacedImage};
 use std::collections::VecDeque;
 use style::color::AbsoluteColor;
 use unicode_width::UnicodeWidthChar;
@@ -102,7 +102,11 @@ impl TextStyle {
                 self.underline
             },
             italic: self.italic || other.italic,
-            blink: if other.blink != Blink::None { other.blink } else { self.blink },
+            blink: if other.blink != Blink::None {
+                other.blink
+            } else {
+                self.blink
+            },
             preserve_whitespace: self.preserve_whitespace || other.preserve_whitespace,
             pre_full_width: self.pre_full_width || other.pre_full_width,
         }
@@ -208,7 +212,13 @@ fn paint_node(
                     }
                 } else if node.data.is_element_with_tag_name(&local_name!("button")) {
                     let label = node.text_content();
-                    let _ = write_wrapped(surface, text_bounds, (rect.x, rect.y), label.as_str(), style);
+                    let _ = write_wrapped(
+                        surface,
+                        text_bounds,
+                        (rect.x, rect.y),
+                        label.as_str(),
+                        style,
+                    );
                 } else {
                     paint_inline_text(
                         surface,
@@ -313,19 +323,33 @@ fn paint_inline_text(
                     inherited,
                 );
             }
-            blitz_dom::node::NodeData::Element(_) | blitz_dom::node::NodeData::AnonymousBlock(_) => {
+            blitz_dom::node::NodeData::Element(_)
+            | blitz_dom::node::NodeData::AnonymousBlock(_) => {
                 if !is_blockish(child) {
                     if child.data.is_element_with_tag_name(&local_name!("input")) {
                         if let Some(value) = child.attr(local_name!("value")) {
-                            (cursor_x, cursor_y) =
-                                write_wrapped(surface, bounds, (cursor_x, cursor_y), value, inherited);
+                            (cursor_x, cursor_y) = write_wrapped(
+                                surface,
+                                bounds,
+                                (cursor_x, cursor_y),
+                                value,
+                                inherited,
+                            );
                         }
                         continue;
                     }
-                    if child.data.is_element_with_tag_name(&local_name!("textarea")) {
+                    if child
+                        .data
+                        .is_element_with_tag_name(&local_name!("textarea"))
+                    {
                         if let Some(value) = child.attr(local_name!("value")) {
-                            (cursor_x, cursor_y) =
-                                write_wrapped(surface, bounds, (cursor_x, cursor_y), value, inherited);
+                            (cursor_x, cursor_y) = write_wrapped(
+                                surface,
+                                bounds,
+                                (cursor_x, cursor_y),
+                                value,
+                                inherited,
+                            );
                         }
                         continue;
                     }
@@ -337,7 +361,10 @@ fn paint_inline_text(
                             .or(child_style.fg)
                             .unwrap_or(fallback_fg),
                     );
-                    let child_style = TextStyle { fg: child_fg, ..child_style };
+                    let child_style = TextStyle {
+                        fg: child_fg,
+                        ..child_style
+                    };
                     (cursor_x, cursor_y) = paint_inline_children(
                         surface,
                         doc,
@@ -376,7 +403,8 @@ fn paint_inline_children(
             blitz_dom::node::NodeData::Text(text) => {
                 cursor = write_wrapped(surface, bounds, cursor, text.content.as_str(), inherited);
             }
-            blitz_dom::node::NodeData::Element(_) | blitz_dom::node::NodeData::AnonymousBlock(_) => {
+            blitz_dom::node::NodeData::Element(_)
+            | blitz_dom::node::NodeData::AnonymousBlock(_) => {
                 if !is_blockish(child) {
                     if child.data.is_element_with_tag_name(&local_name!("input")) {
                         if let Some(value) = child.attr(local_name!("value")) {
@@ -384,7 +412,10 @@ fn paint_inline_children(
                         }
                         continue;
                     }
-                    if child.data.is_element_with_tag_name(&local_name!("textarea")) {
+                    if child
+                        .data
+                        .is_element_with_tag_name(&local_name!("textarea"))
+                    {
                         if let Some(value) = child.attr(local_name!("value")) {
                             cursor = write_wrapped(surface, bounds, cursor, value, inherited);
                         }
@@ -398,7 +429,10 @@ fn paint_inline_children(
                             .or(child_style.fg)
                             .unwrap_or(fallback_fg),
                     );
-                    let child_style = TextStyle { fg: child_fg, ..child_style };
+                    let child_style = TextStyle {
+                        fg: child_fg,
+                        ..child_style
+                    };
                     cursor = paint_inline_children(
                         surface,
                         doc,
@@ -570,9 +604,8 @@ fn paint_img(
     // reasonable size from the intrinsic PNG dimensions.
     if desired_w <= 1 || desired_h <= 1 {
         if let Ok(decoded) = load_png_image(src) {
-            let intrinsic_w_cells = ((decoded.width as f32) / metrics.cell_w_px)
-                .ceil()
-                .max(1.0) as u16;
+            let intrinsic_w_cells =
+                ((decoded.width as f32) / metrics.cell_w_px).ceil().max(1.0) as u16;
             let intrinsic_h_cells = ((decoded.height as f32) / metrics.cell_h_px)
                 .ceil()
                 .max(1.0) as u16;
@@ -609,7 +642,13 @@ fn paint_img(
             surface.width().saturating_sub(rect.x),
             surface.height().saturating_sub(rect.y),
         );
-        let _ = write_wrapped(surface, bounds, (rect.x, rect.y), fallback(), TextStyle::default());
+        let _ = write_wrapped(
+            surface,
+            bounds,
+            (rect.x, rect.y),
+            fallback(),
+            TextStyle::default(),
+        );
     };
 
     let should_sample = match image_policy {
@@ -753,8 +792,11 @@ fn pixel_rgba(buf: &[u8], width: u32, x: u32, y: u32) -> (u8, u8, u8, u8) {
 
 fn rgb_to_attr(r: u8, g: u8, b: u8, color_mode: ColorMode, truecolor: bool) -> ColorAttribute {
     let srgb = SrgbaTuple::from((r, g, b));
-    let palette_idx_256 = 16 + 36 * (r as u16 / 51) as u8 + 6 * (g as u16 / 51) as u8 + (b as u16 / 51) as u8;
-    let base_idx = (if r >= 128 { 1 } else { 0 }) | (if g >= 128 { 2 } else { 0 }) | (if b >= 128 { 4 } else { 0 });
+    let palette_idx_256 =
+        16 + 36 * (r as u16 / 51) as u8 + 6 * (g as u16 / 51) as u8 + (b as u16 / 51) as u8;
+    let base_idx = (if r >= 128 { 1 } else { 0 })
+        | (if g >= 128 { 2 } else { 0 })
+        | (if b >= 128 { 4 } else { 0 });
 
     match color_mode {
         ColorMode::BaseColors => ColorAttribute::PaletteIndex(base_idx),
@@ -1053,8 +1095,8 @@ fn style_overrides(node: &Node, color_mode: ColorMode, truecolor: bool) -> TextS
     {
         out.preserve_whitespace = true;
     }
-    if let Some(style) = attr_value(node, "style")
-        .and_then(|s| parse_inline_style_value(s, "white-space"))
+    if let Some(style) =
+        attr_value(node, "style").and_then(|s| parse_inline_style_value(s, "white-space"))
     {
         let value = style.trim().to_ascii_lowercase();
         if value.starts_with("pre") {
@@ -1082,9 +1124,9 @@ fn style_overrides(node: &Node, color_mode: ColorMode, truecolor: bool) -> TextS
 }
 
 fn attr_value<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
-    node.attrs()?.iter().find_map(|attr| {
-        (attr.name.local.as_ref() == name).then_some(attr.value.as_str())
-    })
+    node.attrs()?
+        .iter()
+        .find_map(|attr| (attr.name.local.as_ref() == name).then_some(attr.value.as_str()))
 }
 
 fn root_background(
@@ -1182,9 +1224,15 @@ fn fill_rect(
     }
 }
 
-fn palette_entry_to_attr(entry: PaletteEntry, color_mode: ColorMode, truecolor: bool) -> ColorAttribute {
+fn palette_entry_to_attr(
+    entry: PaletteEntry,
+    color_mode: ColorMode,
+    truecolor: bool,
+) -> ColorAttribute {
     match entry {
-        PaletteEntry::Ansi(idx) | PaletteEntry::Palette256(idx) => ColorAttribute::PaletteIndex(idx),
+        PaletteEntry::Ansi(idx) | PaletteEntry::Palette256(idx) => {
+            ColorAttribute::PaletteIndex(idx)
+        }
         PaletteEntry::Rgb(r, g, b) => {
             let srgb = SrgbaTuple::from((r, g, b));
             let palette_idx_256 =
@@ -1194,7 +1242,9 @@ fn palette_entry_to_attr(entry: PaletteEntry, color_mode: ColorMode, truecolor: 
                 | (if b >= 128 { 4 } else { 0 });
             match color_mode {
                 ColorMode::BaseColors => ColorAttribute::PaletteIndex(base_idx),
-                ColorMode::Ansi => ColorAttribute::TrueColorWithPaletteFallback(srgb, palette_idx_256),
+                ColorMode::Ansi => {
+                    ColorAttribute::TrueColorWithPaletteFallback(srgb, palette_idx_256)
+                }
                 ColorMode::Rgb => {
                     if truecolor {
                         ColorAttribute::TrueColorWithDefaultFallback(srgb)

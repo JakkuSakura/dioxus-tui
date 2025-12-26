@@ -178,13 +178,15 @@ fn detect_output_width() -> Option<u16> {
         use std::os::fd::AsRawFd;
 
         unsafe fn cols_from_fd(fd: i32) -> Option<u16> {
-            let mut ws: libc::winsize = std::mem::zeroed();
-            if libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws) == 0 {
-                if ws.ws_col > 0 {
-                    return Some(ws.ws_col as u16);
+            unsafe {
+                let mut ws: libc::winsize = std::mem::zeroed();
+                if libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws) == 0 {
+                    if ws.ws_col > 0 {
+                        return Some(ws.ws_col as u16);
+                    }
                 }
+                None
             }
-            None
         }
 
         let stdout = std::io::stdout();
