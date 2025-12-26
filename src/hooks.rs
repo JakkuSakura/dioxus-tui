@@ -59,7 +59,7 @@ pub struct ViewportBus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MouseCursorStyle {
+pub enum CursorStyle {
     Block,
     Underline,
     Beam,
@@ -67,62 +67,83 @@ pub enum MouseCursorStyle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MouseCursorUnit {
+pub enum CursorUnit {
     Cell,
     Pixel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MouseCursorMode {
+pub enum CursorMode {
     FollowMouse,
     Manual,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum MouseCursorCommand {
+pub enum CursorCommand {
     Show,
     Hide,
-    SetStyle(MouseCursorStyle),
+    SetStyle(CursorStyle),
     FollowMouse,
     SetCellPosition(f32, f32),
     SetPixelPosition(f32, f32),
 }
 
-#[derive(Clone, Default)]
-pub struct MouseCursorBus {
-    listeners: Rc<RefCell<Vec<Option<Rc<dyn Fn(MouseCursorCommand)>>>>>,
+#[derive(Clone)]
+pub(crate) struct CursorState {
+    pub(crate) visible: bool,
+    pub(crate) style: CursorStyle,
+    pub(crate) mode: CursorMode,
+    pub(crate) unit: CursorUnit,
+    pub(crate) position: Option<(f32, f32)>,
 }
 
-impl MouseCursorBus {
+impl Default for CursorState {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            style: CursorStyle::Block,
+            mode: CursorMode::FollowMouse,
+            unit: CursorUnit::Cell,
+            position: None,
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct CursorBus {
+    listeners: Rc<RefCell<Vec<Option<Rc<dyn Fn(CursorCommand)>>>>>,
+}
+
+impl CursorBus {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub(crate) fn subscribe(&self, listener: Rc<dyn Fn(MouseCursorCommand)>) -> MouseCursorSubscription {
+    pub(crate) fn subscribe(&self, listener: Rc<dyn Fn(CursorCommand)>) -> CursorSubscription {
         let mut listeners = self.listeners.borrow_mut();
         let id = listeners.len();
         listeners.push(Some(listener));
-        Rc::new(MouseCursorSubscriptionInner {
+        Rc::new(CursorSubscriptionInner {
             id,
             listeners: Rc::downgrade(&self.listeners),
         })
     }
 
-    pub fn publish(&self, event: MouseCursorCommand) {
+    pub fn publish(&self, event: CursorCommand) {
         for listener in self.listeners.borrow().iter().flatten() {
             listener(event);
         }
     }
 }
 
-pub(crate) type MouseCursorSubscription = Rc<MouseCursorSubscriptionInner>;
+pub(crate) type CursorSubscription = Rc<CursorSubscriptionInner>;
 
-pub(crate) struct MouseCursorSubscriptionInner {
+pub(crate) struct CursorSubscriptionInner {
     id: usize,
-    listeners: Weak<RefCell<Vec<Option<Rc<dyn Fn(MouseCursorCommand)>>>>>,
+    listeners: Weak<RefCell<Vec<Option<Rc<dyn Fn(CursorCommand)>>>>>,
 }
 
-impl Drop for MouseCursorSubscriptionInner {
+impl Drop for CursorSubscriptionInner {
     fn drop(&mut self) {
         if let Some(listeners) = self.listeners.upgrade() {
             if let Some(slot) = listeners.borrow_mut().get_mut(self.id) {
@@ -805,87 +826,83 @@ pub fn use_viewport() -> Signal<Rect> {
 }
 
 #[derive(Clone)]
-pub struct MouseCursorHandle {
-    bus: MouseCursorBus,
+pub struct CursorHandle {
+    bus: CursorBus,
 }
 
-impl MouseCursorHandle {
+impl CursorHandle {
     pub fn show(&self) {
-        self.bus.publish(MouseCursorCommand::Show);
+        self.bus.publish(CursorCommand::Show);
     }
 
     pub fn hide(&self) {
-        self.bus.publish(MouseCursorCommand::Hide);
+        self.bus.publish(CursorCommand::Hide);
     }
 
     pub fn follow_mouse(&self) {
-        self.bus.publish(MouseCursorCommand::FollowMouse);
+        self.bus.publish(CursorCommand::FollowMouse);
     }
 
-    pub fn set_style(&self, style: MouseCursorStyle) {
-        self.bus.publish(MouseCursorCommand::SetStyle(style));
+    pub fn set_style(&self, style: CursorStyle) {
+        self.bus.publish(CursorCommand::SetStyle(style));
     }
 
     pub fn set_cell_position(&self, x: f32, y: f32) {
-        self.bus.publish(MouseCursorCommand::SetCellPosition(x, y));
+        self.bus.publish(CursorCommand::SetCellPosition(x, y));
     }
 
     pub fn set_pixel_position(&self, x: f32, y: f32) {
-        self.bus.publish(MouseCursorCommand::SetPixelPosition(x, y));
+        self.bus.publish(CursorCommand::SetPixelPosition(x, y));
     }
 }
 
-pub fn use_mouse_cursor() -> MouseCursorHandle {
-    let bus = use_context::<MouseCursorBus>();
-    MouseCursorHandle { bus }
-}
-
-pub fn use_cursor() -> MouseCursorHandle {
-    use_mouse_cursor()
+pub fn use_cursor() -> CursorHandle {
+    let bus = use_context::<CursorBus>();
+    CursorHandle { bus }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TextCursorCommand {
+pub enum CaretCommand {
     Show,
     Hide,
     SetPosition(u16, u16),
 }
 
 #[derive(Clone, Default)]
-pub struct TextCursorBus {
-    listeners: Rc<RefCell<Vec<Option<Rc<dyn Fn(TextCursorCommand)>>>>>,
+pub struct CaretBus {
+    listeners: Rc<RefCell<Vec<Option<Rc<dyn Fn(CaretCommand)>>>>>,
 }
 
-impl TextCursorBus {
+impl CaretBus {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub(crate) fn subscribe(&self, listener: Rc<dyn Fn(TextCursorCommand)>) -> TextCursorSubscription {
+    pub(crate) fn subscribe(&self, listener: Rc<dyn Fn(CaretCommand)>) -> CaretSubscription {
         let mut listeners = self.listeners.borrow_mut();
         let id = listeners.len();
         listeners.push(Some(listener));
-        Rc::new(TextCursorSubscriptionInner {
+        Rc::new(CaretSubscriptionInner {
             id,
             listeners: Rc::downgrade(&self.listeners),
         })
     }
 
-    pub fn publish(&self, event: TextCursorCommand) {
+    pub fn publish(&self, event: CaretCommand) {
         for listener in self.listeners.borrow().iter().flatten() {
             listener(event);
         }
     }
 }
 
-pub(crate) type TextCursorSubscription = Rc<TextCursorSubscriptionInner>;
+pub(crate) type CaretSubscription = Rc<CaretSubscriptionInner>;
 
-pub(crate) struct TextCursorSubscriptionInner {
+pub(crate) struct CaretSubscriptionInner {
     id: usize,
-    listeners: Weak<RefCell<Vec<Option<Rc<dyn Fn(TextCursorCommand)>>>>>,
+    listeners: Weak<RefCell<Vec<Option<Rc<dyn Fn(CaretCommand)>>>>>,
 }
 
-impl Drop for TextCursorSubscriptionInner {
+impl Drop for CaretSubscriptionInner {
     fn drop(&mut self) {
         if let Some(listeners) = self.listeners.upgrade() {
             if let Some(slot) = listeners.borrow_mut().get_mut(self.id) {
@@ -896,27 +913,27 @@ impl Drop for TextCursorSubscriptionInner {
 }
 
 #[derive(Clone)]
-pub struct TextCursorHandle {
-    bus: TextCursorBus,
+pub struct CaretHandle {
+    bus: CaretBus,
 }
 
-impl TextCursorHandle {
+impl CaretHandle {
     pub fn show(&self) {
-        self.bus.publish(TextCursorCommand::Show);
+        self.bus.publish(CaretCommand::Show);
     }
 
     pub fn hide(&self) {
-        self.bus.publish(TextCursorCommand::Hide);
+        self.bus.publish(CaretCommand::Hide);
     }
 
     pub fn set_cell_position(&self, x: u16, y: u16) {
-        self.bus.publish(TextCursorCommand::SetPosition(x, y));
+        self.bus.publish(CaretCommand::SetPosition(x, y));
     }
 }
 
-pub fn use_text_cursor() -> TextCursorHandle {
-    let bus = use_context::<TextCursorBus>();
-    TextCursorHandle { bus }
+pub fn use_caret() -> CaretHandle {
+    let bus = use_context::<CaretBus>();
+    CaretHandle { bus }
 }
 
 fn wheel_delta(buttons: MouseButtons) -> (f64, f64) {

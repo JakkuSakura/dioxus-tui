@@ -1,34 +1,26 @@
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::{any::Any, rc::Rc};
 
 use crate::error::Result;
-use blitz_dom::{Document as _, Node};
+use blitz_dom::Document as _;
 use blitz_traits::shell::{ColorScheme, Viewport};
-use blitz_traits::events::{BlitzKeyEvent, BlitzMouseButtonEvent, KeyState, MouseEventButton, MouseEventButtons, UiEvent};
-use dioxus_core::{ComponentFunction, ElementId, Event, Runtime, RuntimeGuard, VirtualDom};
+use dioxus_core::{ComponentFunction, ElementId, Event, Runtime, VirtualDom};
 use dioxus_html::PlatformEventData;
-use dioxus_html::input_data::keyboard_types::Location;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
-use futures::{FutureExt, StreamExt};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use smol_str::SmolStr;
 use termwiz::{
     color::{ColorAttribute, SrgbaTuple},
     surface::{Change, Position},
     terminal::{buffered::BufferedTerminal, ScreenSize, Terminal},
 };
-use tokio::time::sleep;
-use termwiz::input::{InputEvent as TzInputEvent, KeyCode, Modifiers as TzModifiers};
 use termwiz::terminal::new_terminal;
 
 use crate::capabilities::{DetectedCapabilities, InlineImageProtocol, TerminalCapabilities};
 use crate::capabilities::detect as detect_capabilities;
 use crate::capabilities::termwiz_capabilities;
-use crate::config::{ColorMode, Config, PaletteEntry, RenderingMode};
+use crate::config::{ColorMode, Config, PaletteEntry};
 use crate::geometry::Rect;
 use crate::hooks::{
-    MouseCursorBus, MouseCursorCommand, MouseCursorMode, MouseCursorStyle, MouseCursorUnit,
-    TextCursorBus, TextCursorCommand, map_code, map_modifiers, raw_input_from_termwiz, RawMouseState,
-    TuiInputBus, ViewportBus,
+    CursorBus, CursorStyle, CursorUnit, CursorState, CaretBus, TuiInputBus, ViewportBus,
 };
 use crate::layout::resolve_document;
 use crate::scene::CellMetrics;
@@ -36,14 +28,6 @@ use crate::surface::Surface;
 use crate::RawVirtualDom;
 use crate::cell_render::paint_surface;
 use crate::image::PlacedImage;
-use tracing::debug;
-
-#[cfg(feature = "blitz")]
-use anyrender::ImageRenderer;
-#[cfg(feature = "blitz")]
-use blitz_paint::paint_scene;
-#[cfg(feature = "blitz")]
-use crate::layout::resolve_document_with_viewport_and_extra_css;
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
     unbounded()
@@ -83,8 +67,8 @@ pub(crate) struct DioxusRenderer {
     pub(crate) doc: DioxusDocument,
     pub(crate) input_bus: TuiInputBus,
     pub(crate) viewport_bus: ViewportBus,
-    pub(crate) mouse_cursor_bus: MouseCursorBus,
-    pub(crate) text_cursor_bus: TextCursorBus,
+    pub(crate) cursor_bus: CursorBus,
+    pub(crate) caret_bus: CaretBus,
     pub(crate) runtime: std::rc::Rc<Runtime>,
     #[cfg(all(feature = "hot-reload", debug_assertions))]
     pub(crate) hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<dioxus_hot_reload::HotReloadMsg>,
@@ -132,14 +116,14 @@ impl DioxusRenderer {
         let ctx = TuiContext::new(event_tx.clone());
         let input_bus = TuiInputBus::new();
         let viewport_bus = ViewportBus::new();
-        let mouse_cursor_bus = MouseCursorBus::new();
-        let text_cursor_bus = TextCursorBus::new();
+        let cursor_bus = CursorBus::new();
+        let caret_bus = CaretBus::new();
         let vdom = vdom
             .with_root_context(ctx)
             .with_root_context(input_bus.clone())
             .with_root_context(viewport_bus.clone())
-            .with_root_context(mouse_cursor_bus.clone())
-            .with_root_context(text_cursor_bus.clone());
+            .with_root_context(cursor_bus.clone())
+            .with_root_context(caret_bus.clone());
 
         let mut doc = Self::build_document(vdom, viewport);
         doc.initial_build();
@@ -150,8 +134,8 @@ impl DioxusRenderer {
                 doc,
                 input_bus,
                 viewport_bus,
-                mouse_cursor_bus,
-                text_cursor_bus,
+                cursor_bus,
+                caret_bus,
                 runtime,
                 #[cfg(all(feature = "hot-reload", debug_assertions))]
                 hot_reload_rx: {
@@ -182,7 +166,13 @@ impl DioxusRenderer {
         while self.doc.poll(None) {}
     }
 
-    fn handle_event(&mut self, id: ElementId, event: &str, value: Box<dyn Any>, bubbles: bool) {
+    pub(crate) fn handle_event(
+        &mut self,
+        id: ElementId,
+        event: &str,
+        value: Box<dyn Any>,
+        bubbles: bool,
+    ) {
         let platform_event = Rc::new(PlatformEventData::new(value));
         let runtime_event = Event::new(platform_event, bubbles).into_any();
         self.doc
@@ -290,433 +280,13 @@ where
     Ok(())
 }
 
-pub(crate) async fn run_renderer<P, F>(cfg: Config, raw: RawVirtualDom<P, F>) -> Result<()>
-where
-    P: Clone + 'static,
-    F: ComponentFunction<P, ()> + 'static,
-{
-    let detected = match detect_capabilities() {
-        Ok(detected) => detected,
-        Err(_err) => DetectedCapabilities {
-            termwiz: termwiz_capabilities()?,
-            terminal: TerminalCapabilities {
-                truecolor: false,
-                inline_images: false,
-                inline_protocol: InlineImageProtocol::None,
-            },
-        },
-    };
-
-    let vdom = raw.into_virtual_dom();
-    let (renderer, event_tx, event_rx) = DioxusRenderer::new(vdom);
-
-    if cfg.rendering_mode == RenderingMode::Debug {
-        let mut renderer = renderer;
-        renderer.update();
-        println!("-- dioxus-tui debug snapshot --");
-        return Ok(());
-    }
-
-    run_tui_renderer(cfg, detected, renderer, event_rx, event_tx).await
-}
-
-async fn run_tui_renderer(
-    cfg: Config,
-    detected: DetectedCapabilities,
-    mut renderer: DioxusRenderer,
-    mut raw_event_reciever: UnboundedReceiver<InputEvent>,
-    _event_tx: UnboundedSender<InputEvent>,
-) -> Result<()> {
-    let run_terminal = cfg.rendering_mode != RenderingMode::Headless;
-
-    let mut terminal = if run_terminal {
-        let mut term = new_terminal(detected.termwiz.clone())?;
-        term.set_raw_mode()?;
-        term.enter_alternate_screen()?;
-        Some(BufferedTerminal::new(term)?)
-    } else {
-        None
-    };
-
-    let capabilities = detected.terminal;
-    let mut last_surface: Option<Surface> = None;
-    let mut last_area: Option<Rect> = None;
-    #[cfg(feature = "blitz")]
-    let mut last_pixel_viewport: Option<Rect> = None;
-    #[cfg(not(feature = "blitz"))]
-    let mut last_pixel_viewport: Option<Rect> = None;
-    #[cfg(feature = "blitz")]
-    let mut last_pixel_scale: f32 = 1.0;
-    #[cfg(not(feature = "blitz"))]
-    let last_pixel_scale: f32 = 1.0;
-    let mut last_cell_metrics = CellMetrics {
-        cell_w_px: 8.0,
-        cell_h_px: 16.0,
-    };
-    let mut input_state = InputState::default();
-    let mut raw_mouse_state = RawMouseState::default();
-    let mouse_cursor_state = Rc::new(RefCell::new(MouseCursorState::default()));
-    let text_cursor_state = Rc::new(RefCell::new(TextCursorState::default()));
-    let mut last_images: Option<std::collections::VecDeque<PlacedImage>> = None;
-
-    let _mouse_cursor_subscription = {
-        let mouse_cursor_state = mouse_cursor_state.clone();
-        renderer.mouse_cursor_bus.subscribe(Rc::new(move |command| {
-            let mut state = mouse_cursor_state.borrow_mut();
-            match command {
-                MouseCursorCommand::Show => state.visible = true,
-                MouseCursorCommand::Hide => state.visible = false,
-                MouseCursorCommand::SetStyle(style) => state.style = style,
-                MouseCursorCommand::FollowMouse => state.mode = MouseCursorMode::FollowMouse,
-                MouseCursorCommand::SetCellPosition(x, y) => {
-                    state.mode = MouseCursorMode::Manual;
-                    state.unit = MouseCursorUnit::Cell;
-                    state.position = Some((x, y));
-                    state.visible = true;
-                }
-                MouseCursorCommand::SetPixelPosition(x, y) => {
-                    state.mode = MouseCursorMode::Manual;
-                    state.unit = MouseCursorUnit::Pixel;
-                    state.position = Some((x, y));
-                    state.visible = true;
-                }
-            }
-        }))
-    };
-
-    let _text_cursor_subscription = {
-        let text_cursor_state = text_cursor_state.clone();
-        renderer.text_cursor_bus.subscribe(Rc::new(move |command| {
-            let mut state = text_cursor_state.borrow_mut();
-            match command {
-                TextCursorCommand::Show => state.visible = true,
-                TextCursorCommand::Hide => state.visible = false,
-                TextCursorCommand::SetPosition(x, y) => {
-                    state.position = Some((x, y));
-                    state.visible = true;
-                }
-            }
-        }))
-    };
-
-    renderer.update();
-
-    let mut paint_error: Option<crate::error::Error> = None;
-
-    let mut pixel_mouse_enabled = false;
-
-    if let Some(_term) = &mut terminal {
-        #[cfg(feature = "blitz")]
-        let enable_pixel_mouse = cfg.sgr_pixel_mouse || cfg.rendering_mode == RenderingMode::BlitzTerminal;
-        #[cfg(not(feature = "blitz"))]
-        let enable_pixel_mouse = cfg.sgr_pixel_mouse;
-        if enable_pixel_mouse {
-            set_sgr_pixel_mouse(_term, true)?;
-            pixel_mouse_enabled = true;
-        }
-    }
-
-    let result = (async {
-        loop {
-            if let Some(term) = &mut terminal {
-                if let Some(term_evt) = term.terminal().poll_input(Some(cfg.tick_rate))? {
-                    if handle_termwiz_input(
-                        term_evt,
-                        &mut renderer,
-                        cfg,
-                        last_area,
-                        last_pixel_viewport,
-                        last_pixel_scale,
-                        last_cell_metrics,
-                        &mut input_state,
-                        &mut raw_mouse_state,
-                        &mouse_cursor_state,
-                    ) {
-                        return Ok(());
-                    }
-                }
-            } else if cfg.tick_rate > std::time::Duration::ZERO {
-                sleep(cfg.tick_rate).await;
-            }
-
-            while let Some(evt) = raw_event_reciever.next().now_or_never().flatten() {
-                match evt {
-                    InputEvent::Close => return Ok(()),
-                    InputEvent::UserInput(term_evt) => {
-                        if handle_termwiz_input(
-                            term_evt,
-                            &mut renderer,
-                            cfg,
-                            last_area,
-                            last_pixel_viewport,
-                            last_pixel_scale,
-                            last_cell_metrics,
-                            &mut input_state,
-                            &mut raw_mouse_state,
-                            &mouse_cursor_state,
-                        ) {
-                            return Ok(());
-                        }
-                    }
-                }
-            }
-
-            renderer.update();
-
-            if let Some(term) = &mut terminal {
-                let (area, metrics) = terminal_size(term)?;
-                last_cell_metrics = metrics;
-                renderer.viewport_bus.publish(area);
-
-                if cfg.sgr_pixel_mouse {
-                    #[cfg(feature = "blitz")]
-                    if cfg.rendering_mode == RenderingMode::BlitzTerminal {
-                        // BlitzTerminal sets pixel viewport based on the render surface.
-                        // Keep the existing value to avoid conflicting sizes.
-                    } else {
-                        let ScreenSize { xpixel, ypixel, .. } = term.terminal().get_screen_size()?;
-                        if xpixel > 0 && ypixel > 0 {
-                            let pixel_w = (xpixel.min(u16::MAX as usize)) as u16;
-                            let pixel_h = (ypixel.min(u16::MAX as usize)) as u16;
-                            last_pixel_viewport = Some(Rect::new(0, 0, pixel_w, pixel_h));
-                        } else {
-                            last_pixel_viewport = None;
-                        }
-                    }
-                    #[cfg(not(feature = "blitz"))]
-                    {
-                        let ScreenSize { xpixel, ypixel, .. } = term.terminal().get_screen_size()?;
-                        if xpixel > 0 && ypixel > 0 {
-                            let pixel_w = (xpixel.min(u16::MAX as usize)) as u16;
-                            let pixel_h = (ypixel.min(u16::MAX as usize)) as u16;
-                            last_pixel_viewport = Some(Rect::new(0, 0, pixel_w, pixel_h));
-                        } else {
-                            last_pixel_viewport = None;
-                        }
-                    }
-                }
-
-                #[cfg(feature = "blitz")]
-                if cfg.rendering_mode == RenderingMode::BlitzTerminal {
-                    let ScreenSize {
-                        cols,
-                        rows,
-                        xpixel,
-                        ypixel,
-                    } = term.terminal().get_screen_size()?;
-                    if cols == 0 || rows == 0 {
-                        return Err(crate::error::Error::Other(anyhow::anyhow!(
-                            "terminal reported zero-sized cell grid"
-                        )));
-                    }
-                    if xpixel == 0 || ypixel == 0 {
-                        return Err(crate::error::Error::Other(anyhow::anyhow!(
-                            "terminal did not report pixel dimensions (xpixel/ypixel=0); cannot use BlitzTerminal"
-                        )));
-                    }
-
-                    let _cell_w_px = (xpixel as f32) / (cols as f32);
-                    let cell_h_px = (ypixel as f32) / (rows as f32);
-                    let supersample = cfg.blitz_hidpi_scale.max(1) as f32;
-                    last_pixel_scale = supersample;
-                    let render_w_px = ((xpixel as f32) * supersample).ceil().max(1.0) as u32;
-                    let render_h_px = ((ypixel as f32) * supersample).ceil().max(1.0) as u32;
-
-                    let pixel_w = (xpixel.min(u16::MAX as usize)) as u16;
-                    let pixel_h = (ypixel.min(u16::MAX as usize)) as u16;
-                    last_pixel_viewport = Some(Rect::new(0, 0, pixel_w, pixel_h));
-
-                    let viewport = Viewport::new(render_w_px, render_h_px, supersample, ColorScheme::Light);
-                    let font_px = (cell_h_px.round().max(1.0)) as u32;
-                    let extra_css = format!(
-                        ":root, html, body {{ font-family: monospace; font-size: {}px; line-height: {}px; }}",
-                        font_px, font_px
-                    );
-                    let _ = resolve_document_with_viewport_and_extra_css(
-                        &mut renderer.doc,
-                        viewport.clone(),
-                        Some(extra_css.as_str()),
-                    );
-
-                    // In launch mode, avoid expensive per-frame cropping. Render the full viewport.
-                    let cropped_cells = area.height;
-                    let cropped_px = render_h_px;
-
-                    let mut image_renderer = <anyrender_vello_cpu::VelloCpuImageRenderer as ImageRenderer>::new(
-                        render_w_px,
-                        render_h_px,
-                    );
-                    let mut rgba = Vec::new();
-                    image_renderer.render_to_vec(
-                        |scene| {
-                            paint_scene(
-                                scene,
-                                renderer.doc.inner.as_ref(),
-                                viewport.scale_f64(),
-                                render_w_px,
-                                render_h_px,
-                            );
-                        },
-                        &mut rgba,
-                    );
-                    if cropped_px < render_h_px {
-                        let bytes_per_row = (render_w_px as usize) * 4;
-                        let keep = (cropped_px as usize) * bytes_per_row;
-                        if keep < rgba.len() {
-                            rgba.truncate(keep);
-                        }
-                    }
-
-                    if matches!(capabilities.inline_protocol, InlineImageProtocol::None) {
-                        return Err(crate::error::Error::Other(anyhow::anyhow!(
-                            "BlitzTerminal launch currently requires inline image protocol support"
-                        )));
-                    }
-                    let png = crate::image::rgba_to_png_bytes(&rgba, render_w_px, cropped_px.min(render_h_px))?;
-                    let encoder = inline_encoder_for_caps(&capabilities).unwrap_or(rasteroid::InlineEncoder::Ascii);
-                    let mut payload = Vec::new();
-                    rasteroid::inline_an_image(&png, &mut payload, None, Some((0, 0)), &encoder)
-                        .map_err(|err| crate::error::Error::Other(anyhow::anyhow!("inline image error: {err}")))?;
-                    term.add_change(Change::ClearScreen(ColorAttribute::Default));
-                    term.add_change(Change::CursorPosition {
-                        x: Position::Absolute(0),
-                        y: Position::Absolute(0),
-                    });
-                    term.add_change(Change::Text(String::from_utf8_lossy(&payload).to_string()));
-                    term.add_change(Change::CursorPosition {
-                        x: Position::Absolute(0),
-                        y: Position::Absolute((cropped_cells as usize).min(area.height as usize - 1)),
-                    });
-                    term.flush()?;
-
-                    continue;
-                }
-
-                let mut surface = Surface::new(area.width, area.height);
-                let mut images = std::collections::VecDeque::<PlacedImage>::new();
-                last_area = Some(area);
-                if let Some(_root) = renderer.layout_root(area, metrics) {
-                    if let Err(err) = paint_surface(
-                        &mut surface,
-                        &mut images,
-                        renderer.doc.inner.as_ref(),
-                        area,
-                        metrics,
-                        cfg.palette_roles,
-                        cfg.color_mode,
-                        capabilities.truecolor,
-                        cfg.custom_draw_mode,
-                        cfg.image_policy,
-                        cfg.image_downgrade,
-                        capabilities.inline_images,
-                    ) {
-                        paint_error = Some(err);
-                        break;
-                    }
-                }
-                // Debug: dump first few lines of the surface for tracing.
-                if cfg!(debug_assertions) {
-                    let width = surface.width() as usize;
-                    let dump: Vec<String> = surface
-                        .content
-                        .chunks(width)
-                        .take(5)
-                        .map(|row| row.iter().map(|c| c.ch).collect())
-                        .collect();
-                    debug!(?dump, "surface_dump");
-                }
-                #[cfg(feature = "blitz")]
-                let is_blitz_gui = cfg.rendering_mode == RenderingMode::BlitzGui;
-                #[cfg(not(feature = "blitz"))]
-                let is_blitz_gui = false;
-
-                if !is_blitz_gui {
-                    let cursor_snapshot = mouse_cursor_state.borrow().clone();
-                    apply_mouse_cursor_overlay(
-                        &mut surface,
-                        &cursor_snapshot,
-                        cfg,
-                        &capabilities,
-                        metrics,
-                    );
-                }
-                flush_surface(
-                    term,
-                    &surface,
-                    last_surface.as_ref(),
-                    &capabilities,
-                    &images,
-                    last_images.as_ref(),
-                    metrics,
-                )?;
-                apply_text_cursor(term, &text_cursor_state.borrow());
-                last_surface = Some(surface);
-                last_images = Some(images);
-            }
-        }
-
-        Ok(())
-    })
-    .await;
-
-    let cleanup_result = (|| -> Result<()> {
-    if let Some(term) = &mut terminal {
-        if pixel_mouse_enabled {
-            set_sgr_pixel_mouse(term, false)?;
-        }
-        term.add_change(Change::CursorVisibility(termwiz::surface::CursorVisibility::Visible));
-        term.flush()?;
-        term.terminal().exit_alternate_screen()?;
-        term.terminal().set_cooked_mode()?;
-        term.flush()?;
-    }
-        Ok(())
-    })();
-
-    if let Some(err) = paint_error {
-        return Err(err);
-    }
-
-    match result {
-        Err(err) => Err(err),
-        Ok(()) => cleanup_result,
-    }
-}
-
-#[derive(Default)]
-struct InputState {
-    last_buttons: MouseEventButtons,
-    last_button: MouseEventButton,
-}
-
 #[derive(Clone)]
-struct MouseCursorState {
-    visible: bool,
-    style: MouseCursorStyle,
-    mode: MouseCursorMode,
-    unit: MouseCursorUnit,
-    position: Option<(f32, f32)>,
+pub(crate) struct CaretState {
+    pub(crate) visible: bool,
+    pub(crate) position: Option<(u16, u16)>,
 }
 
-impl Default for MouseCursorState {
-    fn default() -> Self {
-        Self {
-            visible: false,
-            style: MouseCursorStyle::Block,
-            mode: MouseCursorMode::FollowMouse,
-            unit: MouseCursorUnit::Cell,
-            position: None,
-        }
-    }
-}
-
-#[derive(Clone)]
-struct TextCursorState {
-    visible: bool,
-    position: Option<(u16, u16)>,
-}
-
-impl Default for TextCursorState {
+impl Default for CaretState {
     fn default() -> Self {
         Self {
             visible: false,
@@ -725,293 +295,9 @@ impl Default for TextCursorState {
     }
 }
 
-fn handle_termwiz_input(
-    term_evt: TzInputEvent,
-    renderer: &mut DioxusRenderer,
-    cfg: Config,
-    last_area: Option<Rect>,
-    last_pixel_viewport: Option<Rect>,
-    pixel_scale: f32,
-    cell_metrics: CellMetrics,
-    input_state: &mut InputState,
-    raw_mouse_state: &mut RawMouseState,
-    mouse_cursor_state: &RefCell<MouseCursorState>,
-) -> bool {
-    let ctrl_c = matches!(&term_evt, TzInputEvent::Key(key) if matches!(key.key, KeyCode::Char('c' | 'C')) && key.modifiers.contains(TzModifiers::CTRL) && cfg.ctrl_c_quit);
-    if ctrl_c {
-        return true;
-    }
-    let viewport = last_area.unwrap_or_else(|| Rect::new(0, 0, 0, 0));
-    let pixel_viewport = last_pixel_viewport;
-    let raw_inputs = raw_input_from_termwiz(&term_evt, viewport, pixel_viewport, raw_mouse_state);
-    {
-        let _guard = RuntimeGuard::new(renderer.runtime.clone());
-        for event in raw_inputs.iter().cloned() {
-            renderer.input_bus.publish(event);
-        }
-    }
-
-    let event_hit_position = mouse_position_from_termwiz(&term_evt, pixel_scale, cell_metrics);
-    if let Some((x, y)) = cursor_position_from_termwiz(&term_evt) {
-        let mut state = mouse_cursor_state.borrow_mut();
-        if state.mode == MouseCursorMode::FollowMouse {
-            state.unit = match term_evt {
-                TzInputEvent::PixelMouse(_) => MouseCursorUnit::Pixel,
-                _ => MouseCursorUnit::Cell,
-            };
-            state.position = Some((x, y));
-        }
-    }
-    let cursor_position = mouse_cursor_state
-        .borrow()
-        .position
-        .and_then(|pos| cursor_hit_position(pos, mouse_cursor_state.borrow().unit, cell_metrics))
-        .or(event_hit_position);
-
-    let mut focus_hit: Option<(f32, f32)> = None;
-    if mouse_press_from_termwiz(&term_evt) {
-        focus_hit = cursor_position;
-    }
-
-    if let Some(ui_event) = ui_event_from_termwiz(&term_evt, pixel_scale, cell_metrics, input_state) {
-        renderer.doc.handle_ui_event(ui_event);
-    }
-
-    if let Some((x, y)) = focus_hit {
-        if let Some(hit) = renderer.doc.inner.hit(x, y) {
-            if let Some(node) = renderer.doc.inner.get_node(hit.node_id) {
-                if node.is_focussable() {
-                    let _ = renderer.doc.inner.set_focus_to(hit.node_id);
-                }
-            }
-        }
-    }
-
-    if let Some((x, y)) = cursor_position {
-        if let Some(target) = target_from_hit(&renderer.doc, x, y) {
-            for evt in raw_inputs {
-                if evt.name == "wheel" || evt.name == "pixelwheel" {
-                    let runtime_event = evt.data.into_platform_event(evt.bubbles);
-                    renderer.handle_event(target, evt.name, runtime_event, evt.bubbles);
-                }
-            }
-        }
-    }
-    false
-}
-
-fn ui_event_from_termwiz(
-    evt: &TzInputEvent,
-    pixel_scale: f32,
-    cell_metrics: CellMetrics,
-    input_state: &mut InputState,
-) -> Option<UiEvent> {
-    match evt {
-        TzInputEvent::Key(key) => {
-            let (key_val, code) = map_code(key);
-            let modifiers = map_modifiers(key.modifiers);
-            let text = match key.key {
-                KeyCode::Char(c) => Some(SmolStr::new(c.to_string())),
-                _ => None,
-            };
-            Some(UiEvent::KeyDown(BlitzKeyEvent {
-                key: key_val,
-                code,
-                modifiers,
-                location: Location::Standard,
-                is_auto_repeating: false,
-                is_composing: false,
-                state: KeyState::Pressed,
-                text,
-            }))
-        }
-        TzInputEvent::Mouse(mouse) => ui_event_from_mouse(
-            mouse.x as f32 * cell_metrics.cell_w_px,
-            mouse.y as f32 * cell_metrics.cell_h_px,
-            mouse.mouse_buttons.clone(),
-            mouse.modifiers,
-            input_state,
-        ),
-        TzInputEvent::PixelMouse(mouse) => ui_event_from_mouse(
-            scale_pixels(mouse.x_pixels, pixel_scale),
-            scale_pixels(mouse.y_pixels, pixel_scale),
-            mouse.mouse_buttons.clone(),
-            mouse.modifiers,
-            input_state,
-        ),
-        _ => None,
-    }
-}
-
-fn ui_event_from_mouse(
-    x: f32,
-    y: f32,
-    buttons: termwiz::input::MouseButtons,
-    mods: termwiz::input::Modifiers,
-    input_state: &mut InputState,
-) -> Option<UiEvent> {
-    if buttons.contains(termwiz::input::MouseButtons::VERT_WHEEL)
-        || buttons.contains(termwiz::input::MouseButtons::HORZ_WHEEL)
-    {
-        return None;
-    }
-
-    let buttons = mouse_buttons_from_termwiz(&buttons);
-    let modifiers = map_modifiers(mods);
-    let button = if buttons == MouseEventButtons::None {
-        input_state.last_button
-    } else {
-        mouse_button_from_event_buttons(buttons)
-    };
-
-    let mut event = BlitzMouseButtonEvent {
-        x,
-        y,
-        button,
-        buttons,
-        mods: modifiers,
-    };
-
-    let released = input_state.last_buttons & !buttons;
-    if released != MouseEventButtons::None {
-        event.button = mouse_button_from_event_buttons(released);
-        input_state.last_button = event.button;
-        input_state.last_buttons = buttons;
-        return Some(UiEvent::MouseUp(event));
-    }
-
-    let added = buttons & !input_state.last_buttons;
-    if added != MouseEventButtons::None {
-        event.button = mouse_button_from_event_buttons(added);
-        input_state.last_button = event.button;
-        input_state.last_buttons = buttons;
-        return Some(UiEvent::MouseDown(event));
-    }
-
-    input_state.last_buttons = buttons;
-    if buttons == MouseEventButtons::None {
-        return Some(UiEvent::MouseMove(event));
-    }
-
-    Some(UiEvent::MouseMove(event))
-}
-
-fn mouse_buttons_from_termwiz(buttons: &termwiz::input::MouseButtons) -> MouseEventButtons {
-    let mut mapped = MouseEventButtons::None;
-    if buttons.contains(termwiz::input::MouseButtons::LEFT) {
-        mapped.insert(MouseEventButtons::Primary);
-    }
-    if buttons.contains(termwiz::input::MouseButtons::RIGHT) {
-        mapped.insert(MouseEventButtons::Secondary);
-    }
-    if buttons.contains(termwiz::input::MouseButtons::MIDDLE) {
-        mapped.insert(MouseEventButtons::Auxiliary);
-    }
-    mapped
-}
-
-fn mouse_button_from_event_buttons(buttons: MouseEventButtons) -> MouseEventButton {
-    if buttons.contains(MouseEventButtons::Primary) {
-        MouseEventButton::Main
-    } else if buttons.contains(MouseEventButtons::Secondary) {
-        MouseEventButton::Secondary
-    } else if buttons.contains(MouseEventButtons::Auxiliary) {
-        MouseEventButton::Auxiliary
-    } else {
-        MouseEventButton::Main
-    }
-}
-
-fn mouse_position_from_termwiz(
-    evt: &TzInputEvent,
-    pixel_scale: f32,
-    cell_metrics: CellMetrics,
-) -> Option<(f32, f32)> {
-    match evt {
-        TzInputEvent::Mouse(mouse) => Some((
-            normalize_cell_coord(mouse.x) as f32 * cell_metrics.cell_w_px,
-            normalize_cell_coord(mouse.y) as f32 * cell_metrics.cell_h_px,
-        )),
-        TzInputEvent::PixelMouse(mouse) => Some((
-            scale_pixels(normalize_pixel_coord(mouse.x_pixels), pixel_scale),
-            scale_pixels(normalize_pixel_coord(mouse.y_pixels), pixel_scale),
-        )),
-        _ => None,
-    }
-}
-
-fn cursor_position_from_termwiz(evt: &TzInputEvent) -> Option<(f32, f32)> {
-    match evt {
-        TzInputEvent::Mouse(mouse) => Some((
-            normalize_cell_coord(mouse.x) as f32,
-            normalize_cell_coord(mouse.y) as f32,
-        )),
-        TzInputEvent::PixelMouse(mouse) => Some((
-            normalize_pixel_coord(mouse.x_pixels) as f32,
-            normalize_pixel_coord(mouse.y_pixels) as f32,
-        )),
-        _ => None,
-    }
-}
-
-fn cursor_hit_position(
-    position: (f32, f32),
-    unit: MouseCursorUnit,
-    cell_metrics: CellMetrics,
-) -> Option<(f32, f32)> {
-    let (x, y) = position;
-    match unit {
-        MouseCursorUnit::Cell => {
-            let cell_w = if cell_metrics.cell_w_px > 0.0 {
-                cell_metrics.cell_w_px
-            } else {
-                1.0
-            };
-            let cell_h = if cell_metrics.cell_h_px > 0.0 {
-                cell_metrics.cell_h_px
-            } else {
-                1.0
-            };
-            Some((x * cell_w, y * cell_h))
-        }
-        MouseCursorUnit::Pixel => Some((x, y)),
-    }
-}
-
-fn normalize_cell_coord(value: u16) -> u16 {
-    value.saturating_sub(1)
-}
-
-fn normalize_pixel_coord(value: u16) -> u16 {
-    value.saturating_sub(1)
-}
-
-fn mouse_press_from_termwiz(evt: &TzInputEvent) -> bool {
-    let buttons = match evt {
-        TzInputEvent::Mouse(mouse) => &mouse.mouse_buttons,
-        TzInputEvent::PixelMouse(mouse) => &mouse.mouse_buttons,
-        _ => return false,
-    };
-
-    if buttons.contains(termwiz::input::MouseButtons::VERT_WHEEL)
-        || buttons.contains(termwiz::input::MouseButtons::HORZ_WHEEL)
-    {
-        return false;
-    }
-
-    buttons.contains(termwiz::input::MouseButtons::LEFT)
-        || buttons.contains(termwiz::input::MouseButtons::RIGHT)
-        || buttons.contains(termwiz::input::MouseButtons::MIDDLE)
-}
-
-fn scale_pixels(value: u16, pixel_scale: f32) -> f32 {
-    let scale = if pixel_scale > 0.0 { pixel_scale } else { 1.0 };
-    (value as f32) / scale
-}
-
-fn apply_mouse_cursor_overlay(
+pub(crate) fn apply_cursor_overlay(
     surface: &mut Surface,
-    cursor: &MouseCursorState,
+    cursor: &CursorState,
     cfg: Config,
     capabilities: &TerminalCapabilities,
     cell_metrics: CellMetrics,
@@ -1024,8 +310,8 @@ fn apply_mouse_cursor_overlay(
     };
 
     let (cell_x, cell_y) = match cursor.unit {
-        MouseCursorUnit::Cell => (x.floor(), y.floor()),
-        MouseCursorUnit::Pixel => {
+        CursorUnit::Cell => (x.floor(), y.floor()),
+        CursorUnit::Pixel => {
             let cell_w = if cell_metrics.cell_w_px > 0.0 {
                 cell_metrics.cell_w_px
             } else {
@@ -1055,28 +341,28 @@ fn apply_mouse_cursor_overlay(
     };
 
     let accent = palette_entry_to_attr(cfg.palette_roles.accent, cfg.color_mode, capabilities.truecolor);
-    let style = if cursor.unit == MouseCursorUnit::Pixel && cursor.style == MouseCursorStyle::Block {
-        MouseCursorStyle::Crosshair
+    let style = if cursor.unit == CursorUnit::Pixel && cursor.style == CursorStyle::Block {
+        CursorStyle::Crosshair
     } else {
         cursor.style
     };
 
     match style {
-        MouseCursorStyle::Block => {
+        CursorStyle::Block => {
             cell.ch = ' ';
             cell.bg = Some(accent);
             cell.fg = None;
         }
-        MouseCursorStyle::Underline => {
+        CursorStyle::Underline => {
             cell.underline = termwiz::cell::Underline::Single;
             cell.fg = Some(accent);
         }
-        MouseCursorStyle::Beam => {
+        CursorStyle::Beam => {
             cell.ch = '▏';
             cell.fg = Some(accent);
             cell.bg = None;
         }
-        MouseCursorStyle::Crosshair => {
+        CursorStyle::Crosshair => {
             cell.ch = '+';
             cell.fg = Some(accent);
             cell.bg = None;
@@ -1084,7 +370,10 @@ fn apply_mouse_cursor_overlay(
     }
 }
 
-fn apply_text_cursor<T: Terminal>(term: &mut BufferedTerminal<T>, cursor: &TextCursorState) {
+pub(crate) fn apply_caret<T: Terminal>(
+    term: &mut BufferedTerminal<T>,
+    cursor: &CaretState,
+) {
     let visibility = if cursor.visible {
         termwiz::surface::CursorVisibility::Visible
     } else {
@@ -1125,22 +414,9 @@ fn palette_entry_to_attr(entry: PaletteEntry, color_mode: ColorMode, truecolor: 
     }
 }
 
-fn target_from_hit(doc: &DioxusDocument, x: f32, y: f32) -> Option<ElementId> {
-    let hit = doc.inner.hit(x, y)?;
-    let node = doc.inner.get_node(hit.node_id)?;
-    dioxus_id_from_node(node)
-}
-
-fn dioxus_id_from_node(node: &Node) -> Option<ElementId> {
-    node.element_data()?
-        .attrs
-        .iter()
-        .find(|attr| *attr.name.local == *"data-dioxus-id")
-        .and_then(|attr| attr.value.parse::<usize>().ok())
-        .map(ElementId)
-}
-
-fn terminal_size<T: Terminal>(term: &mut BufferedTerminal<T>) -> Result<(Rect, CellMetrics)> {
+pub(crate) fn terminal_size<T: Terminal>(
+    term: &mut BufferedTerminal<T>,
+) -> Result<(Rect, CellMetrics)> {
     let ScreenSize {
         cols,
         rows,
@@ -1164,7 +440,10 @@ fn terminal_size<T: Terminal>(term: &mut BufferedTerminal<T>) -> Result<(Rect, C
     ))
 }
 
-fn set_sgr_pixel_mouse<T: Terminal>(term: &mut BufferedTerminal<T>, enabled: bool) -> Result<()> {
+pub(crate) fn set_sgr_pixel_mouse<T: Terminal>(
+    term: &mut BufferedTerminal<T>,
+    enabled: bool,
+) -> Result<()> {
     let suffix = if enabled { "h" } else { "l" };
     term.add_change(Change::Text(format!("\x1b[?1016{suffix}")));
     term.flush()?;
@@ -1643,7 +922,9 @@ pub(crate) fn flush_surface<T: Terminal>(
     Ok(())
 }
 
-fn inline_encoder_for_caps(caps: &TerminalCapabilities) -> Option<rasteroid::InlineEncoder> {
+pub(crate) fn inline_encoder_for_caps(
+    caps: &TerminalCapabilities,
+) -> Option<rasteroid::InlineEncoder> {
     match caps.inline_protocol {
         InlineImageProtocol::Iterm2 => Some(rasteroid::InlineEncoder::Iterm),
         InlineImageProtocol::Sixel => Some(rasteroid::InlineEncoder::Sixel),

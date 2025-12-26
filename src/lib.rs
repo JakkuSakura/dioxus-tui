@@ -8,11 +8,13 @@ pub mod draw;
 mod blitz;
 mod cell_render;
 mod config;
+mod event;
 pub mod element;
 pub mod error;
 pub mod geometry;
 mod hooks;
 pub mod image;
+pub mod launch;
 pub mod layout;
 pub mod layout_helpers;
 pub mod log;
@@ -32,9 +34,9 @@ pub use config::{ColorMode, Config, ImageDowngrade, ImagePolicy, PaletteEntry, P
 pub use error::Error;
 pub use geometry::{Alignment, Rect};
 pub use hooks::{
-    EventData, MouseCursorHandle, MouseCursorMode, MouseCursorStyle, MouseCursorUnit, RawInputEvent,
-    TextCursorHandle, TuiInputBus, ViewportBus, use_cursor, use_keyboard_input, use_mouse_cursor,
-    use_mouse_input, use_raw_input, use_text_cursor, use_viewport, use_wheel_input,
+    CaretBus, CaretCommand, CaretHandle, CursorBus, CursorCommand, CursorHandle, CursorMode,
+    CursorStyle, CursorUnit, EventData, RawInputEvent, TuiInputBus, ViewportBus, use_caret,
+    use_cursor, use_keyboard_input, use_mouse_input, use_raw_input, use_viewport, use_wheel_input,
 };
 pub use render::TuiContext;
 pub use draw::{on_draw, CustomDrawMode, DrawContext};
@@ -44,7 +46,7 @@ pub use surface::Surface;
 use std::any::Any;
 
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
-use render::run_renderer;
+use launch::run_renderer;
 use tokio::runtime::Builder as RuntimeBuilder;
 use std::io::Write;
 
@@ -93,21 +95,6 @@ impl RenderRequest {
 impl From<fn() -> Element> for RenderRequest {
     fn from(root: fn() -> Element) -> Self {
         Self::new(root)
-    }
-}
-
-pub mod launch {
-    use super::*;
-
-    pub type Config = super::Config;
-    /// Launches the WebView and runs the event loop, with configuration and root props.
-    pub fn launch(
-        root: fn() -> Element,
-        contexts: Vec<Box<dyn Fn() -> Box<dyn Any> + Send + Sync>>,
-        platform_config: Config,
-    ) -> anyhow::Result<()> {
-        let raw = RawVirtualDom::with_contexts(move |_| root(), (), contexts);
-        launch_raw(raw, platform_config)
     }
 }
 

@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use dioxus::prelude::HasKeyboardData;
 use dioxus_html::input_data::keyboard_types::Key;
-use dioxus_tui::{TuiContext, use_keyboard_input, use_text_cursor, use_viewport};
+use dioxus_tui::{TuiContext, use_keyboard_input, use_caret, use_viewport};
 
 use crate::catalog::ExampleFrame;
 
@@ -168,7 +168,7 @@ impl TextBuffer {
 pub fn app() -> Element {
     let tui: TuiContext = consume_context();
     let key_input = use_keyboard_input();
-    let cursor_handle = use_text_cursor();
+    let cursor_handle = use_caret();
     let cursor_handle_update = cursor_handle.clone();
     let viewport = use_viewport();
     let mut buffer = use_signal(TextBuffer::default);
