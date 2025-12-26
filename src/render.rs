@@ -26,8 +26,9 @@ use crate::capabilities::termwiz_capabilities;
 use crate::config::{ColorMode, Config, PaletteEntry, RenderingMode};
 use crate::geometry::Rect;
 use crate::hooks::{
-    CursorBus, CursorCommand, CursorMode, CursorStyle, CursorUnit, map_code, map_modifiers,
-    raw_input_from_termwiz, RawMouseState, TuiInputBus, ViewportBus,
+    MouseCursorBus, MouseCursorCommand, MouseCursorMode, MouseCursorStyle, MouseCursorUnit,
+    TextCursorBus, TextCursorCommand, map_code, map_modifiers, raw_input_from_termwiz, RawMouseState,
+    TuiInputBus, ViewportBus,
 };
 use crate::layout::resolve_document;
 use crate::scene::CellMetrics;
@@ -82,7 +83,8 @@ pub(crate) struct DioxusRenderer {
     pub(crate) doc: DioxusDocument,
     pub(crate) input_bus: TuiInputBus,
     pub(crate) viewport_bus: ViewportBus,
-    pub(crate) cursor_bus: CursorBus,
+    pub(crate) mouse_cursor_bus: MouseCursorBus,
+    pub(crate) text_cursor_bus: TextCursorBus,
     pub(crate) runtime: std::rc::Rc<Runtime>,
     #[cfg(all(feature = "hot-reload", debug_assertions))]
     pub(crate) hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<dioxus_hot_reload::HotReloadMsg>,
@@ -130,12 +132,14 @@ impl DioxusRenderer {
         let ctx = TuiContext::new(event_tx.clone());
         let input_bus = TuiInputBus::new();
         let viewport_bus = ViewportBus::new();
-        let cursor_bus = CursorBus::new();
+        let mouse_cursor_bus = MouseCursorBus::new();
+        let text_cursor_bus = TextCursorBus::new();
         let vdom = vdom
             .with_root_context(ctx)
             .with_root_context(input_bus.clone())
             .with_root_context(viewport_bus.clone())
-            .with_root_context(cursor_bus.clone());
+            .with_root_context(mouse_cursor_bus.clone())
+            .with_root_context(text_cursor_bus.clone());
 
         let mut doc = Self::build_document(vdom, viewport);
         doc.initial_build();
@@ -146,7 +150,8 @@ impl DioxusRenderer {
                 doc,
                 input_bus,
                 viewport_bus,
-                cursor_bus,
+                mouse_cursor_bus,
+                text_cursor_bus,
                 runtime,
                 #[cfg(all(feature = "hot-reload", debug_assertions))]
                 hot_reload_rx: {
@@ -350,27 +355,43 @@ async fn run_tui_renderer(
     };
     let mut input_state = InputState::default();
     let mut raw_mouse_state = RawMouseState::default();
-    let cursor_state = Rc::new(RefCell::new(CursorState::default()));
+    let mouse_cursor_state = Rc::new(RefCell::new(MouseCursorState::default()));
+    let text_cursor_state = Rc::new(RefCell::new(TextCursorState::default()));
     let mut last_images: Option<std::collections::VecDeque<PlacedImage>> = None;
 
-    let _cursor_subscription = {
-        let cursor_state = cursor_state.clone();
-        renderer.cursor_bus.subscribe(Rc::new(move |command| {
-            let mut state = cursor_state.borrow_mut();
+    let _mouse_cursor_subscription = {
+        let mouse_cursor_state = mouse_cursor_state.clone();
+        renderer.mouse_cursor_bus.subscribe(Rc::new(move |command| {
+            let mut state = mouse_cursor_state.borrow_mut();
             match command {
-                CursorCommand::Show => state.visible = true,
-                CursorCommand::Hide => state.visible = false,
-                CursorCommand::SetStyle(style) => state.style = style,
-                CursorCommand::FollowMouse => state.mode = CursorMode::FollowMouse,
-                CursorCommand::SetCellPosition(x, y) => {
-                    state.mode = CursorMode::Manual;
-                    state.unit = CursorUnit::Cell;
+                MouseCursorCommand::Show => state.visible = true,
+                MouseCursorCommand::Hide => state.visible = false,
+                MouseCursorCommand::SetStyle(style) => state.style = style,
+                MouseCursorCommand::FollowMouse => state.mode = MouseCursorMode::FollowMouse,
+                MouseCursorCommand::SetCellPosition(x, y) => {
+                    state.mode = MouseCursorMode::Manual;
+                    state.unit = MouseCursorUnit::Cell;
                     state.position = Some((x, y));
                     state.visible = true;
                 }
-                CursorCommand::SetPixelPosition(x, y) => {
-                    state.mode = CursorMode::Manual;
-                    state.unit = CursorUnit::Pixel;
+                MouseCursorCommand::SetPixelPosition(x, y) => {
+                    state.mode = MouseCursorMode::Manual;
+                    state.unit = MouseCursorUnit::Pixel;
+                    state.position = Some((x, y));
+                    state.visible = true;
+                }
+            }
+        }))
+    };
+
+    let _text_cursor_subscription = {
+        let text_cursor_state = text_cursor_state.clone();
+        renderer.text_cursor_bus.subscribe(Rc::new(move |command| {
+            let mut state = text_cursor_state.borrow_mut();
+            match command {
+                TextCursorCommand::Show => state.visible = true,
+                TextCursorCommand::Hide => state.visible = false,
+                TextCursorCommand::SetPosition(x, y) => {
                     state.position = Some((x, y));
                     state.visible = true;
                 }
@@ -409,7 +430,7 @@ async fn run_tui_renderer(
                         last_cell_metrics,
                         &mut input_state,
                         &mut raw_mouse_state,
-                        &cursor_state,
+                        &mouse_cursor_state,
                     ) {
                         return Ok(());
                     }
@@ -432,7 +453,7 @@ async fn run_tui_renderer(
                             last_cell_metrics,
                             &mut input_state,
                             &mut raw_mouse_state,
-                            &cursor_state,
+                            &mouse_cursor_state,
                         ) {
                             return Ok(());
                         }
@@ -610,8 +631,8 @@ async fn run_tui_renderer(
                 let is_blitz_gui = false;
 
                 if !is_blitz_gui {
-                    let cursor_snapshot = cursor_state.borrow().clone();
-                    apply_cursor_overlay(
+                    let cursor_snapshot = mouse_cursor_state.borrow().clone();
+                    apply_mouse_cursor_overlay(
                         &mut surface,
                         &cursor_snapshot,
                         cfg,
@@ -628,6 +649,7 @@ async fn run_tui_renderer(
                     last_images.as_ref(),
                     metrics,
                 )?;
+                apply_text_cursor(term, &text_cursor_state.borrow());
                 last_surface = Some(surface);
                 last_images = Some(images);
             }
@@ -638,14 +660,16 @@ async fn run_tui_renderer(
     .await;
 
     let cleanup_result = (|| -> Result<()> {
-        if let Some(term) = &mut terminal {
-            if pixel_mouse_enabled {
-                set_sgr_pixel_mouse(term, false)?;
-            }
-            term.terminal().exit_alternate_screen()?;
-            term.terminal().set_cooked_mode()?;
-            term.flush()?;
+    if let Some(term) = &mut terminal {
+        if pixel_mouse_enabled {
+            set_sgr_pixel_mouse(term, false)?;
         }
+        term.add_change(Change::CursorVisibility(termwiz::surface::CursorVisibility::Visible));
+        term.flush()?;
+        term.terminal().exit_alternate_screen()?;
+        term.terminal().set_cooked_mode()?;
+        term.flush()?;
+    }
         Ok(())
     })();
 
@@ -666,21 +690,36 @@ struct InputState {
 }
 
 #[derive(Clone)]
-struct CursorState {
+struct MouseCursorState {
     visible: bool,
-    style: CursorStyle,
-    mode: CursorMode,
-    unit: CursorUnit,
+    style: MouseCursorStyle,
+    mode: MouseCursorMode,
+    unit: MouseCursorUnit,
     position: Option<(f32, f32)>,
 }
 
-impl Default for CursorState {
+impl Default for MouseCursorState {
     fn default() -> Self {
         Self {
             visible: false,
-            style: CursorStyle::Block,
-            mode: CursorMode::FollowMouse,
-            unit: CursorUnit::Cell,
+            style: MouseCursorStyle::Block,
+            mode: MouseCursorMode::FollowMouse,
+            unit: MouseCursorUnit::Cell,
+            position: None,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct TextCursorState {
+    visible: bool,
+    position: Option<(u16, u16)>,
+}
+
+impl Default for TextCursorState {
+    fn default() -> Self {
+        Self {
+            visible: false,
             position: None,
         }
     }
@@ -696,7 +735,7 @@ fn handle_termwiz_input(
     cell_metrics: CellMetrics,
     input_state: &mut InputState,
     raw_mouse_state: &mut RawMouseState,
-    cursor_state: &RefCell<CursorState>,
+    mouse_cursor_state: &RefCell<MouseCursorState>,
 ) -> bool {
     let ctrl_c = matches!(&term_evt, TzInputEvent::Key(key) if matches!(key.key, KeyCode::Char('c' | 'C')) && key.modifiers.contains(TzModifiers::CTRL) && cfg.ctrl_c_quit);
     if ctrl_c {
@@ -714,19 +753,19 @@ fn handle_termwiz_input(
 
     let event_hit_position = mouse_position_from_termwiz(&term_evt, pixel_scale, cell_metrics);
     if let Some((x, y)) = cursor_position_from_termwiz(&term_evt) {
-        let mut state = cursor_state.borrow_mut();
-        if state.mode == CursorMode::FollowMouse {
+        let mut state = mouse_cursor_state.borrow_mut();
+        if state.mode == MouseCursorMode::FollowMouse {
             state.unit = match term_evt {
-                TzInputEvent::PixelMouse(_) => CursorUnit::Pixel,
-                _ => CursorUnit::Cell,
+                TzInputEvent::PixelMouse(_) => MouseCursorUnit::Pixel,
+                _ => MouseCursorUnit::Cell,
             };
             state.position = Some((x, y));
         }
     }
-    let cursor_position = cursor_state
+    let cursor_position = mouse_cursor_state
         .borrow()
         .position
-        .and_then(|pos| cursor_hit_position(pos, cursor_state.borrow().unit, cell_metrics))
+        .and_then(|pos| cursor_hit_position(pos, mouse_cursor_state.borrow().unit, cell_metrics))
         .or(event_hit_position);
 
     let mut focus_hit: Option<(f32, f32)> = None;
@@ -917,12 +956,12 @@ fn cursor_position_from_termwiz(evt: &TzInputEvent) -> Option<(f32, f32)> {
 
 fn cursor_hit_position(
     position: (f32, f32),
-    unit: CursorUnit,
+    unit: MouseCursorUnit,
     cell_metrics: CellMetrics,
 ) -> Option<(f32, f32)> {
     let (x, y) = position;
     match unit {
-        CursorUnit::Cell => {
+        MouseCursorUnit::Cell => {
             let cell_w = if cell_metrics.cell_w_px > 0.0 {
                 cell_metrics.cell_w_px
             } else {
@@ -935,7 +974,7 @@ fn cursor_hit_position(
             };
             Some((x * cell_w, y * cell_h))
         }
-        CursorUnit::Pixel => Some((x, y)),
+        MouseCursorUnit::Pixel => Some((x, y)),
     }
 }
 
@@ -970,9 +1009,9 @@ fn scale_pixels(value: u16, pixel_scale: f32) -> f32 {
     (value as f32) / scale
 }
 
-fn apply_cursor_overlay(
+fn apply_mouse_cursor_overlay(
     surface: &mut Surface,
-    cursor: &CursorState,
+    cursor: &MouseCursorState,
     cfg: Config,
     capabilities: &TerminalCapabilities,
     cell_metrics: CellMetrics,
@@ -985,8 +1024,8 @@ fn apply_cursor_overlay(
     };
 
     let (cell_x, cell_y) = match cursor.unit {
-        CursorUnit::Cell => (x.floor(), y.floor()),
-        CursorUnit::Pixel => {
+        MouseCursorUnit::Cell => (x.floor(), y.floor()),
+        MouseCursorUnit::Pixel => {
             let cell_w = if cell_metrics.cell_w_px > 0.0 {
                 cell_metrics.cell_w_px
             } else {
@@ -1016,33 +1055,49 @@ fn apply_cursor_overlay(
     };
 
     let accent = palette_entry_to_attr(cfg.palette_roles.accent, cfg.color_mode, capabilities.truecolor);
-    let style = if cursor.unit == CursorUnit::Pixel && cursor.style == CursorStyle::Block {
-        CursorStyle::Crosshair
+    let style = if cursor.unit == MouseCursorUnit::Pixel && cursor.style == MouseCursorStyle::Block {
+        MouseCursorStyle::Crosshair
     } else {
         cursor.style
     };
 
     match style {
-        CursorStyle::Block => {
+        MouseCursorStyle::Block => {
             cell.ch = ' ';
             cell.bg = Some(accent);
             cell.fg = None;
         }
-        CursorStyle::Underline => {
+        MouseCursorStyle::Underline => {
             cell.underline = termwiz::cell::Underline::Single;
             cell.fg = Some(accent);
         }
-        CursorStyle::Beam => {
+        MouseCursorStyle::Beam => {
             cell.ch = '▏';
             cell.fg = Some(accent);
             cell.bg = None;
         }
-        CursorStyle::Crosshair => {
+        MouseCursorStyle::Crosshair => {
             cell.ch = '+';
             cell.fg = Some(accent);
             cell.bg = None;
         }
     }
+}
+
+fn apply_text_cursor<T: Terminal>(term: &mut BufferedTerminal<T>, cursor: &TextCursorState) {
+    let visibility = if cursor.visible {
+        termwiz::surface::CursorVisibility::Visible
+    } else {
+        termwiz::surface::CursorVisibility::Hidden
+    };
+    term.add_change(Change::CursorVisibility(visibility));
+    if let Some((x, y)) = cursor.position {
+        term.add_change(Change::CursorPosition {
+            x: Position::Absolute(x as usize),
+            y: Position::Absolute(y as usize),
+        });
+    }
+    let _ = term.flush();
 }
 
 fn palette_entry_to_attr(entry: PaletteEntry, color_mode: ColorMode, truecolor: bool) -> ColorAttribute {

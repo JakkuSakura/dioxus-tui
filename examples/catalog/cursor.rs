@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use dioxus_html::input_data::keyboard_types::Code;
 use dioxus_html::point_interaction::InteractionLocation;
-use dioxus_tui::{EventData, TuiContext, use_cursor, use_raw_input, use_viewport};
+use dioxus_tui::{EventData, TuiContext, use_mouse_cursor, use_raw_input, use_viewport};
 
 use crate::catalog::ExampleFrame;
 
@@ -30,7 +30,7 @@ impl Default for CursorState {
 
 pub fn app() -> Element {
     let tui: TuiContext = consume_context();
-    let cursor_handle = use_cursor();
+    let cursor_handle = use_mouse_cursor();
     let cursor_handle_init = cursor_handle.clone();
     let raw_input = use_raw_input();
     let viewport = use_viewport();

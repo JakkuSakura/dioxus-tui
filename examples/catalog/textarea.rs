@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use dioxus::prelude::HasKeyboardData;
 use dioxus_html::input_data::keyboard_types::Key;
-use dioxus_tui::{TuiContext, use_keyboard_input};
+use dioxus_tui::{TuiContext, use_keyboard_input, use_text_cursor, use_viewport};
 
 use crate::catalog::ExampleFrame;
 
@@ -52,7 +52,7 @@ impl TextBuffer {
 
     fn insert_str(&mut self, text: &str) {
         for ch in text.chars() {
-            if ch == '\n' {
+            if ch == '\n' || ch == '\r' {
                 self.insert_newline();
             } else {
                 let line = &mut self.lines[self.row];
@@ -142,6 +142,8 @@ impl TextBuffer {
             Key::Character(text) => {
                 if text == "\t" {
                     self.insert_str("    ");
+                } else if text == "\n" || text == "\r" {
+                    self.insert_newline();
                 } else {
                     self.insert_str(text);
                 }
@@ -161,19 +163,14 @@ impl TextBuffer {
         self.clamp_cursor();
     }
 
-    fn cursor_parts(&self, line: &str) -> (String, String, String) {
-        let len = Self::line_len(line);
-        let col = self.col.min(len);
-        let before: String = line.chars().take(col).collect();
-        let cursor = line.chars().nth(col).unwrap_or(' ');
-        let after: String = line.chars().skip(col + 1).collect();
-        (before, cursor.to_string(), after)
-    }
 }
 
 pub fn app() -> Element {
     let tui: TuiContext = consume_context();
     let key_input = use_keyboard_input();
+    let cursor_handle = use_text_cursor();
+    let cursor_handle_update = cursor_handle.clone();
+    let viewport = use_viewport();
     let mut buffer = use_signal(TextBuffer::default);
 
     use_effect(move || {
@@ -183,27 +180,30 @@ pub fn app() -> Element {
         buffer.with_mut(|buf| buf.handle_key(&data.key(), &tui));
     });
 
-    let state = buffer.read().clone();
-    let rendered_lines = state.lines.iter().enumerate().map(|(idx, line)| {
-        if idx == state.row {
-            let (before, cursor, after) = state.cursor_parts(line);
-            rsx! {
-                div {
-                    span { "{before}" }
-                    span {
-                        display: "inline-block",
-                        width: "1ch",
-                        background_color: "#7aa2f7",
-                        color: "#1a1b26",
-                        "{cursor}"
-                    }
-                    span { "{after}" }
-                }
-            }
-        } else {
-            rsx! { div { "{line}" } }
-        }
+    use_effect(move || {
+        let state = buffer.read().clone();
+        let view = viewport.read().clone();
+        let width = ((view.width as f32) * 0.8).floor().max(1.0) as u16;
+        let height = ((view.height as f32) * 0.7).floor().max(1.0) as u16;
+        let origin_x = view.width.saturating_sub(width) / 2;
+        let origin_y = view.height.saturating_sub(height) / 2;
+        let padding = 1u16;
+        let max_x = origin_x.saturating_add(width.saturating_sub(1));
+        let max_y = origin_y.saturating_add(height.saturating_sub(1));
+        let cursor_x = origin_x
+            .saturating_add(padding)
+            .saturating_add(state.col as u16)
+            .min(max_x);
+        let cursor_y = origin_y
+            .saturating_add(padding)
+            .saturating_add(state.row as u16)
+            .min(max_y);
+        cursor_handle_update.show();
+        cursor_handle_update.set_cell_position(cursor_x, cursor_y);
     });
+
+    let state = buffer.read().clone();
+    let rendered_lines = state.lines.iter().map(|line| rsx! { div { "{line}" } });
 
     rsx! {
         ExampleFrame {

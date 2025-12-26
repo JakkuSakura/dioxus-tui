@@ -5,6 +5,7 @@ html, body {
   margin: 0;
   padding: 0;
   font-family: monospace;
+  line-height: 1;
   background: transparent;
   color: white;
 }
@@ -22,11 +23,14 @@ body > main {
 }
 
 /* Basic HTML display defaults (Blitz doesn't inject a full UA stylesheet). */
-div, p, pre, ul, ol, li, header, footer, section, article, nav, table, thead, tbody, tfoot, tr, td, th {
+div, p, pre, ul, ol, li, header, footer, section, article, nav, table, thead, tbody, tfoot, tr, td, th,
+span, a, strong, b, em, i, code, h1, h2, h3, h4, h5, h6 {
   display: block;
+  line-height: 1;
 }
 span, a, strong, b, em, i, code {
   display: inline;
+  line-height: 1;
 }
 h1, h2, h3, h4, h5, h6, p, ul, ol, li {
   margin: 0;
