@@ -37,11 +37,11 @@ pub(crate) fn rgba_to_png_bytes(data: &[u8], width: u32, height: u32) -> Result<
 }
 
 fn decode_png_rgba(png_bytes: &[u8]) -> Result<DecodedImage> {
-    let mut decoder = Decoder::new(png_bytes);
+    let reader = std::io::Cursor::new(png_bytes);
+    let mut decoder = Decoder::new(reader);
     decoder.set_transformations(Transformations::EXPAND | Transformations::STRIP_16);
     let mut reader = decoder.read_info()?;
-
-    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let mut buf = vec![0u8; reader.output_buffer_size().unwrap()];
     let info = reader.next_frame(&mut buf)?;
     let bytes = &buf[..info.buffer_size()];
 

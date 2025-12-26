@@ -2,7 +2,7 @@
 name = "dioxus-tui"
 version = "0.7.2"
 authors = ["Jonathan Kelley, Evan Almloff"]
-edition = "2021"
+edition = "2024"
 description = "TUI-based renderer for Dioxus"
 repository = "https://github.com/DioxusLabs/dioxus/"
 homepage = "https://dioxuslabs.com/learn/0.7/getting_started/tui"
@@ -14,17 +14,17 @@ dioxus = { version = "0.7.2" }
 dioxus-core = { version = "0.7.2", features = ["serialize"] }
 dioxus-html = { version = "0.7.2" }
 dioxus-core-types = "0.7.2"
-keyboard-types = "0.7"
+keyboard-types = "0.8"
 dioxus-hot-reload = { version = "0.6.0-alpha.2", optional = true }
 dioxus-native = { version = "0.7.2", optional = true }
 
-tokio = { version = "1.36", features = ["full"] }
-futures = "0.3.30"
-futures-channel = "0.3.30"
-termwiz = "0.22"
-unicode-width = "0.1"
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+futures-channel = "0.3"
+termwiz = "0.23"
+unicode-width = "0.2"
 anyhow = "1.0.42"
-bevy_ecs = { version = "0.11", default-features = false }
+bevy_ecs = { version = "0.18.0-rc.1", default-features = false }
 blitz-dom = { version = "0.2.2", default-features = false, features = ["system_fonts"] }
 blitz-traits = { version = "0.2.0" }
 blitz-paint = { version = "0.2.1", default-features = false, optional = true }
@@ -33,14 +33,14 @@ rasteroid = "0.1.8"
 dioxus-native-dom = "0.7.2"
 anyrender = "0.6"
 anyrender_vello_cpu = { version = "0.8.1", optional = true }
-png = "0.17"
+png = "0.18"
 base64 = "0.22"
 peniko = "0.5"
 kurbo = "0.12"
-ttf-parser = "0.19"
+ttf-parser = "0.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "ansi"] }
-thiserror = "1"
+thiserror = "2"
 style = { version = "0.8", package = "stylo" }
 smol_str = "0.2"
 

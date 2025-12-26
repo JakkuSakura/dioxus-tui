@@ -2,15 +2,15 @@
 #![doc(html_logo_url = "https://avatars.githubusercontent.com/u/79236386")]
 #![doc(html_favicon_url = "https://avatars.githubusercontent.com/u/79236386")]
 
-pub mod capabilities;
-pub mod builders;
-pub mod draw;
 mod blitz;
+pub mod builders;
+pub mod capabilities;
 mod cell_render;
 mod config;
-mod event;
+pub mod draw;
 pub mod element;
 pub mod error;
+mod event;
 pub mod geometry;
 mod hooks;
 pub mod image;
@@ -30,7 +30,10 @@ mod gui;
 mod blitz_terminal;
 
 pub use capabilities::TerminalCapabilities;
-pub use config::{ColorMode, Config, ImageDowngrade, ImagePolicy, PaletteEntry, PaletteRoles, RenderingMode};
+pub use config::{
+    ColorMode, Config, ImageDowngrade, ImagePolicy, PaletteEntry, PaletteRoles, RenderingMode,
+};
+pub use draw::{CustomDrawMode, DrawContext, on_draw};
 pub use error::Error;
 pub use geometry::{Alignment, Rect};
 pub use hooks::{
@@ -39,7 +42,6 @@ pub use hooks::{
     use_cursor, use_keyboard_input, use_mouse_input, use_raw_input, use_viewport, use_wheel_input,
 };
 pub use render::TuiContext;
-pub use draw::{on_draw, CustomDrawMode, DrawContext};
 pub use scene::{CellMetrics, InlineImage, TerminalScene};
 pub use surface::Surface;
 
@@ -47,13 +49,10 @@ use std::any::Any;
 
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
 use launch::run_renderer;
-use tokio::runtime::Builder as RuntimeBuilder;
 use std::io::Write;
+use tokio::runtime::Builder as RuntimeBuilder;
 
-use termwiz::{
-    render::RenderTty,
-    terminal::{Terminal as _},
-};
+use termwiz::{render::RenderTty, terminal::Terminal as _};
 use termwiz::{render::terminfo::TerminfoRenderer, terminal::ScreenSize};
 
 pub type ContextFactory = Box<dyn Fn() -> Box<dyn Any> + Send + Sync>;
@@ -89,7 +88,6 @@ impl RenderRequest {
         self.contexts = contexts;
         self
     }
-
 }
 
 impl From<fn() -> Element> for RenderRequest {
@@ -120,7 +118,12 @@ pub fn render_surface(app: fn() -> Element, width: u16, height: u16) -> anyhow::
     render_surface_cfg(app, Config::default(), width, height)
 }
 
-pub fn render_surface_cfg(app: fn() -> Element, cfg: Config, width: u16, height: u16) -> anyhow::Result<Surface> {
+pub fn render_surface_cfg(
+    app: fn() -> Element,
+    cfg: Config,
+    width: u16,
+    height: u16,
+) -> anyhow::Result<Surface> {
     let raw = RawVirtualDom::new(app);
     render_surface_raw(raw, cfg, Rect::new(0, 0, width, height))
 }
@@ -143,8 +146,17 @@ pub fn render_with_size(app: fn() -> Element, width: u16, height: u16) -> anyhow
     render(RenderRequest::new(app).with_size(width, height))
 }
 
-pub fn render_cfg_with_size(app: fn() -> Element, cfg: Config, width: u16, height: u16) -> anyhow::Result<()> {
-    render(RenderRequest::new(app).with_config(cfg).with_size(width, height))
+pub fn render_cfg_with_size(
+    app: fn() -> Element,
+    cfg: Config,
+    width: u16,
+    height: u16,
+) -> anyhow::Result<()> {
+    render(
+        RenderRequest::new(app)
+            .with_config(cfg)
+            .with_size(width, height),
+    )
 }
 
 pub fn render_surface_cfg_with_props<P: Clone + Send + Sync + 'static>(
@@ -178,13 +190,15 @@ fn detect_output_width() -> Option<u16> {
         use std::os::fd::AsRawFd;
 
         unsafe fn cols_from_fd(fd: i32) -> Option<u16> {
-            let mut ws: libc::winsize = std::mem::zeroed();
-            if libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws) == 0 {
-                if ws.ws_col > 0 {
-                    return Some(ws.ws_col as u16);
+            unsafe {
+                let mut ws: libc::winsize = std::mem::zeroed();
+                if libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws) == 0 {
+                    if ws.ws_col > 0 {
+                        return Some(ws.ws_col as u16);
+                    }
                 }
+                None
             }
-            None
         }
 
         let stdout = std::io::stdout();
@@ -264,11 +278,8 @@ fn render_request(request: RenderRequest) -> anyhow::Result<()> {
                     .size
                     .or_else(detect_output_size)
                     .unwrap_or((100, 24));
-                let raw = RawVirtualDom::with_contexts(
-                    move |_| (request.root)(),
-                    (),
-                    request.contexts,
-                );
+                let raw =
+                    RawVirtualDom::with_contexts(move |_| (request.root)(), (), request.contexts);
                 let rendered = crate::blitz_terminal::render_blitz_terminal(
                     cfg.rendering_mode,
                     detected.termwiz,
@@ -301,7 +312,9 @@ fn render_request(request: RenderRequest) -> anyhow::Result<()> {
     let raw = RawVirtualDom::with_contexts(move |_| (request.root)(), (), request.contexts);
     let frame = {
         let rt = RuntimeBuilder::new_current_thread().enable_all().build()?;
-        rt.block_on(async move { render::render_once_frame(cfg, raw, Rect::new(0, 0, width, height)) })?
+        rt.block_on(
+            async move { render::render_once_frame(cfg, raw, Rect::new(0, 0, width, height)) },
+        )?
     };
 
     // `render()` is a one-shot, non-interactive API. It should behave like normal stdout output:
