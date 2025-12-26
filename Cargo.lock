@@ -2162,7 +2162,7 @@ dependencies = [
 
 [[package]]
 name = "dioxus-tui"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "anyrender",
