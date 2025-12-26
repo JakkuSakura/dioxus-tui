@@ -171,3 +171,36 @@ fn renders_button_and_input() {
     let text = surface_text(&surface);
     assert!(text.contains("text"));
 }
+
+// Render tests for multi-line widgets should assert the exact cell grid line-by-line
+// to make off-by-one layout regressions obvious.
+#[test]
+fn renders_textarea_multiline_cells() {
+    fn app() -> Element {
+        rsx! {
+            main {
+                textarea { width: "100%", height: "100%", value: "Alpha\nBeta\nGamma" }
+            }
+        }
+    }
+
+    let surface = render_component(app, 10, 4);
+    if !has_text(&surface) {
+        return;
+    }
+
+    let width = surface.width();
+    let expected_lines = ["Alpha", "Beta", "Gamma", ""];
+
+    for (y, expected) in expected_lines.iter().enumerate() {
+        let expected_chars: Vec<char> = expected.chars().collect();
+        for x in 0..width {
+            let ch = cell(&surface, x, y as u16).ch;
+            let expected_ch = expected_chars.get(x as usize).copied().unwrap_or(' ');
+            assert_eq!(
+                ch, expected_ch,
+                "unexpected cell at ({x}, {y}) expected '{expected_ch}'"
+            );
+        }
+    }
+}

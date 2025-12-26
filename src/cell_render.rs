@@ -191,6 +191,21 @@ fn paint_node(
                     if let Some(value) = node.attr(local_name!("value")) {
                         let _ = write_wrapped(surface, text_bounds, (rect.x, rect.y), value, style);
                     }
+                } else if node.data.is_element_with_tag_name(&local_name!("textarea")) {
+                    if let Some(value) = node.attr(local_name!("value")) {
+                        let _ = write_wrapped(surface, text_bounds, (rect.x, rect.y), value, style);
+                    } else {
+                        paint_inline_text(
+                            surface,
+                            doc,
+                            node,
+                            text_bounds,
+                            style,
+                            color_mode,
+                            truecolor,
+                            fallback_fg,
+                        );
+                    }
                 } else if node.data.is_element_with_tag_name(&local_name!("button")) {
                     let label = node.text_content();
                     let _ = write_wrapped(surface, text_bounds, (rect.x, rect.y), label.as_str(), style);
@@ -307,6 +322,13 @@ fn paint_inline_text(
                         }
                         continue;
                     }
+                    if child.data.is_element_with_tag_name(&local_name!("textarea")) {
+                        if let Some(value) = child.attr(local_name!("value")) {
+                            (cursor_x, cursor_y) =
+                                write_wrapped(surface, bounds, (cursor_x, cursor_y), value, inherited);
+                        }
+                        continue;
+                    }
 
                     let local_style = style_overrides(child, color_mode, truecolor);
                     let child_style = inherited.merged(local_style);
@@ -357,6 +379,12 @@ fn paint_inline_children(
             blitz_dom::node::NodeData::Element(_) | blitz_dom::node::NodeData::AnonymousBlock(_) => {
                 if !is_blockish(child) {
                     if child.data.is_element_with_tag_name(&local_name!("input")) {
+                        if let Some(value) = child.attr(local_name!("value")) {
+                            cursor = write_wrapped(surface, bounds, cursor, value, inherited);
+                        }
+                        continue;
+                    }
+                    if child.data.is_element_with_tag_name(&local_name!("textarea")) {
                         if let Some(value) = child.attr(local_name!("value")) {
                             cursor = write_wrapped(surface, bounds, cursor, value, inherited);
                         }
@@ -753,8 +781,8 @@ fn write_wrapped(
     }
 
     let (mut x, mut y) = cursor;
-    let end_x = surface.width();
-    let end_y = surface.height();
+    let end_x = bounds.x.saturating_add(bounds.width).min(surface.width());
+    let end_y = bounds.y.saturating_add(bounds.height).min(surface.height());
 
     if bounds.width == 0 || bounds.height == 0 {
         return (x, y);
@@ -1020,7 +1048,9 @@ fn style_overrides(node: &Node, color_mode: ColorMode, truecolor: bool) -> TextS
         out.blink = Blink::Slow;
     }
 
-    if node.data.is_element_with_tag_name(&local_name!("pre")) {
+    if node.data.is_element_with_tag_name(&local_name!("pre"))
+        || node.data.is_element_with_tag_name(&local_name!("textarea"))
+    {
         out.preserve_whitespace = true;
     }
     if let Some(style) = attr_value(node, "style")
