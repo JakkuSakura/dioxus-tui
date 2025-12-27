@@ -428,6 +428,8 @@ mod tests {
     use super::*;
     use dioxus_html::input_data::keyboard_types::Code;
     use dioxus_html::point_interaction::InteractionLocation;
+    use std::cell::RefCell;
+    use std::rc::Rc;
     use termwiz::input::{InputEvent, Modifiers, MouseButtons, MouseEvent, PixelMouseEvent};
 
     #[test]
@@ -500,6 +502,23 @@ mod tests {
         let rendered_top = format!("{}px", coords.y);
         assert_eq!(rendered_left, "33px");
         assert_eq!(rendered_top, "44px");
+    }
+
+    #[test]
+    fn caret_bus_emits_position() {
+        let bus = CaretBus::new();
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handle = Rc::clone(&events);
+        let _subscription = bus.subscribe(Rc::new(move |cmd| {
+            events_handle.borrow_mut().push(cmd);
+        }));
+
+        bus.publish(CaretCommand::SetPosition(4, 2));
+
+        assert_eq!(
+            events.borrow().as_slice(),
+            &[CaretCommand::SetPosition(4, 2)]
+        );
     }
 }
 

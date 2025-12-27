@@ -204,3 +204,34 @@ fn renders_textarea_multiline_cells() {
         }
     }
 }
+
+#[test]
+fn renders_textarea_enter_newline() {
+    fn app() -> Element {
+        rsx! {
+            main {
+                textarea { rows: "2", cols: "6", value: "Hello\n" }
+            }
+        }
+    }
+
+    let surface = render_component(app, 6, 2);
+    if !has_text(&surface) {
+        return;
+    }
+
+    let width = surface.width();
+    let expected_lines = ["Hello", ""];
+
+    for (y, expected) in expected_lines.iter().enumerate() {
+        let expected_chars: Vec<char> = expected.chars().collect();
+        for x in 0..width {
+            let ch = cell(&surface, x, y as u16).ch;
+            let expected_ch = expected_chars.get(x as usize).copied().unwrap_or(' ');
+            assert_eq!(
+                ch, expected_ch,
+                "unexpected cell at ({x}, {y}) expected '{expected_ch}'"
+            );
+        }
+    }
+}
