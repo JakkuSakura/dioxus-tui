@@ -9,6 +9,7 @@ use dioxus_html::input_data::keyboard_types::{Code, Key, Location, Modifiers};
 use dioxus_html::input_data::{MouseButton, MouseButtonSet};
 use dioxus_html::point_interaction::SerializedPointInteraction;
 use dioxus_html::{SerializedFocusData, SerializedKeyboardData, SerializedMouseData, SerializedWheelData};
+use std::collections::HashMap;
 use termwiz::input::{InputEvent, KeyCode as TermKeyCode, KeyEvent, Modifiers as TermModifiers, MouseButtons, MouseEvent};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,6 +57,56 @@ impl TuiInputBus {
 #[derive(Clone, Default)]
 pub struct ViewportBus {
     listeners: Rc<RefCell<Vec<Option<Rc<dyn Fn(Rect)>>>>>,
+}
+
+#[derive(Clone, Default)]
+pub struct LayoutBus {
+    listeners: Rc<RefCell<Vec<Option<Rc<dyn Fn(LayoutSnapshot)>>>>>,
+}
+
+impl LayoutBus {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn subscribe(&self, listener: Rc<dyn Fn(LayoutSnapshot)>) -> LayoutSubscription {
+        let mut listeners = self.listeners.borrow_mut();
+        let id = listeners.len();
+        listeners.push(Some(listener));
+        Rc::new(LayoutSubscriptionInner {
+            id,
+            listeners: Rc::downgrade(&self.listeners),
+        })
+    }
+
+    pub fn publish(&self, rects: HashMap<u64, Rect>) {
+        let snapshot = LayoutSnapshot { rects };
+        for listener in self.listeners.borrow().iter().flatten() {
+            listener(snapshot.clone());
+        }
+    }
+}
+
+pub(crate) type LayoutSubscription = Rc<LayoutSubscriptionInner>;
+
+pub(crate) struct LayoutSubscriptionInner {
+    id: usize,
+    listeners: Weak<RefCell<Vec<Option<Rc<dyn Fn(LayoutSnapshot)>>>>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LayoutSnapshot {
+    pub rects: HashMap<u64, Rect>,
+}
+
+impl Drop for LayoutSubscriptionInner {
+    fn drop(&mut self) {
+        if let Some(listeners) = self.listeners.upgrade() {
+            if let Some(slot) = listeners.borrow_mut().get_mut(self.id) {
+                *slot = None;
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -531,6 +582,23 @@ mod tests {
     }
 
     #[test]
+    fn layout_bus_publishes_rects() {
+        let bus = LayoutBus::new();
+        let received = Rc::new(RefCell::new(None));
+        let received_handle = Rc::clone(&received);
+        let _subscription = bus.subscribe(Rc::new(move |snapshot| {
+            *received_handle.borrow_mut() = Some(snapshot);
+        }));
+
+        let mut rects = HashMap::new();
+        rects.insert(7, Rect::new(3, 4, 10, 5));
+        bus.publish(rects);
+
+        let snapshot = received.borrow().clone().expect("layout snapshot");
+        assert_eq!(snapshot.rects.get(&7), Some(&Rect::new(3, 4, 10, 5)));
+    }
+
+    #[test]
     fn caret_bus_emits_position() {
         let bus = CaretBus::new();
         let events = Rc::new(RefCell::new(Vec::new()));
@@ -868,6 +936,36 @@ pub fn use_viewport() -> Signal<Rect> {
         }))
     });
     signal
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LayoutRectHandle {
+    id: u64,
+}
+
+impl LayoutRectHandle {
+    pub fn id(self) -> u64 {
+        self.id
+    }
+}
+
+pub fn use_layout_rect() -> (LayoutRectHandle, Signal<Option<Rect>>) {
+    let bus = use_context::<LayoutBus>();
+    let id = use_hook(|| next_layout_id());
+    let rect = use_signal(|| None);
+    let _subscription = use_hook(|| {
+        let rect = rect.clone();
+        bus.subscribe(Rc::new(move |rects| {
+            *rect.write_unchecked() = rects.rects.get(&id).copied();
+        }))
+    });
+    (LayoutRectHandle { id }, rect)
+}
+
+fn next_layout_id() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_LAYOUT_ID: AtomicU64 = AtomicU64::new(1);
+    NEXT_LAYOUT_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 #[derive(Clone)]

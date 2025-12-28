@@ -14,7 +14,7 @@ mod textarea_example {
     mod tests {
         use super::*;
         use dioxus_html::input_data::keyboard_types::Key;
-        use dioxus_tui::render;
+        use dioxus_tui::{Rect, TuiContext, render};
 
         #[test]
         fn enter_key_preserves_second_line_content() {
@@ -33,6 +33,17 @@ mod textarea_example {
             assert_eq!(buffer.lines, vec!["Hello", "World"]);
             assert_eq!(buffer.row, 1);
             assert_eq!(buffer.col, 5);
+        }
+
+        #[test]
+        fn caret_position_accounts_for_layout_rect() {
+            let layout = Rect::new(5, 9, 20, 10);
+            let buffer = TextBuffer::default();
+
+            let (cursor_x, cursor_y) = caret_position(layout, &buffer, 1);
+
+            assert_eq!(cursor_x, layout.x + 1);
+            assert_eq!(cursor_y, layout.y + 1);
         }
     }
 }

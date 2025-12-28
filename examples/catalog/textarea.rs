@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use dioxus::prelude::HasKeyboardData;
 use dioxus_html::input_data::keyboard_types::Key;
-use dioxus_tui::{TuiContext, use_keyboard_input, use_caret, use_viewport};
+use dioxus_tui::{TuiContext, use_keyboard_input, use_caret, use_viewport, use_layout_rect};
 
 use crate::catalog::ExampleFrame;
 
@@ -165,12 +165,29 @@ impl TextBuffer {
 
 }
 
+fn caret_position(layout: dioxus_tui::Rect, state: &TextBuffer, padding: u16) -> (u16, u16) {
+    let max_x = layout.x.saturating_add(layout.width.saturating_sub(1));
+    let max_y = layout.y.saturating_add(layout.height.saturating_sub(1));
+    let cursor_x = layout
+        .x
+        .saturating_add(padding)
+        .saturating_add(state.col as u16)
+        .min(max_x);
+    let cursor_y = layout
+        .y
+        .saturating_add(padding)
+        .saturating_add(state.row as u16)
+        .min(max_y);
+    (cursor_x, cursor_y)
+}
+
 pub fn app() -> Element {
     let tui: TuiContext = consume_context();
     let key_input = use_keyboard_input();
     let cursor_handle = use_caret();
     let cursor_handle_update = cursor_handle.clone();
     let viewport = use_viewport();
+    let (layout_handle, layout_rect) = use_layout_rect();
     let mut buffer = use_signal(TextBuffer::default);
 
     use_effect(move || {
@@ -182,22 +199,12 @@ pub fn app() -> Element {
 
     use_effect(move || {
         let state = buffer.read().clone();
-        let view = viewport.read().clone();
-        let width = ((view.width as f32) * 0.8).ceil().max(1.0) as u16;
-        let height = ((view.height as f32) * 0.7).ceil().max(1.0) as u16;
-        let origin_x = view.width.saturating_sub(width) / 2;
-        let origin_y = view.height.saturating_sub(height) / 2;
+        let _ = viewport.read().clone();
+        let Some(layout) = layout_rect.read().clone() else {
+            return;
+        };
         let padding = 1u16;
-        let max_x = origin_x.saturating_add(width.saturating_sub(1));
-        let max_y = origin_y.saturating_add(height.saturating_sub(1));
-        let cursor_x = origin_x
-            .saturating_add(padding)
-            .saturating_add(state.col as u16)
-            .min(max_x);
-        let cursor_y = origin_y
-            .saturating_add(padding)
-            .saturating_add(state.row as u16)
-            .min(max_y);
+        let (cursor_x, cursor_y) = caret_position(layout, &state, padding);
         cursor_handle_update.show();
         cursor_handle_update.set_cell_position(cursor_x, cursor_y);
     });
@@ -236,6 +243,7 @@ pub fn app() -> Element {
                     white_space: "pre",
                     overflow: "hidden",
                     tabindex: "0",
+                    "data-layout-id": "{layout_handle.id()}",
 
                     {rendered_lines}
                 }

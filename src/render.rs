@@ -20,7 +20,7 @@ use crate::capabilities::termwiz_capabilities;
 use crate::config::{ColorMode, Config, PaletteEntry};
 use crate::geometry::Rect;
 use crate::hooks::{
-    CursorBus, CursorStyle, CursorUnit, CursorState, CaretBus, TuiInputBus, ViewportBus,
+    CaretBus, CursorBus, CursorStyle, CursorUnit, CursorState, LayoutBus, TuiInputBus, ViewportBus,
 };
 use crate::layout::resolve_document;
 use crate::scene::CellMetrics;
@@ -28,6 +28,7 @@ use crate::surface::Surface;
 use crate::RawVirtualDom;
 use crate::cell_render::paint_surface;
 use crate::image::PlacedImage;
+use std::collections::HashMap;
 
 pub fn channel() -> (UnboundedSender<InputEvent>, UnboundedReceiver<InputEvent>) {
     unbounded()
@@ -69,6 +70,7 @@ pub(crate) struct DioxusRenderer {
     pub(crate) viewport_bus: ViewportBus,
     pub(crate) cursor_bus: CursorBus,
     pub(crate) caret_bus: CaretBus,
+    pub(crate) layout_bus: LayoutBus,
     pub(crate) runtime: std::rc::Rc<Runtime>,
     #[cfg(all(feature = "hot-reload", debug_assertions))]
     pub(crate) hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<dioxus_hot_reload::HotReloadMsg>,
@@ -118,12 +120,14 @@ impl DioxusRenderer {
         let viewport_bus = ViewportBus::new();
         let cursor_bus = CursorBus::new();
         let caret_bus = CaretBus::new();
+        let layout_bus = LayoutBus::new();
         let vdom = vdom
             .with_root_context(ctx)
             .with_root_context(input_bus.clone())
             .with_root_context(viewport_bus.clone())
             .with_root_context(cursor_bus.clone())
-            .with_root_context(caret_bus.clone());
+            .with_root_context(caret_bus.clone())
+            .with_root_context(layout_bus.clone());
 
         let mut doc = Self::build_document(vdom, viewport);
         doc.initial_build();
@@ -136,6 +140,7 @@ impl DioxusRenderer {
                 viewport_bus,
                 cursor_bus,
                 caret_bus,
+                layout_bus,
                 runtime,
                 #[cfg(all(feature = "hot-reload", debug_assertions))]
                 hot_reload_rx: {
@@ -184,6 +189,39 @@ impl DioxusRenderer {
 
     pub(crate) fn layout_root(&mut self, area: Rect, metrics: CellMetrics) -> Option<usize> {
         resolve_document(&mut self.doc, area, metrics)
+    }
+
+    pub(crate) fn publish_layout_rects(&self, area: Rect, metrics: CellMetrics) {
+        let mut rects = HashMap::new();
+        let root_id = self.doc.inner.root_node().id;
+        collect_layout_rects(self.doc.inner.as_ref(), root_id, area, metrics, &mut rects);
+        self.layout_bus.publish(rects);
+    }
+}
+
+fn collect_layout_rects(
+    doc: &blitz_dom::BaseDocument,
+    node_id: usize,
+    area: Rect,
+    metrics: CellMetrics,
+    out: &mut HashMap<u64, Rect>,
+) {
+    let Some(node) = doc.get_node(node_id) else {
+        return;
+    };
+    if let Some(attrs) = node.attrs() {
+        if let Some(attr) = attrs
+            .iter()
+            .find(|attr| attr.name.local.as_ref() == "data-layout-id")
+        {
+            if let Ok(id) = attr.value.parse::<u64>() {
+                let rect = crate::layout::node_rect(doc, node, area, metrics);
+                out.insert(id, rect);
+            }
+        }
+    }
+    for child_id in node.children.iter().copied() {
+        collect_layout_rects(doc, child_id, area, metrics, out);
     }
 }
 
@@ -235,6 +273,7 @@ where
     let mut surface = Surface::new(area.width, area.height);
     let mut images = std::collections::VecDeque::<PlacedImage>::new();
     let _ = renderer.layout_root(area, metrics);
+    renderer.publish_layout_rects(area, metrics);
     paint_surface(
         &mut surface,
         &mut images,
