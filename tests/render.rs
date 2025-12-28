@@ -48,9 +48,7 @@ fn renders_paragraph_and_heading() {
     }
 
     let surface = render_component(app, 20, 4);
-    if !has_text(&surface) {
-        return;
-    }
+    assert!(has_text(&surface), "rendered surface was empty");
     let r0: String = row(&surface, 0).iter().collect();
     let r1: String = row(&surface, 1).iter().collect();
     assert_eq!(r0.trim_end(), "Title");
@@ -71,9 +69,7 @@ fn renders_list_items() {
     }
 
     let surface = render_component(app, 20, 4);
-    if !has_text(&surface) {
-        return;
-    }
+    assert!(has_text(&surface), "rendered surface was empty");
     let r0: String = row(&surface, 0).iter().collect();
     let r1: String = row(&surface, 1).iter().collect();
     assert_eq!(r0.trim_end(), "first");
@@ -92,9 +88,7 @@ fn renders_nested_block_and_inline() {
     }
 
     let surface = render_component(app, 20, 4);
-    if !has_text(&surface) {
-        return;
-    }
+    assert!(has_text(&surface), "rendered surface was empty");
     let r0: String = row(&surface, 0).iter().collect();
     let r1: String = row(&surface, 1).iter().collect();
     assert_eq!(r0.trim_end(), "block");
@@ -113,9 +107,7 @@ fn respects_width_wrapping() {
     }
 
     let surface = render_component(app, 8, 3);
-    if !has_text(&surface) {
-        return;
-    }
+    assert!(has_text(&surface), "rendered surface was empty");
     let r0: String = row(&surface, 0).iter().collect();
     let r1: String = row(&surface, 1).iter().collect();
     assert_eq!(r0, "abcdefgh");
@@ -133,9 +125,7 @@ fn renders_inline_color() {
     }
 
     let surface = render_component(app, 10, 2);
-    if !has_text(&surface) {
-        return;
-    }
+    assert!(has_text(&surface), "rendered surface was empty");
     let c = cell(&surface, 0, 0);
     let Some(fg) = c.fg else {
         return;
@@ -165,9 +155,7 @@ fn renders_button_and_input() {
     }
 
     let surface = render_component(app, 12, 3);
-    if !has_text(&surface) {
-        return;
-    }
+    assert!(has_text(&surface), "rendered surface was empty");
     let text = surface_text(&surface);
     assert!(text.contains("text"));
 }
@@ -185,9 +173,7 @@ fn renders_textarea_multiline_cells() {
     }
 
     let surface = render_component(app, 10, 4);
-    if !has_text(&surface) {
-        return;
-    }
+    assert!(has_text(&surface), "rendered surface was empty");
 
     let width = surface.width();
     let expected_lines = ["Alpha", "Beta", "Gamma", ""];
@@ -210,18 +196,16 @@ fn renders_textarea_enter_newline() {
     fn app() -> Element {
         rsx! {
             main {
-                textarea { rows: "2", cols: "6", value: "Hello\n" }
+                textarea { rows: "2", cols: "6", value: "Hello\nWorld" }
             }
         }
     }
 
     let surface = render_component(app, 6, 2);
-    if !has_text(&surface) {
-        return;
-    }
+    assert!(has_text(&surface), "rendered surface was empty");
 
     let width = surface.width();
-    let expected_lines = ["Hello", ""];
+    let expected_lines = ["Hello", "World"];
 
     for (y, expected) in expected_lines.iter().enumerate() {
         let expected_chars: Vec<char> = expected.chars().collect();

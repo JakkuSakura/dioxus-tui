@@ -36,6 +36,7 @@ h1, h2, h3, h4, h5, h6, p, ul, ol, li {
   margin: 0;
   padding: 0;
 }
+h1, h2, h3, h4, h5, h6 { font-size: 1em; }
 a { color: cyan; text-decoration: underline; }
 strong, b { font-weight: bold; }
 em, i { font-style: italic; }

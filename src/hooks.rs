@@ -428,9 +428,10 @@ mod tests {
     use super::*;
     use dioxus_html::input_data::keyboard_types::Code;
     use dioxus_html::point_interaction::InteractionLocation;
+    use dioxus::prelude::HasKeyboardData;
     use std::cell::RefCell;
     use std::rc::Rc;
-    use termwiz::input::{InputEvent, Modifiers, MouseButtons, MouseEvent, PixelMouseEvent};
+    use termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers, MouseButtons, MouseEvent, PixelMouseEvent};
 
     #[test]
     fn code_from_char_maps_common_ascii() {
@@ -502,6 +503,31 @@ mod tests {
         let rendered_top = format!("{}px", coords.y);
         assert_eq!(rendered_left, "33px");
         assert_eq!(rendered_top, "44px");
+    }
+
+    #[test]
+    fn enter_key_maps_from_keyboard_events() {
+        let viewport = Rect::new(0, 0, 80, 24);
+        let pixel_viewport = None;
+        let mut mouse_state = RawMouseState::default();
+
+        for key in [KeyCode::Enter, KeyCode::Char('\n'), KeyCode::Char('\r')] {
+            let events = raw_input_from_termwiz(
+                &InputEvent::Key(KeyEvent {
+                    key,
+                    modifiers: Modifiers::NONE,
+                }),
+                viewport,
+                pixel_viewport,
+                &mut mouse_state,
+            );
+            assert_eq!(events.len(), 1);
+            let EventData::Keyboard(data) = &events[0].data else {
+                panic!("expected keyboard event");
+            };
+            assert_eq!(data.key(), Key::Enter);
+            assert_eq!(data.code(), Code::Enter);
+        }
     }
 
     #[test]

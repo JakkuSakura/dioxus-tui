@@ -54,6 +54,7 @@ pub fn paint_surface(
         image_policy,
         image_downgrade,
         inline_images_supported,
+        (0, 0),
     )?;
 
     Ok(())
@@ -125,6 +126,7 @@ fn paint_node(
     image_policy: ImagePolicy,
     image_downgrade: ImageDowngrade,
     inline_images_supported: bool,
+    offset: (i32, i32),
 ) -> crate::error::Result<()> {
     match &node.data {
         blitz_dom::node::NodeData::Element(_) | blitz_dom::node::NodeData::AnonymousBlock(_) => {
@@ -134,7 +136,7 @@ fn paint_node(
             if draw_mode == crate::draw::CustomDrawMode::Native {
                 if let Some(draw_id) = attr_value(node, "data-draw-id") {
                     if let Some(cb) = crate::draw::lookup_draw(draw_id) {
-                        let rect = node_rect(doc, node, area, metrics);
+                        let rect = offset_rect(node_rect(doc, node, area, metrics), offset, area);
                         if rect.width > 0 && rect.height > 0 {
                             let mut ctx = crate::draw::DrawContext {
                                 surface,
@@ -151,7 +153,7 @@ fn paint_node(
             }
 
             if node.data.is_element_with_tag_name(&local_name!("img")) {
-                let rect = node_rect(doc, node, area, metrics);
+                let rect = offset_rect(node_rect(doc, node, area, metrics), offset, area);
                 paint_img(
                     surface,
                     images,
@@ -167,7 +169,7 @@ fn paint_node(
                 return Ok(());
             }
 
-            let rect = node_rect(doc, node, area, metrics);
+            let rect = offset_rect(node_rect(doc, node, area, metrics), offset, area);
             if rect.width > 0 && rect.height > 0 {
                 if let Some(bg) = node_background(node, color_mode, truecolor).or(node_style.bg) {
                     fill_rect(surface, rect, None, Some(bg));
@@ -224,11 +226,21 @@ fn paint_node(
             }
 
             // Render block children as their own boxes.
+            let mut flow_y = rect.y;
             for child_id in node.children.iter().copied() {
                 let Some(child) = doc.get_node(child_id) else {
                     continue;
                 };
                 if is_blockish(child) {
+                    let child_rect_raw = node_rect(doc, child, area, metrics);
+                    let child_rect = offset_rect(child_rect_raw, offset, area);
+                    let mut child_offset = offset;
+                    if child_rect.y < flow_y {
+                        let delta = flow_y.saturating_sub(child_rect.y) as i32;
+                        child_offset.1 = child_offset.1.saturating_add(delta);
+                    }
+                    let adjusted_rect = offset_rect(child_rect_raw, child_offset, area);
+                    flow_y = adjusted_rect.y.saturating_add(adjusted_rect.height);
                     paint_node(
                         surface,
                         images,
@@ -245,6 +257,7 @@ fn paint_node(
                         image_policy,
                         image_downgrade,
                         inline_images_supported,
+                        child_offset,
                     )?;
                 }
             }
@@ -269,6 +282,7 @@ fn paint_node(
                         image_policy,
                         image_downgrade,
                         inline_images_supported,
+                        offset,
                     )?;
                 }
             }
@@ -416,6 +430,36 @@ fn paint_inline_children(
         }
     }
     cursor
+}
+
+fn offset_rect(rect: Rect, offset: (i32, i32), area: Rect) -> Rect {
+    let x = rect.x as i32 + offset.0;
+    let y = rect.y as i32 + offset.1;
+    let rect = Rect::new(
+        x.max(0) as u16,
+        y.max(0) as u16,
+        rect.width,
+        rect.height,
+    );
+    clip_rect(rect, area)
+}
+
+fn clip_rect(mut rect: Rect, area: Rect) -> Rect {
+    if rect.x >= area.width {
+        rect.x = area.width.saturating_sub(1);
+        rect.width = 0;
+    }
+    if rect.y >= area.height {
+        rect.y = area.height.saturating_sub(1);
+        rect.height = 0;
+    }
+    if rect.x + rect.width > area.width {
+        rect.width = area.width.saturating_sub(rect.x);
+    }
+    if rect.y + rect.height > area.height {
+        rect.height = area.height.saturating_sub(rect.y);
+    }
+    rect
 }
 
 fn is_blockish(node: &Node) -> bool {

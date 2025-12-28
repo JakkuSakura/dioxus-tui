@@ -183,8 +183,8 @@ pub fn app() -> Element {
     use_effect(move || {
         let state = buffer.read().clone();
         let view = viewport.read().clone();
-        let width = ((view.width as f32) * 0.8).floor().max(1.0) as u16;
-        let height = ((view.height as f32) * 0.7).floor().max(1.0) as u16;
+        let width = ((view.width as f32) * 0.8).ceil().max(1.0) as u16;
+        let height = ((view.height as f32) * 0.7).ceil().max(1.0) as u16;
         let origin_x = view.width.saturating_sub(width) / 2;
         let origin_y = view.height.saturating_sub(height) / 2;
         let padding = 1u16;
@@ -203,7 +203,10 @@ pub fn app() -> Element {
     });
 
     let state = buffer.read().clone();
-    let rendered_lines = state.lines.iter().map(|line| rsx! { div { "{line}" } });
+    let rendered_lines = state.lines.iter().map(|line| {
+        let content = if line.is_empty() { " " } else { line.as_str() };
+        rsx! { div { "{content}" } }
+    });
 
     rsx! {
         ExampleFrame {
