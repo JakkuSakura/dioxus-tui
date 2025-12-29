@@ -3,13 +3,15 @@ use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
 use dioxus::prelude::{use_context, use_hook, use_signal, Signal, WritableExt};
+use dioxus_core::current_scope_id;
 use dioxus_html::geometry::{ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint};
 use crate::geometry::Rect;
 use dioxus_html::input_data::keyboard_types::{Code, Key, Location, Modifiers};
 use dioxus_html::input_data::{MouseButton, MouseButtonSet};
 use dioxus_html::point_interaction::SerializedPointInteraction;
 use dioxus_html::{SerializedFocusData, SerializedKeyboardData, SerializedMouseData, SerializedWheelData};
-use std::collections::HashMap;
+use dioxus_core::ScopeId;
+use std::collections::{HashMap, HashSet};
 use termwiz::input::{InputEvent, KeyCode as TermKeyCode, KeyEvent, Modifiers as TermModifiers, MouseButtons, MouseEvent};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,11 +64,24 @@ pub struct ViewportBus {
 #[derive(Clone, Default)]
 pub struct LayoutBus {
     listeners: Rc<RefCell<Vec<Option<Rc<dyn Fn(LayoutSnapshot)>>>>>,
+    registered_scopes: Rc<RefCell<HashSet<ScopeId>>>,
 }
 
 impl LayoutBus {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn register_scope(&self, scope: ScopeId) -> LayoutRegistration {
+        self.registered_scopes.borrow_mut().insert(scope);
+        LayoutRegistration {
+            scope,
+            registered_scopes: Rc::downgrade(&self.registered_scopes),
+        }
+    }
+
+    pub(crate) fn registered_scopes(&self) -> Vec<ScopeId> {
+        self.registered_scopes.borrow().iter().copied().collect()
     }
 
     pub(crate) fn subscribe(&self, listener: Rc<dyn Fn(LayoutSnapshot)>) -> LayoutSubscription {
@@ -79,7 +94,7 @@ impl LayoutBus {
         })
     }
 
-    pub fn publish(&self, rects: HashMap<u64, Rect>) {
+    pub fn publish(&self, rects: HashMap<ScopeId, Rect>) {
         let snapshot = LayoutSnapshot { rects };
         for listener in self.listeners.borrow().iter().flatten() {
             listener(snapshot.clone());
@@ -96,7 +111,21 @@ pub(crate) struct LayoutSubscriptionInner {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LayoutSnapshot {
-    pub rects: HashMap<u64, Rect>,
+    pub rects: HashMap<ScopeId, Rect>,
+}
+
+#[derive(Clone)]
+pub(crate) struct LayoutRegistration {
+    scope: ScopeId,
+    registered_scopes: Weak<RefCell<HashSet<ScopeId>>>,
+}
+
+impl Drop for LayoutRegistration {
+    fn drop(&mut self) {
+        if let Some(scopes) = self.registered_scopes.upgrade() {
+            scopes.borrow_mut().remove(&self.scope);
+        }
+    }
 }
 
 impl Drop for LayoutSubscriptionInner {
@@ -591,11 +620,11 @@ mod tests {
         }));
 
         let mut rects = HashMap::new();
-        rects.insert(7, Rect::new(3, 4, 10, 5));
+        rects.insert(ScopeId(7), Rect::new(3, 4, 10, 5));
         bus.publish(rects);
 
         let snapshot = received.borrow().clone().expect("layout snapshot");
-        assert_eq!(snapshot.rects.get(&7), Some(&Rect::new(3, 4, 10, 5)));
+        assert_eq!(snapshot.rects.get(&ScopeId(7)), Some(&Rect::new(3, 4, 10, 5)));
     }
 
     #[test]
@@ -938,34 +967,18 @@ pub fn use_viewport() -> Signal<Rect> {
     signal
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LayoutRectHandle {
-    id: u64,
-}
-
-impl LayoutRectHandle {
-    pub fn id(self) -> u64 {
-        self.id
-    }
-}
-
-pub fn use_layout_rect() -> (LayoutRectHandle, Signal<Option<Rect>>) {
+pub fn use_layout_rect() -> Signal<Option<Rect>> {
     let bus = use_context::<LayoutBus>();
-    let id = use_hook(|| next_layout_id());
+    let scope_id = use_hook(current_scope_id);
     let rect = use_signal(|| None);
     let _subscription = use_hook(|| {
         let rect = rect.clone();
         bus.subscribe(Rc::new(move |rects| {
-            *rect.write_unchecked() = rects.rects.get(&id).copied();
+            *rect.write_unchecked() = rects.rects.get(&scope_id).copied();
         }))
     });
-    (LayoutRectHandle { id }, rect)
-}
-
-fn next_layout_id() -> u64 {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT_LAYOUT_ID: AtomicU64 = AtomicU64::new(1);
-    NEXT_LAYOUT_ID.fetch_add(1, Ordering::Relaxed)
+    let _registration = use_hook(|| bus.register_scope(scope_id));
+    rect
 }
 
 #[derive(Clone)]

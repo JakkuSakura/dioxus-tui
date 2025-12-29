@@ -354,6 +354,7 @@ async fn run_tui_renderer(
                 let mut images = std::collections::VecDeque::<PlacedImage>::new();
                 last_area = Some(area);
                 if let Some(_root) = renderer.layout_root(area, metrics) {
+                    renderer.publish_layout_rects(area, metrics);
                     if let Err(err) = paint_surface(
                         &mut surface,
                         &mut images,

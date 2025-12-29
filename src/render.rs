@@ -193,35 +193,26 @@ impl DioxusRenderer {
 
     pub(crate) fn publish_layout_rects(&self, area: Rect, metrics: CellMetrics) {
         let mut rects = HashMap::new();
-        let root_id = self.doc.inner.root_node().id;
-        collect_layout_rects(self.doc.inner.as_ref(), root_id, area, metrics, &mut rects);
-        self.layout_bus.publish(rects);
-    }
-}
-
-fn collect_layout_rects(
-    doc: &blitz_dom::BaseDocument,
-    node_id: usize,
-    area: Rect,
-    metrics: CellMetrics,
-    out: &mut HashMap<u64, Rect>,
-) {
-    let Some(node) = doc.get_node(node_id) else {
-        return;
-    };
-    if let Some(attrs) = node.attrs() {
-        if let Some(attr) = attrs
-            .iter()
-            .find(|attr| attr.name.local.as_ref() == "data-layout-id")
-        {
-            if let Ok(id) = attr.value.parse::<u64>() {
-                let rect = crate::layout::node_rect(doc, node, area, metrics);
-                out.insert(id, rect);
-            }
+        for scope_id in self.layout_bus.registered_scopes() {
+            let Some(scope) = self.doc.vdom.get_scope(scope_id) else {
+                continue;
+            };
+            let Some(vnode) = scope.try_root_node() else {
+                continue;
+            };
+            let Some(element_id) = vnode.mounted_root(0, &self.doc.vdom) else {
+                continue;
+            };
+            let Some(node_id) = self.doc.vdom_state.try_element_to_node_id(element_id) else {
+                continue;
+            };
+            let Some(node) = self.doc.inner.get_node(node_id) else {
+                continue;
+            };
+            let rect = crate::layout::node_rect(self.doc.inner.as_ref(), node, area, metrics);
+            rects.insert(scope_id, rect);
         }
-    }
-    for child_id in node.children.iter().copied() {
-        collect_layout_rects(doc, child_id, area, metrics, out);
+        self.layout_bus.publish(rects);
     }
 }
 

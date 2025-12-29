@@ -38,8 +38,8 @@ pub use error::Error;
 pub use geometry::{Alignment, Rect};
 pub use hooks::{
     CaretBus, CaretCommand, CaretHandle, CursorBus, CursorCommand, CursorHandle, CursorMode,
-    CursorStyle, CursorUnit, EventData, LayoutBus, LayoutRectHandle, LayoutSnapshot, RawInputEvent,
-    TuiInputBus, ViewportBus, use_caret, use_cursor, use_keyboard_input, use_layout_rect,
+    CursorStyle, CursorUnit, EventData, LayoutBus, LayoutSnapshot, RawInputEvent, TuiInputBus,
+    ViewportBus, use_caret, use_cursor, use_keyboard_input, use_layout_rect,
     use_mouse_input, use_raw_input, use_viewport, use_wheel_input,
 };
 pub use render::TuiContext;

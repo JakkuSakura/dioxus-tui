@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use dioxus::prelude::HasKeyboardData;
 use dioxus_html::input_data::keyboard_types::Key;
-use dioxus_tui::{TuiContext, use_keyboard_input, use_caret, use_viewport, use_layout_rect};
+use dioxus_tui::{TuiContext, use_keyboard_input, use_caret, use_layout_rect};
 
 use crate::catalog::ExampleFrame;
 
@@ -181,25 +181,14 @@ fn caret_position(layout: dioxus_tui::Rect, state: &TextBuffer, padding: u16) ->
     (cursor_x, cursor_y)
 }
 
-pub fn app() -> Element {
-    let tui: TuiContext = consume_context();
-    let key_input = use_keyboard_input();
+#[component]
+fn TextareaBox(buffer: Signal<TextBuffer>) -> Element {
     let cursor_handle = use_caret();
     let cursor_handle_update = cursor_handle.clone();
-    let viewport = use_viewport();
-    let (layout_handle, layout_rect) = use_layout_rect();
-    let mut buffer = use_signal(TextBuffer::default);
-
-    use_effect(move || {
-        let Some(data) = key_input.read().clone() else {
-            return;
-        };
-        buffer.with_mut(|buf| buf.handle_key(&data.key(), &tui));
-    });
+    let layout_rect = use_layout_rect();
 
     use_effect(move || {
         let state = buffer.read().clone();
-        let _ = viewport.read().clone();
         let Some(layout) = layout_rect.read().clone() else {
             return;
         };
@@ -213,6 +202,37 @@ pub fn app() -> Element {
     let rendered_lines = state.lines.iter().map(|line| {
         let content = if line.is_empty() { " " } else { line.as_str() };
         rsx! { div { "{content}" } }
+    });
+
+    rsx! {
+        div {
+            width: "80%",
+            height: "70%",
+            padding: "1ch",
+            background_color: "#1a1b26",
+            color: "#c0caf5",
+            border_style: "solid",
+            border_width: "1px",
+            border_color: "#565f89",
+            white_space: "pre",
+            overflow: "hidden",
+            tabindex: "0",
+
+            {rendered_lines}
+        }
+    }
+}
+
+pub fn app() -> Element {
+    let tui: TuiContext = consume_context();
+    let key_input = use_keyboard_input();
+    let mut buffer = use_signal(TextBuffer::default);
+
+    use_effect(move || {
+        let Some(data) = key_input.read().clone() else {
+            return;
+        };
+        buffer.with_mut(|buf| buf.handle_key(&data.key(), &tui));
     });
 
     rsx! {
@@ -231,22 +251,7 @@ pub fn app() -> Element {
                 align_items: "center",
                 justify_content: "center",
 
-                div {
-                    width: "80%",
-                    height: "70%",
-                    padding: "1ch",
-                    background_color: "#1a1b26",
-                    color: "#c0caf5",
-                    border_style: "solid",
-                    border_width: "1px",
-                    border_color: "#565f89",
-                    white_space: "pre",
-                    overflow: "hidden",
-                    tabindex: "0",
-                    "data-layout-id": "{layout_handle.id()}",
-
-                    {rendered_lines}
-                }
+                TextareaBox { buffer }
             }
         }
     }
