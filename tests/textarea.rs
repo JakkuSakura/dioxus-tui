@@ -13,8 +13,9 @@ mod textarea_example {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use dioxus::prelude::*;
         use dioxus_html::input_data::keyboard_types::Key;
-        use dioxus_tui::{Rect, TuiContext, render};
+        use dioxus_tui::{Config, RawVirtualDom, Rect, Surface, TuiContext, render, use_layout_rect};
 
         #[test]
         fn enter_key_preserves_second_line_content() {
@@ -44,6 +45,53 @@ mod textarea_example {
 
             assert_eq!(cursor_x, layout.x + 1);
             assert_eq!(cursor_y, layout.y + 1);
+        }
+
+        fn assert_surface_matches(surface: &Surface, expected: &[&str]) {
+            let width = surface.width();
+            let height = surface.height();
+            assert_eq!(expected.len() as u16, height);
+
+            for (y, line) in expected.iter().enumerate() {
+                let expected_chars: Vec<char> = line.chars().collect();
+                for x in 0..width {
+                    let idx = y * width as usize + x as usize;
+                    let cell = surface.content[idx].ch;
+                    let expected_ch = expected_chars.get(x as usize).copied().unwrap_or(' ');
+                    assert_eq!(cell, expected_ch, "unexpected cell at ({x}, {y})");
+                }
+            }
+        }
+
+        #[component]
+        fn TextareaLayoutProbe() -> Element {
+            let value = use_signal(|| String::from("pending"));
+            let mut value_update = value.clone();
+            let layout_rect = use_layout_rect();
+            let _layout_subscription = layout_rect.read().clone();
+
+            use_effect(move || {
+                if layout_rect.read().is_some() {
+                    value_update.set(String::from("ready"));
+                }
+            });
+
+            rsx! {
+                textarea {
+                    rows: "1",
+                    cols: "10",
+                    value: value,
+                }
+            }
+        }
+
+        #[test]
+        fn textarea_effect_runs_after_layout_rect_publish() {
+            let raw = RawVirtualDom::new(TextareaLayoutProbe);
+            let surface = render::render_once(Config::default(), raw, Rect::new(0, 0, 10, 1))
+                .expect("render once");
+
+            assert_surface_matches(&surface, &["ready     "]);
         }
     }
 }

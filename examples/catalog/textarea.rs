@@ -186,6 +186,7 @@ fn TextareaBox(buffer: Signal<TextBuffer>) -> Element {
     let cursor_handle = use_caret();
     let cursor_handle_update = cursor_handle.clone();
     let layout_rect = use_layout_rect();
+    let _layout_subscription = layout_rect.read().clone();
 
     use_effect(move || {
         let state = buffer.read().clone();

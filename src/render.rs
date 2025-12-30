@@ -3,7 +3,7 @@ use std::{any::Any, rc::Rc};
 use crate::error::Result;
 use blitz_dom::Document as _;
 use blitz_traits::shell::{ColorScheme, Viewport};
-use dioxus_core::{ComponentFunction, ElementId, Event, Runtime, VirtualDom};
+use dioxus_core::{ComponentFunction, ElementId, Event, Runtime, RuntimeGuard, VirtualDom};
 use dioxus_html::PlatformEventData;
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
@@ -212,6 +212,7 @@ impl DioxusRenderer {
             let rect = crate::layout::node_rect(self.doc.inner.as_ref(), node, area, metrics);
             rects.insert(scope_id, rect);
         }
+        let _guard = RuntimeGuard::new(self.runtime.clone());
         self.layout_bus.publish(rects);
     }
 }
@@ -263,8 +264,11 @@ where
     renderer.update();
     let mut surface = Surface::new(area.width, area.height);
     let mut images = std::collections::VecDeque::<PlacedImage>::new();
-    let _ = renderer.layout_root(area, metrics);
-    renderer.publish_layout_rects(area, metrics);
+    for _ in 0..2 {
+        let _ = renderer.layout_root(area, metrics);
+        renderer.publish_layout_rects(area, metrics);
+        renderer.update();
+    }
     paint_surface(
         &mut surface,
         &mut images,
