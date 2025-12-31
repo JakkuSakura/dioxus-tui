@@ -12,6 +12,29 @@ struct TextBuffer {
     col: usize,
 }
 
+#[derive(Clone)]
+struct CaretDebugInfo {
+    layout: dioxus_tui::Rect,
+    has_layout: bool,
+    caret: (u16, u16),
+    has_caret: bool,
+    row: usize,
+    col: usize,
+}
+
+impl Default for CaretDebugInfo {
+    fn default() -> Self {
+        Self {
+            layout: dioxus_tui::Rect::new(0, 0, 0, 0),
+            has_layout: false,
+            caret: (0, 0),
+            has_caret: false,
+            row: 0,
+            col: 0,
+        }
+    }
+}
+
 impl Default for TextBuffer {
     fn default() -> Self {
         Self {
@@ -182,21 +205,36 @@ fn caret_position(layout: dioxus_tui::Rect, state: &TextBuffer, padding: u16) ->
 }
 
 #[component]
-fn TextareaBox(buffer: Signal<TextBuffer>) -> Element {
+fn TextareaBox(buffer: Signal<TextBuffer>, debug_info: Signal<CaretDebugInfo>) -> Element {
     let cursor_handle = use_caret();
     let cursor_handle_update = cursor_handle.clone();
     let layout_rect = use_layout_rect();
     let _layout_subscription = layout_rect.read().clone();
+    let mut debug_update = debug_info.clone();
 
     use_effect(move || {
         let state = buffer.read().clone();
-        let Some(layout) = layout_rect.read().clone() else {
-            return;
-        };
+        let layout = layout_rect.read().clone();
         let padding = 1u16;
-        let (cursor_x, cursor_y) = caret_position(layout, &state, padding);
-        cursor_handle_update.show();
-        cursor_handle_update.set_cell_position(cursor_x, cursor_y);
+        let (caret, has_caret) = if let Some(layout) = layout {
+            let caret = caret_position(layout, &state, padding);
+            cursor_handle_update.show();
+            cursor_handle_update.set_cell_position(caret.0, caret.1);
+            (caret, true)
+        } else {
+            ((0, 0), false)
+        };
+        let (layout, has_layout) = layout.map_or((dioxus_tui::Rect::new(0, 0, 0, 0), false), |rect| {
+            (rect, true)
+        });
+        debug_update.set(CaretDebugInfo {
+            layout,
+            has_layout,
+            caret,
+            has_caret,
+            row: state.row,
+            col: state.col,
+        });
     });
 
     let state = buffer.read().clone();
@@ -228,6 +266,7 @@ pub fn app() -> Element {
     let tui: TuiContext = consume_context();
     let key_input = use_keyboard_input();
     let mut buffer = use_signal(TextBuffer::default);
+    let debug_info = use_signal(CaretDebugInfo::default);
 
     use_effect(move || {
         let Some(data) = key_input.read().clone() else {
@@ -236,12 +275,15 @@ pub fn app() -> Element {
         buffer.with_mut(|buf| buf.handle_key(&data.key(), &tui));
     });
 
+    let debug = debug_info.read().clone();
+
     rsx! {
         ExampleFrame {
             title: "Textarea",
             help: &[
                 "Type to insert text. Enter makes a new line.",
                 "Use arrow keys, Backspace, Delete. Esc to quit.",
+                "Caret uses terminal cursor; debug info renders below.",
             ],
 
             div {
@@ -252,7 +294,28 @@ pub fn app() -> Element {
                 align_items: "center",
                 justify_content: "center",
 
-                TextareaBox { buffer }
+                TextareaBox { buffer, debug_info }
+
+                div {
+                    margin_top: "1ch",
+                    width: "80%",
+                    color: "#a9b1d6",
+                    "Cursor row/col: {debug.row}, {debug.col}"
+                }
+                if debug.has_layout {
+                    div {
+                        width: "80%",
+                        color: "#a9b1d6",
+                        "Layout rect: {debug.layout.x},{debug.layout.y} {debug.layout.width}x{debug.layout.height}"
+                    }
+                }
+                if debug.has_caret {
+                    div {
+                        width: "80%",
+                        color: "#a9b1d6",
+                        "Caret cell: {debug.caret.0},{debug.caret.1}"
+                    }
+                }
             }
         }
     }
