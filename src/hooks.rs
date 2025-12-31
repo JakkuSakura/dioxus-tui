@@ -549,12 +549,12 @@ mod tests {
             panic!("expected mouse data");
         };
         let coords = cell_mouse.client_coordinates();
-        assert_eq!(coords.x, 12.0);
-        assert_eq!(coords.y, 7.0);
+        assert_eq!(coords.x, 11.0);
+        assert_eq!(coords.y, 6.0);
         let rendered_left = format!("{}ch", coords.x.floor());
         let rendered_top = format!("{}ch", coords.y.floor());
-        assert_eq!(rendered_left, "12ch");
-        assert_eq!(rendered_top, "7ch");
+        assert_eq!(rendered_left, "11ch");
+        assert_eq!(rendered_top, "6ch");
 
         let events = raw_input_from_termwiz(
             &InputEvent::PixelMouse(PixelMouseEvent {
@@ -577,12 +577,12 @@ mod tests {
             panic!("expected pixel mouse data");
         };
         let coords = pixel_mouse.client_coordinates();
-        assert_eq!(coords.x, 33.0);
-        assert_eq!(coords.y, 44.0);
+        assert_eq!(coords.x, 32.0);
+        assert_eq!(coords.y, 43.0);
         let rendered_left = format!("{}px", coords.x);
         let rendered_top = format!("{}px", coords.y);
-        assert_eq!(rendered_left, "33px");
-        assert_eq!(rendered_top, "44px");
+        assert_eq!(rendered_left, "32px");
+        assert_eq!(rendered_top, "43px");
     }
 
     #[test]

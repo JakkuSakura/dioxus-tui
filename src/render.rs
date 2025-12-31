@@ -408,19 +408,63 @@ pub(crate) fn apply_caret<T: Terminal>(
     term: &mut BufferedTerminal<T>,
     cursor: &CaretState,
 ) {
-    let visibility = if cursor.visible {
+    for change in caret_changes(cursor.visible, cursor.position) {
+        term.add_change(change);
+    }
+    let _ = term.flush();
+}
+
+pub fn caret_changes(visible: bool, position: Option<(u16, u16)>) -> Vec<Change> {
+    let visibility = if visible {
         termwiz::surface::CursorVisibility::Visible
     } else {
         termwiz::surface::CursorVisibility::Hidden
     };
-    term.add_change(Change::CursorVisibility(visibility));
-    if let Some((x, y)) = cursor.position {
-        term.add_change(Change::CursorPosition {
+    let mut changes = vec![Change::CursorVisibility(visibility)];
+    if let Some((x, y)) = position {
+        changes.push(Change::CursorPosition {
             x: Position::Absolute(x as usize),
             y: Position::Absolute(y as usize),
         });
     }
-    let _ = term.flush();
+    changes
+}
+
+pub fn apply_cursor_overlay_at(
+    surface: &mut Surface,
+    position: (f32, f32),
+    unit: CursorUnit,
+    style: CursorStyle,
+    cfg: Config,
+    capabilities: &TerminalCapabilities,
+    metrics: CellMetrics,
+) {
+    let cursor = CursorState {
+        visible: true,
+        style,
+        mode: crate::hooks::CursorMode::Manual,
+        unit,
+        position: Some(position),
+    };
+    apply_cursor_overlay(surface, &cursor, cfg, capabilities, metrics);
+}
+
+pub fn apply_caret_overlay_at(
+    surface: &mut Surface,
+    position: (u16, u16),
+    cfg: Config,
+    capabilities: &TerminalCapabilities,
+    metrics: CellMetrics,
+) {
+    apply_cursor_overlay_at(
+        surface,
+        (position.0 as f32, position.1 as f32),
+        CursorUnit::Cell,
+        CursorStyle::Beam,
+        cfg,
+        capabilities,
+        metrics,
+    );
 }
 
 fn palette_entry_to_attr(entry: PaletteEntry, color_mode: ColorMode, truecolor: bool) -> ColorAttribute {
