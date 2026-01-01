@@ -508,7 +508,7 @@ mod tests {
     use super::*;
     use dioxus_html::input_data::keyboard_types::Code;
     use dioxus_html::point_interaction::InteractionLocation;
-    use dioxus::prelude::HasKeyboardData;
+    use dioxus::prelude::*;
     use std::cell::RefCell;
     use std::rc::Rc;
     use termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers, MouseButtons, MouseEvent, PixelMouseEvent};
@@ -642,6 +642,13 @@ mod tests {
             events.borrow().as_slice(),
             &[CaretCommand::SetPosition(4, 2)]
         );
+    }
+
+    #[test]
+    fn caret_relative_position_uses_layout_offset() {
+        let layout = Rect::new(10, 5, 20, 10);
+        let absolute = resolve_relative_position(layout, 2, 3);
+        assert_eq!(absolute, (12, 8));
     }
 }
 
@@ -1118,20 +1125,25 @@ impl CaretHandle {
         let Some(layout) = self.layout_rect.read().clone() else {
             return None;
         };
-        let max_x = layout.width.saturating_sub(1);
-        let max_y = layout.height.saturating_sub(1);
-        let rel_x = x.min(max_x);
-        let rel_y = y.min(max_y);
-        Some((
-            layout.x.saturating_add(rel_x),
-            layout.y.saturating_add(rel_y),
-        ))
+        Some(resolve_relative_position(layout, x, y))
     }
+}
+
+fn resolve_relative_position(layout: Rect, x: u16, y: u16) -> (u16, u16) {
+    let max_x = layout.width.saturating_sub(1);
+    let max_y = layout.height.saturating_sub(1);
+    let rel_x = x.min(max_x);
+    let rel_y = y.min(max_y);
+    (
+        layout.x.saturating_add(rel_x),
+        layout.y.saturating_add(rel_y),
+    )
 }
 
 pub fn use_caret() -> CaretHandle {
     let bus = use_context::<CaretBus>();
     let layout_rect = use_layout_rect();
+    let _layout_subscription = layout_rect.read().clone();
     let relative_position = use_hook(|| Rc::new(RefCell::new(None::<(u16, u16)>)));
     {
         let layout_rect = layout_rect.clone();

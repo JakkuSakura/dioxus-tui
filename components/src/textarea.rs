@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_html::input_data::keyboard_types::Key;
-use dioxus_tui::{CaretMode, use_caret};
+use dioxus_tui::{CaretMode, use_caret, use_layout_rect};
 
 #[derive(Clone, PartialEq)]
 pub enum TextareaAction {
@@ -211,14 +211,21 @@ pub fn TextareaView(props: TextareaViewProps) -> Element {
     } = props;
     let caret_handle = use_caret();
     let caret_handle_update = caret_handle.clone();
+    let layout_rect = use_layout_rect();
+    let _layout_subscription = layout_rect.read().clone();
     use_effect(move || {
         let state = buffer.read().clone();
+        let layout = layout_rect.read().clone();
         caret_handle_update.set_mode(caret_mode);
-        caret_handle_update.show();
-        caret_handle_update.set_cell_position(
-            padding.saturating_add(state.col as u16),
-            padding.saturating_add(state.row as u16),
-        );
+        if layout.is_some() {
+            caret_handle_update.show();
+            caret_handle_update.set_cell_position(
+                padding.saturating_add(state.col as u16),
+                padding.saturating_add(state.row as u16),
+            );
+        } else {
+            caret_handle_update.hide();
+        }
     });
 
     let state = buffer.read().clone();
