@@ -294,8 +294,7 @@ pub fn app() -> Element {
             return;
         };
         if data.key() == Key::F2 {
-            let next = !*show_overlay_update.read();
-            show_overlay_update.set(next);
+            show_overlay_update.with_mut(|val| *val = !*val);
             return;
         }
         buffer.with_mut(|buf| buf.handle_key(&data.key(), &tui));
@@ -309,7 +308,7 @@ pub fn app() -> Element {
             help: &[
                 "Type to insert text. Enter makes a new line.",
                 "Use arrow keys, Backspace, Delete. Esc to quit.",
-                "Caret uses terminal cursor; F2 toggles overlay.",
+                "Physical caret; F2 toggles overlay.",
             ],
 
             div {
