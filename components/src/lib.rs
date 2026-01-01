@@ -1,9 +1,14 @@
 use dioxus::prelude::*;
-use dioxus_html::events::keyboard::HasKeyboardData;
 use dioxus_html::input_data::keyboard_types::Key;
 use dioxus_html::point_interaction::InteractionElementOffset;
 
-#[derive(Props, PartialEq)]
+pub mod textarea;
+pub use textarea::{
+    TextareaAction, TextareaView, TextareaViewModel, TextareaViewProps, TextBuffer,
+    use_textarea_view_model,
+};
+
+#[derive(Clone, Props, PartialEq)]
 pub struct ScrollbarViewProps {
     pub content_rows: usize,
     pub viewport_rows: usize,
@@ -38,7 +43,7 @@ pub fn ScrollbarView(props: ScrollbarViewProps) -> Element {
     let mut dragging = use_signal(|| false);
     let mut drag_anchor = use_signal(|| 0.0f64);
 
-    let set_scroll = move |row: usize| {
+    let mut set_scroll = move |row: usize| {
         let row = row.min(max_scroll);
         if scroll_row == Some(row) {
             return;

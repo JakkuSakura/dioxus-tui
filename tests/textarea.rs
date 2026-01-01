@@ -20,23 +20,21 @@ mod textarea_example {
         use dioxus_core::VirtualDom;
         use dioxus_native_dom::{DioxusDocument, DocumentConfig};
         use dioxus_tui::layout::node_rect;
-        use dioxus_tui::{CellMetrics, Config, RawVirtualDom, Rect, Surface, TerminalCapabilities, TuiContext, render};
+        use dioxus_tui::{CellMetrics, Config, RawVirtualDom, Rect, Surface, TerminalCapabilities, render};
         use dioxus_tui::capabilities::InlineImageProtocol;
         use dioxus_tui::render::{apply_caret_overlay_at, caret_changes};
         use termwiz::color::{ColorAttribute, SrgbaTuple};
 
         #[test]
         fn enter_key_preserves_second_line_content() {
-            let (tx, _rx) = render::channel();
-            let tui = TuiContext::new(tx);
             let mut buffer = TextBuffer::default();
 
             for ch in ["H", "e", "l", "l", "o"] {
-                buffer.handle_key(&Key::Character(ch.to_string()), &tui);
+                buffer.handle_key(&Key::Character(ch.to_string()));
             }
-            buffer.handle_key(&Key::Enter, &tui);
+            buffer.handle_key(&Key::Enter);
             for ch in ["W", "o", "r", "l", "d"] {
-                buffer.handle_key(&Key::Character(ch.to_string()), &tui);
+                buffer.handle_key(&Key::Character(ch.to_string()));
             }
 
             assert_eq!(buffer.lines, vec!["Hello", "World"]);
