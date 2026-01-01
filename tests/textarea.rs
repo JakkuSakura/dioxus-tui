@@ -23,6 +23,7 @@ mod textarea_example {
         use dioxus_tui::{CellMetrics, Config, RawVirtualDom, Rect, Surface, TerminalCapabilities, TuiContext, render};
         use dioxus_tui::capabilities::InlineImageProtocol;
         use dioxus_tui::render::{apply_caret_overlay_at, caret_changes};
+        use termwiz::color::{ColorAttribute, SrgbaTuple};
 
         #[test]
         fn enter_key_preserves_second_line_content() {
@@ -205,10 +206,23 @@ mod textarea_example {
                 cell_w_px: 8.0,
                 cell_h_px: 16.0,
             };
+            let cfg = Config::default();
+            let palette_roles = dioxus_tui::PaletteRoles::default();
+            let color_mode = dioxus_tui::ColorMode::Rgb;
+            let default_fg = palette_entry_to_attr(
+                palette_roles.fg_primary,
+                color_mode,
+                capabilities.truecolor,
+            );
+            let default_bg = palette_entry_to_attr(
+                palette_roles.bg_primary,
+                color_mode,
+                capabilities.truecolor,
+            );
             apply_caret_overlay_at(
                 &mut surface,
                 caret_pos,
-                Config::default(),
+                cfg,
                 &capabilities,
                 metrics,
             );
@@ -223,11 +237,46 @@ mod textarea_example {
                     assert_eq!(actual, expected_ch, "unexpected cell at ({x}, {y})");
 
                     if (x as u16, y as u16) == caret_pos {
-                        assert_eq!(surface.content[idx].fg, baseline_bg[idx]);
-                        assert_eq!(surface.content[idx].bg, baseline_fg[idx]);
+                        let base_fg = baseline_fg[idx].unwrap_or(default_fg);
+                        let base_bg = baseline_bg[idx].unwrap_or(default_bg);
+                        assert_eq!(surface.content[idx].fg, Some(base_bg));
+                        assert_eq!(surface.content[idx].bg, Some(base_fg));
                     } else {
                         assert_eq!(surface.content[idx].fg, baseline_fg[idx]);
                         assert_eq!(surface.content[idx].bg, baseline_bg[idx]);
+                    }
+                }
+            }
+        }
+
+        fn palette_entry_to_attr(
+            entry: dioxus_tui::PaletteEntry,
+            color_mode: dioxus_tui::ColorMode,
+            truecolor: bool,
+        ) -> ColorAttribute {
+            match entry {
+                dioxus_tui::PaletteEntry::Ansi(idx) | dioxus_tui::PaletteEntry::Palette256(idx) => {
+                    ColorAttribute::PaletteIndex(idx)
+                }
+                dioxus_tui::PaletteEntry::Rgb(r, g, b) => {
+                    let srgb = SrgbaTuple::from((r, g, b));
+                    let palette_idx_256 =
+                        16 + 36 * (r as u16 / 51) as u8 + 6 * (g as u16 / 51) as u8 + (b as u16 / 51) as u8;
+                    let base_idx = (if r >= 128 { 1 } else { 0 })
+                        | (if g >= 128 { 2 } else { 0 })
+                        | (if b >= 128 { 4 } else { 0 });
+                    match color_mode {
+                        dioxus_tui::ColorMode::BaseColors => ColorAttribute::PaletteIndex(base_idx),
+                        dioxus_tui::ColorMode::Ansi => {
+                            ColorAttribute::TrueColorWithPaletteFallback(srgb, palette_idx_256)
+                        }
+                        dioxus_tui::ColorMode::Rgb => {
+                            if truecolor {
+                                ColorAttribute::TrueColorWithDefaultFallback(srgb)
+                            } else {
+                                ColorAttribute::TrueColorWithPaletteFallback(srgb, palette_idx_256)
+                            }
+                        }
                     }
                 }
             }
