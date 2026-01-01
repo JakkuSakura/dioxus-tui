@@ -22,6 +22,8 @@ pub mod render;
 pub mod scene;
 pub mod styles;
 pub mod surface;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
 
 #[cfg(feature = "blitz")]
 mod gui;

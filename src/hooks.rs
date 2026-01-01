@@ -65,6 +65,7 @@ pub struct ViewportBus {
 pub struct LayoutBus {
     listeners: Rc<RefCell<Vec<Option<Rc<dyn Fn(LayoutSnapshot)>>>>>,
     registered_scopes: Rc<RefCell<HashSet<ScopeId>>>,
+    last_snapshot: Rc<RefCell<Option<LayoutSnapshot>>>,
 }
 
 impl LayoutBus {
@@ -74,14 +75,21 @@ impl LayoutBus {
 
     pub(crate) fn register_scope(&self, scope: ScopeId) -> LayoutRegistration {
         self.registered_scopes.borrow_mut().insert(scope);
-        LayoutRegistration {
+        Rc::new(LayoutRegistrationInner {
             scope,
             registered_scopes: Rc::downgrade(&self.registered_scopes),
-        }
+        })
     }
 
     pub(crate) fn registered_scopes(&self) -> Vec<ScopeId> {
         self.registered_scopes.borrow().iter().copied().collect()
+    }
+
+    pub(crate) fn last_rect(&self, scope: ScopeId) -> Option<Rect> {
+        self.last_snapshot
+            .borrow()
+            .as_ref()
+            .and_then(|snapshot| snapshot.rects.get(&scope).copied())
     }
 
     pub(crate) fn subscribe(&self, listener: Rc<dyn Fn(LayoutSnapshot)>) -> LayoutSubscription {
@@ -96,6 +104,7 @@ impl LayoutBus {
 
     pub fn publish(&self, rects: HashMap<ScopeId, Rect>) {
         let snapshot = LayoutSnapshot { rects };
+        *self.last_snapshot.borrow_mut() = Some(snapshot.clone());
         for listener in self.listeners.borrow().iter().flatten() {
             listener(snapshot.clone());
         }
@@ -114,13 +123,14 @@ pub struct LayoutSnapshot {
     pub rects: HashMap<ScopeId, Rect>,
 }
 
-#[derive(Clone)]
-pub(crate) struct LayoutRegistration {
+pub(crate) type LayoutRegistration = Rc<LayoutRegistrationInner>;
+
+pub(crate) struct LayoutRegistrationInner {
     scope: ScopeId,
     registered_scopes: Weak<RefCell<HashSet<ScopeId>>>,
 }
 
-impl Drop for LayoutRegistration {
+impl Drop for LayoutRegistrationInner {
     fn drop(&mut self) {
         if let Some(scopes) = self.registered_scopes.upgrade() {
             scopes.borrow_mut().remove(&self.scope);
@@ -977,7 +987,8 @@ pub fn use_viewport() -> Signal<Rect> {
 pub fn use_layout_rect() -> Signal<Option<Rect>> {
     let bus = use_context::<LayoutBus>();
     let scope_id = use_hook(current_scope_id);
-    let rect = use_signal(|| None);
+    let initial_rect = bus.last_rect(scope_id);
+    let rect = use_signal(|| initial_rect);
     let _subscription = use_hook(|| {
         let rect = rect.clone();
         bus.subscribe(Rc::new(move |rects| {
@@ -1148,6 +1159,9 @@ pub fn use_caret() -> CaretHandle {
     let scope_id = use_hook(current_scope_id);
     let relative_position = use_hook(|| Rc::new(RefCell::new(None::<(u16, u16)>)));
     let last_layout = use_hook(|| Rc::new(RefCell::new(None::<Rect>)));
+    if let Some(layout) = layout_bus.last_rect(scope_id) {
+        *last_layout.borrow_mut() = Some(layout);
+    }
     let _layout_registration = use_hook(|| layout_bus.register_scope(scope_id));
     let _layout_subscription = use_hook(|| {
         let relative_position = relative_position.clone();

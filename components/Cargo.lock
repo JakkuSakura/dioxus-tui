@@ -1122,14 +1122,9 @@ dependencies = [
 name = "dioxus-tui-components"
 version = "0.1.0"
 dependencies = [
- "blitz-dom",
- "blitz-traits",
  "dioxus",
- "dioxus-core",
  "dioxus-html",
- "dioxus-native-dom",
  "dioxus-tui",
- "termwiz",
 ]
 
 [[package]]

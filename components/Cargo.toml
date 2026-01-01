@@ -10,8 +10,4 @@ dioxus-html = { version = "0.7.2" }
 dioxus-tui = { path = ".." }
 
 [dev-dependencies]
-dioxus-core = { version = "0.7.2" }
-dioxus-native-dom = "0.7.2"
-blitz-dom = { version = "0.2.2", default-features = false, features = ["system_fonts"] }
-blitz-traits = { version = "0.2.0" }
-termwiz = "0.23"
+dioxus-tui = { path = "..", features = ["test-utils"] }
