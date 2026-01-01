@@ -185,6 +185,16 @@ mod textarea_example {
             );
             let caret_pos = caret_position(rect, &TextBuffer::default(), 1);
             let baseline: Vec<char> = surface.content.iter().map(|cell| cell.ch).collect();
+            let baseline_fg: Vec<Option<termwiz::color::ColorAttribute>> = surface
+                .content
+                .iter()
+                .map(|cell| cell.fg)
+                .collect();
+            let baseline_bg: Vec<Option<termwiz::color::ColorAttribute>> = surface
+                .content
+                .iter()
+                .map(|cell| cell.bg)
+                .collect();
 
             let capabilities = TerminalCapabilities {
                 truecolor: false,
@@ -209,12 +219,16 @@ mod textarea_example {
                 for x in 0..width {
                     let idx = y * width + x;
                     let actual = surface.content[idx].ch;
-                    let expected = if (x as u16, y as u16) == caret_pos {
-                        '▏'
+                    let expected_ch = baseline[idx];
+                    assert_eq!(actual, expected_ch, "unexpected cell at ({x}, {y})");
+
+                    if (x as u16, y as u16) == caret_pos {
+                        assert_eq!(surface.content[idx].fg, baseline_bg[idx]);
+                        assert_eq!(surface.content[idx].bg, baseline_fg[idx]);
                     } else {
-                        baseline[idx]
-                    };
-                    assert_eq!(actual, expected, "unexpected cell at ({x}, {y})");
+                        assert_eq!(surface.content[idx].fg, baseline_fg[idx]);
+                        assert_eq!(surface.content[idx].bg, baseline_bg[idx]);
+                    }
                 }
             }
         }

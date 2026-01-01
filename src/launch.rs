@@ -7,11 +7,11 @@ use crate::cell_render::paint_surface;
 use crate::config::RenderingMode;
 use crate::event::{EventContext, EventDispatcher};
 use crate::geometry::Rect;
-use crate::hooks::{CaretCommand, CursorCommand, CursorMode, CursorUnit};
+use crate::hooks::{CaretCommand, CaretMode, CursorCommand, CursorMode, CursorUnit};
 use crate::image::PlacedImage;
 use crate::render::{
-    apply_caret, apply_cursor_overlay, flush_surface, set_sgr_pixel_mouse, terminal_size,
-    CaretState, DioxusRenderer, InputEvent,
+    apply_caret, apply_cursor_overlay, apply_hidden_caret, apply_soft_caret_overlay,
+    flush_surface, set_sgr_pixel_mouse, terminal_size, CaretState, DioxusRenderer, InputEvent,
 };
 use crate::scene::CellMetrics;
 use crate::surface::Surface;
@@ -157,6 +157,7 @@ async fn run_tui_renderer(
                     state.position = Some((x, y));
                     state.visible = true;
                 }
+                CaretCommand::SetMode(mode) => state.mode = mode,
             }
         }))
     };
@@ -400,6 +401,15 @@ async fn run_tui_renderer(
                         metrics,
                     );
                 }
+                let caret_snapshot = caret_state.borrow().clone();
+                if caret_snapshot.mode == CaretMode::Soft && caret_snapshot.visible {
+                    apply_soft_caret_overlay(
+                        &mut surface,
+                        caret_snapshot.position,
+                        cfg,
+                        &capabilities,
+                    );
+                }
                 flush_surface(
                     term,
                     &surface,
@@ -409,7 +419,12 @@ async fn run_tui_renderer(
                     last_images.as_ref(),
                     metrics,
                 )?;
-                apply_caret(term, &caret_state.borrow());
+                let caret_snapshot = caret_state.borrow().clone();
+                if caret_snapshot.mode == CaretMode::Physical {
+                    apply_caret(term, &caret_snapshot);
+                } else {
+                    apply_hidden_caret(term);
+                }
                 last_surface = Some(surface);
                 last_images = Some(images);
             }

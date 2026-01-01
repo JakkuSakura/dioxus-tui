@@ -53,8 +53,8 @@ Blitz modes are explicit and compile-time gated:
   - Otherwise fall back to the TUI renderer.
 
 Rationale: `render()` and `launch*()` have very different output contracts. `render()` is stdout-friendly (no alternate
-screen and no cursor-addressing that overwrites existing output), while `launch*()` is an event loop that owns the
-terminal.
+screen and no physical caret addressing that overwrites existing output), while `launch*()` is an event loop that owns
+the terminal.
 
 ## Images
 

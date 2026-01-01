@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use dioxus::prelude::HasKeyboardData;
 use dioxus_html::input_data::keyboard_types::Key;
-use dioxus_tui::{TuiContext, use_keyboard_input, use_caret, use_layout_rect};
+use dioxus_tui::{CaretMode, TuiContext, use_keyboard_input, use_caret, use_layout_rect};
 
 use crate::catalog::ExampleFrame;
 
@@ -20,7 +20,7 @@ struct CaretDebugInfo {
     has_caret: bool,
     row: usize,
     col: usize,
-    overlay: bool,
+    mode: CaretMode,
 }
 
 impl Default for CaretDebugInfo {
@@ -32,7 +32,7 @@ impl Default for CaretDebugInfo {
             has_caret: false,
             row: 0,
             col: 0,
-            overlay: false,
+            mode: CaretMode::Physical,
         }
     }
 }
@@ -212,17 +212,21 @@ fn TextareaBox(buffer: Signal<TextBuffer>, debug_info: Signal<CaretDebugInfo>) -
     let cursor_handle_update = cursor_handle.clone();
     let layout_rect = use_layout_rect();
     let _layout_subscription = layout_rect.read().clone();
-    let show_overlay = use_context::<Signal<bool>>();
+    let caret_mode = use_context::<Signal<CaretMode>>();
     let mut debug_update = debug_info.clone();
 
     use_effect(move || {
         let state = buffer.read().clone();
         let layout = layout_rect.read().clone();
         let padding = 1u16;
+        cursor_handle_update.set_mode(*caret_mode.read());
         let (caret, has_caret) = if let Some(layout) = layout {
             let caret = caret_position(layout, &state, padding);
             cursor_handle_update.show();
-            cursor_handle_update.set_cell_position(caret.0, caret.1);
+            cursor_handle_update.set_cell_position(
+                padding.saturating_add(state.col as u16),
+                padding.saturating_add(state.row as u16),
+            );
             (caret, true)
         } else {
             ((0, 0), false)
@@ -237,26 +241,12 @@ fn TextareaBox(buffer: Signal<TextBuffer>, debug_info: Signal<CaretDebugInfo>) -
             has_caret,
             row: state.row,
             col: state.col,
-            overlay: *show_overlay.read(),
+            mode: *caret_mode.read(),
         });
     });
 
     let state = buffer.read().clone();
-    let mut rendered_lines: Vec<String> = state.lines.clone();
-    if *show_overlay.read() {
-        if let Some(line) = rendered_lines.get_mut(state.row) {
-            let line_len = TextBuffer::line_len(line);
-            let col = state.col.min(line_len);
-            if col < line_len {
-                let start = TextBuffer::byte_index(line, col);
-                let end = TextBuffer::byte_index(line, col + 1);
-                line.replace_range(start..end, "▏");
-            } else {
-                line.push('▏');
-            }
-        }
-    }
-    let rendered_lines = rendered_lines.iter().map(|line| {
+    let rendered_lines = state.lines.iter().map(|line| {
         let content = if line.is_empty() { " " } else { line.as_str() };
         rsx! { div { "{content}" } }
     });
@@ -285,22 +275,31 @@ pub fn app() -> Element {
     let key_input = use_keyboard_input();
     let mut buffer = use_signal(TextBuffer::default);
     let debug_info = use_signal(CaretDebugInfo::default);
-    let show_overlay = use_signal(|| true);
-    let mut show_overlay_update = show_overlay.clone();
-    provide_context(show_overlay);
+    let caret_mode = use_signal(|| CaretMode::Physical);
+    let mut caret_mode_update = caret_mode.clone();
+    provide_context(caret_mode);
 
     use_effect(move || {
         let Some(data) = key_input.read().clone() else {
             return;
         };
         if data.key() == Key::F2 {
-            show_overlay_update.with_mut(|val| *val = !*val);
+            caret_mode_update.with_mut(|mode| {
+                *mode = match *mode {
+                    CaretMode::Physical => CaretMode::Soft,
+                    CaretMode::Soft => CaretMode::Physical,
+                };
+            });
             return;
         }
         buffer.with_mut(|buf| buf.handle_key(&data.key(), &tui));
     });
 
     let debug = debug_info.read().clone();
+    let caret_mode_label = match debug.mode {
+        CaretMode::Physical => "physical",
+        CaretMode::Soft => "soft",
+    };
 
     rsx! {
         ExampleFrame {
@@ -308,7 +307,7 @@ pub fn app() -> Element {
             help: &[
                 "Type to insert text. Enter makes a new line.",
                 "Use arrow keys, Backspace, Delete. Esc to quit.",
-                "Physical caret; F2 toggles overlay.",
+                "F2 toggles caret mode (soft/physical).",
             ],
 
             div {
@@ -330,7 +329,7 @@ pub fn app() -> Element {
                 div {
                     width: "80%",
                     color: "#a9b1d6",
-                    "Overlay caret: {debug.overlay}"
+                    "Caret mode: {caret_mode_label}"
                 }
                 if debug.has_layout {
                     div {

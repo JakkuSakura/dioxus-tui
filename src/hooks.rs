@@ -2,7 +2,7 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
-use dioxus::prelude::{use_context, use_hook, use_signal, Signal, WritableExt};
+use dioxus::prelude::{use_context, use_hook, use_signal, ReadableExt, Signal, WritableExt};
 use dioxus_core::current_scope_id;
 use dioxus_html::geometry::{ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint};
 use crate::geometry::Rect;
@@ -1018,10 +1018,17 @@ pub fn use_cursor() -> CursorHandle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaretMode {
+    Physical,
+    Soft,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaretCommand {
     Show,
     Hide,
     SetPosition(u16, u16),
+    SetMode(CaretMode),
 }
 
 #[derive(Clone, Default)]
@@ -1071,6 +1078,7 @@ impl Drop for CaretSubscriptionInner {
 #[derive(Clone)]
 pub struct CaretHandle {
     bus: CaretBus,
+    layout_rect: Signal<Option<Rect>>,
 }
 
 impl CaretHandle {
@@ -1083,13 +1091,45 @@ impl CaretHandle {
     }
 
     pub fn set_cell_position(&self, x: u16, y: u16) {
+        let (abs_x, abs_y) = self.resolve_relative(x, y);
+        self.bus.publish(CaretCommand::SetPosition(abs_x, abs_y));
+    }
+
+    pub fn set_absolute_position(&self, x: u16, y: u16) {
         self.bus.publish(CaretCommand::SetPosition(x, y));
+    }
+
+    pub fn set_mode(&self, mode: CaretMode) {
+        self.bus.publish(CaretCommand::SetMode(mode));
+    }
+
+    pub fn use_physical(&self) {
+        self.bus.publish(CaretCommand::SetMode(CaretMode::Physical));
+    }
+
+    pub fn use_soft(&self) {
+        self.bus.publish(CaretCommand::SetMode(CaretMode::Soft));
+    }
+
+    fn resolve_relative(&self, x: u16, y: u16) -> (u16, u16) {
+        let Some(layout) = self.layout_rect.read().clone() else {
+            return (x, y);
+        };
+        let max_x = layout.width.saturating_sub(1);
+        let max_y = layout.height.saturating_sub(1);
+        let rel_x = x.min(max_x);
+        let rel_y = y.min(max_y);
+        (
+            layout.x.saturating_add(rel_x),
+            layout.y.saturating_add(rel_y),
+        )
     }
 }
 
 pub fn use_caret() -> CaretHandle {
     let bus = use_context::<CaretBus>();
-    CaretHandle { bus }
+    let layout_rect = use_layout_rect();
+    CaretHandle { bus, layout_rect }
 }
 
 fn wheel_delta(buttons: MouseButtons) -> (f64, f64) {

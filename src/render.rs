@@ -20,7 +20,8 @@ use crate::capabilities::termwiz_capabilities;
 use crate::config::{ColorMode, Config, PaletteEntry};
 use crate::geometry::Rect;
 use crate::hooks::{
-    CaretBus, CursorBus, CursorStyle, CursorUnit, CursorState, LayoutBus, TuiInputBus, ViewportBus,
+    CaretBus, CaretMode, CursorBus, CursorStyle, CursorUnit, CursorState, LayoutBus, TuiInputBus,
+    ViewportBus,
 };
 use crate::layout::resolve_document;
 use crate::scene::CellMetrics;
@@ -318,6 +319,7 @@ where
 pub(crate) struct CaretState {
     pub(crate) visible: bool,
     pub(crate) position: Option<(u16, u16)>,
+    pub(crate) mode: CaretMode,
 }
 
 impl Default for CaretState {
@@ -325,6 +327,7 @@ impl Default for CaretState {
         Self {
             visible: false,
             position: None,
+            mode: CaretMode::Physical,
         }
     }
 }
@@ -414,6 +417,13 @@ pub(crate) fn apply_caret<T: Terminal>(
     let _ = term.flush();
 }
 
+pub(crate) fn apply_hidden_caret<T: Terminal>(term: &mut BufferedTerminal<T>) {
+    for change in caret_changes(false, None) {
+        term.add_change(change);
+    }
+    let _ = term.flush();
+}
+
 pub fn caret_changes(visible: bool, position: Option<(u16, u16)>) -> Vec<Change> {
     let visibility = if visible {
         termwiz::surface::CursorVisibility::Visible
@@ -428,6 +438,34 @@ pub fn caret_changes(visible: bool, position: Option<(u16, u16)>) -> Vec<Change>
         });
     }
     changes
+}
+
+pub(crate) fn apply_soft_caret_overlay(
+    surface: &mut Surface,
+    position: Option<(u16, u16)>,
+    cfg: Config,
+    capabilities: &TerminalCapabilities,
+) {
+    let Some((x, y)) = position else {
+        return;
+    };
+    if x >= surface.width() || y >= surface.height() {
+        return;
+    }
+    let idx = (y as usize) * (surface.width() as usize) + (x as usize);
+    let Some(cell) = surface.content.get_mut(idx) else {
+        return;
+    };
+
+    let default_fg = palette_entry_to_attr(cfg.palette_roles.fg_primary, cfg.color_mode, capabilities.truecolor);
+    let default_bg = palette_entry_to_attr(cfg.palette_roles.bg_primary, cfg.color_mode, capabilities.truecolor);
+    let fg = cell.fg.unwrap_or(default_fg);
+    let bg = cell.bg.unwrap_or(default_bg);
+    cell.fg = Some(bg);
+    cell.bg = Some(fg);
+    if !cell.has_glyph() {
+        cell.ch = ' ';
+    }
 }
 
 pub fn apply_cursor_overlay_at(
@@ -456,15 +494,8 @@ pub fn apply_caret_overlay_at(
     capabilities: &TerminalCapabilities,
     metrics: CellMetrics,
 ) {
-    apply_cursor_overlay_at(
-        surface,
-        (position.0 as f32, position.1 as f32),
-        CursorUnit::Cell,
-        CursorStyle::Beam,
-        cfg,
-        capabilities,
-        metrics,
-    );
+    let _ = metrics;
+    apply_soft_caret_overlay(surface, Some(position), cfg, capabilities);
 }
 
 fn palette_entry_to_attr(entry: PaletteEntry, color_mode: ColorMode, truecolor: bool) -> ColorAttribute {

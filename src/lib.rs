@@ -37,10 +37,10 @@ pub use draw::{CustomDrawMode, DrawContext, on_draw};
 pub use error::Error;
 pub use geometry::{Alignment, Rect};
 pub use hooks::{
-    CaretBus, CaretCommand, CaretHandle, CursorBus, CursorCommand, CursorHandle, CursorMode,
-    CursorStyle, CursorUnit, EventData, LayoutBus, LayoutSnapshot, RawInputEvent, TuiInputBus,
-    ViewportBus, use_caret, use_cursor, use_keyboard_input, use_layout_rect, use_mouse_input,
-    use_raw_input, use_viewport, use_wheel_input,
+    CaretBus, CaretCommand, CaretHandle, CaretMode, CursorBus, CursorCommand, CursorHandle,
+    CursorMode, CursorStyle, CursorUnit, EventData, LayoutBus, LayoutSnapshot, RawInputEvent,
+    TuiInputBus, ViewportBus, use_caret, use_cursor, use_keyboard_input, use_layout_rect,
+    use_mouse_input, use_raw_input, use_viewport, use_wheel_input,
 };
 pub use render::TuiContext;
 pub use scene::{CellMetrics, InlineImage, TerminalScene};
@@ -319,7 +319,7 @@ fn render_request(request: RenderRequest) -> anyhow::Result<()> {
     };
 
     // `render()` is a one-shot, non-interactive API. It should behave like normal stdout output:
-    // no alternate screen and no cursor addressing that overwrites existing content.
+    // no alternate screen and no physical caret addressing that overwrites existing content.
     //
     // We still use the same pipeline as `launch` up to `Surface`, and then we render the resulting
     // `Change` stream using termwiz's own `TerminfoRenderer`.
