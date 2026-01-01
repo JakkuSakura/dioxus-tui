@@ -20,6 +20,7 @@ struct CaretDebugInfo {
     has_caret: bool,
     row: usize,
     col: usize,
+    overlay: bool,
 }
 
 impl Default for CaretDebugInfo {
@@ -31,6 +32,7 @@ impl Default for CaretDebugInfo {
             has_caret: false,
             row: 0,
             col: 0,
+            overlay: false,
         }
     }
 }
@@ -210,6 +212,7 @@ fn TextareaBox(buffer: Signal<TextBuffer>, debug_info: Signal<CaretDebugInfo>) -
     let cursor_handle_update = cursor_handle.clone();
     let layout_rect = use_layout_rect();
     let _layout_subscription = layout_rect.read().clone();
+    let show_overlay = use_context::<Signal<bool>>();
     let mut debug_update = debug_info.clone();
 
     use_effect(move || {
@@ -234,11 +237,26 @@ fn TextareaBox(buffer: Signal<TextBuffer>, debug_info: Signal<CaretDebugInfo>) -
             has_caret,
             row: state.row,
             col: state.col,
+            overlay: *show_overlay.read(),
         });
     });
 
     let state = buffer.read().clone();
-    let rendered_lines = state.lines.iter().map(|line| {
+    let mut rendered_lines: Vec<String> = state.lines.clone();
+    if *show_overlay.read() {
+        if let Some(line) = rendered_lines.get_mut(state.row) {
+            let line_len = TextBuffer::line_len(line);
+            let col = state.col.min(line_len);
+            if col < line_len {
+                let start = TextBuffer::byte_index(line, col);
+                let end = TextBuffer::byte_index(line, col + 1);
+                line.replace_range(start..end, "▏");
+            } else {
+                line.push('▏');
+            }
+        }
+    }
+    let rendered_lines = rendered_lines.iter().map(|line| {
         let content = if line.is_empty() { " " } else { line.as_str() };
         rsx! { div { "{content}" } }
     });
@@ -267,11 +285,19 @@ pub fn app() -> Element {
     let key_input = use_keyboard_input();
     let mut buffer = use_signal(TextBuffer::default);
     let debug_info = use_signal(CaretDebugInfo::default);
+    let show_overlay = use_signal(|| true);
+    let mut show_overlay_update = show_overlay.clone();
+    provide_context(show_overlay);
 
     use_effect(move || {
         let Some(data) = key_input.read().clone() else {
             return;
         };
+        if data.key() == Key::F2 {
+            let next = !*show_overlay_update.read();
+            show_overlay_update.set(next);
+            return;
+        }
         buffer.with_mut(|buf| buf.handle_key(&data.key(), &tui));
     });
 
@@ -283,7 +309,7 @@ pub fn app() -> Element {
             help: &[
                 "Type to insert text. Enter makes a new line.",
                 "Use arrow keys, Backspace, Delete. Esc to quit.",
-                "Caret uses terminal cursor; debug info renders below.",
+                "Caret uses terminal cursor; F2 toggles overlay.",
             ],
 
             div {
@@ -300,7 +326,12 @@ pub fn app() -> Element {
                     margin_top: "1ch",
                     width: "80%",
                     color: "#a9b1d6",
-                    "Cursor row/col: {debug.row}, {debug.col}"
+                    "Caret row/col: {debug.row}, {debug.col}"
+                }
+                div {
+                    width: "80%",
+                    color: "#a9b1d6",
+                    "Overlay caret: {debug.overlay}"
                 }
                 if debug.has_layout {
                     div {
