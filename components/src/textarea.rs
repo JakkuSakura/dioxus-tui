@@ -285,7 +285,17 @@ mod tests {
 
         let mut vdom = VirtualDom::new(CaretProbe)
             .with_root_context(caret_bus)
-            .with_root_context(layout_bus);
+            .with_root_context(layout_bus.clone());
+        let _ = vdom.rebuild();
+        let _ = vdom.work_with_deadline(|| false);
+
+        let scopes = layout_bus.registered_scopes();
+        let scope_id = scopes.first().copied().expect("layout scope");
+        let mut rects = std::collections::HashMap::new();
+        rects.insert(scope_id, dioxus_tui::Rect::new(2, 3, 20, 10));
+        vdom.in_runtime(|| {
+            layout_bus.publish(rects);
+        });
         let _ = vdom.rebuild();
         let _ = vdom.work_with_deadline(|| false);
 

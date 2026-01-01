@@ -2,7 +2,7 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
-use dioxus::prelude::{use_context, use_effect, use_hook, use_signal, ReadableExt, Signal, WritableExt};
+use dioxus::prelude::{use_context, use_hook, use_signal, Signal, WritableExt};
 use dioxus_core::current_scope_id;
 use dioxus_html::geometry::{ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint};
 use crate::geometry::Rect;
@@ -1085,7 +1085,7 @@ impl Drop for CaretSubscriptionInner {
 #[derive(Clone)]
 pub struct CaretHandle {
     bus: CaretBus,
-    layout_rect: Signal<Option<Rect>>,
+    last_layout: Rc<RefCell<Option<Rect>>>,
     relative_position: Rc<RefCell<Option<(u16, u16)>>>,
 }
 
@@ -1100,8 +1100,9 @@ impl CaretHandle {
 
     pub fn set_cell_position(&self, x: u16, y: u16) {
         *self.relative_position.borrow_mut() = Some((x, y));
-        let (abs_x, abs_y) = self.resolve_relative(x, y).unwrap_or((x, y));
-        self.bus.publish(CaretCommand::SetPosition(abs_x, abs_y));
+        if let Some((abs_x, abs_y)) = self.resolve_relative(x, y) {
+            self.bus.publish(CaretCommand::SetPosition(abs_x, abs_y));
+        }
     }
 
     pub fn set_absolute_position(&self, x: u16, y: u16) {
@@ -1122,10 +1123,11 @@ impl CaretHandle {
     }
 
     fn resolve_relative(&self, x: u16, y: u16) -> Option<(u16, u16)> {
-        let Some(layout) = self.layout_rect.read().clone() else {
-            return None;
-        };
-        Some(resolve_relative_position(layout, x, y))
+        self.last_layout
+            .borrow()
+            .as_ref()
+            .copied()
+            .map(|layout| resolve_relative_position(layout, x, y))
     }
 }
 
@@ -1142,30 +1144,30 @@ fn resolve_relative_position(layout: Rect, x: u16, y: u16) -> (u16, u16) {
 
 pub fn use_caret() -> CaretHandle {
     let bus = use_context::<CaretBus>();
-    let layout_rect = use_layout_rect();
-    let _layout_subscription = layout_rect.read().clone();
+    let layout_bus = use_context::<LayoutBus>();
+    let scope_id = use_hook(current_scope_id);
     let relative_position = use_hook(|| Rc::new(RefCell::new(None::<(u16, u16)>)));
-    {
-        let layout_rect = layout_rect.clone();
-        let bus = bus.clone();
+    let last_layout = use_hook(|| Rc::new(RefCell::new(None::<Rect>)));
+    let _layout_registration = use_hook(|| layout_bus.register_scope(scope_id));
+    let _layout_subscription = use_hook(|| {
         let relative_position = relative_position.clone();
-        use_effect(move || {
-            let Some(layout) = layout_rect.read().clone() else {
+        let last_layout = last_layout.clone();
+        let bus = bus.clone();
+        layout_bus.subscribe(Rc::new(move |snapshot| {
+            let Some(layout) = snapshot.rects.get(&scope_id).copied() else {
                 return;
             };
+            *last_layout.borrow_mut() = Some(layout);
             let Some((rel_x, rel_y)) = *relative_position.borrow() else {
                 return;
             };
-            let max_x = layout.width.saturating_sub(1);
-            let max_y = layout.height.saturating_sub(1);
-            let abs_x = layout.x.saturating_add(rel_x.min(max_x));
-            let abs_y = layout.y.saturating_add(rel_y.min(max_y));
+            let (abs_x, abs_y) = resolve_relative_position(layout, rel_x, rel_y);
             bus.publish(CaretCommand::SetPosition(abs_x, abs_y));
-        });
-    }
+        }))
+    });
     CaretHandle {
         bus,
-        layout_rect,
+        last_layout,
         relative_position,
     }
 }
