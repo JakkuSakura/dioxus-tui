@@ -12,6 +12,7 @@ use crate::config::{ImageDowngrade, ImagePolicy};
 use crate::image::{load_png_image, placed_image_from_png, PlacedImage};
 use std::collections::VecDeque;
 use style::color::AbsoluteColor;
+use taffy::{Display, FlexDirection, FlexWrap};
 use unicode_width::UnicodeWidthChar;
 
 pub fn paint_surface(
@@ -226,6 +227,13 @@ fn paint_node(
             }
 
             // Render block children as their own boxes.
+            // Respect computed rows/grid placement and reversed flex directions.
+            // Keep vertical fallback for ordinary blocks and unwrapped forward
+            // columns: sub-cell text boxes need separate rows after cell rounding.
+            let positioned_children = node.style.display == Display::Grid
+                || (node.style.display == Display::Flex
+                    && (node.style.flex_direction != FlexDirection::Column
+                        || node.style.flex_wrap != FlexWrap::NoWrap));
             let mut flow_y = rect.y;
             for child_id in node.children.iter().copied() {
                 let Some(child) = doc.get_node(child_id) else {
@@ -235,7 +243,7 @@ fn paint_node(
                     let child_rect_raw = node_rect(doc, child, area, metrics);
                     let child_rect = offset_rect(child_rect_raw, offset, area);
                     let mut child_offset = offset;
-                    if child_rect.y < flow_y {
+                    if !positioned_children && child_rect.y < flow_y {
                         let delta = flow_y.saturating_sub(child_rect.y) as i32;
                         child_offset.1 = child_offset.1.saturating_add(delta);
                     }
