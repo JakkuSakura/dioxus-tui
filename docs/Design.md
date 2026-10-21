@@ -32,6 +32,12 @@ Key modules:
 - Text width is based on Unicode display width; wide/combining glyphs are handled so the grid remains aligned.
 - Terminals vary: color depth and image protocols are capability-driven and must have deterministic fallbacks.
 
+The cell painter keeps normal-flow rounding fallback separate from positioned boxes.
+Positioned children retain their computed coordinates and local sibling z-index order;
+they do not move following normal-flow content. `display: none` subtrees are skipped,
+including when collecting inline text. This local ordering does not implement the full
+CSS stacking-context/compositing model.
+
 ## Rendering modes and feature gating
 
 `RenderingMode` is the single switch for “configured vs not configured” behavior.
